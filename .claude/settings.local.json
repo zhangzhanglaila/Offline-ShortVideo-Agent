@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(wc -l \"D:/Offline-ShortVideo-Agent\"/*.py \"D:/Offline-ShortVideo-Agent/core\"/*.py)",
+      "Bash(python -m py_compile main.py config.py core/*.py)"
+    ]
+  }
+}

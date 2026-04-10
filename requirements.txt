@@ -1,0 +1,18 @@
+# Offline-ShortVideo-Agent 依赖列表
+# 安装命令: pip install -r requirements.txt
+
+# 核心依赖
+faster-whisper>=1.0.0
+ollama>=0.1.0
+
+# 可选: 如果使用GPU加速whisper
+# faster-whisper[cuda]>=1.0.0
+
+# 注意: FFmpeg 必须单独安装
+# Windows: https://ffmpeg.org/download.html
+# 或使用: winget install ffmpeg
+#
+# Ollama 必须单独安装
+# macOS/Linux: curl -fsSL https://ollama.com/install.sh | sh
+# Windows: https://ollama.com/download
+# 模型: ollama pull qwen2:7b

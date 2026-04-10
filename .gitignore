@@ -1,0 +1,52 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+*.egg-info/
+dist/
+build/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# 数据文件
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# 输出文件
+output/
+assets/bgm/*
+assets/素材池_待剪辑/*
+!assets/bgm/.gitkeep
+!assets/素材池_待剪辑/.gitkeep
+
+# 临时文件
+*.tmp
+*.temp
+temp_*
+temp/
+
+# 日志
+*.log
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
