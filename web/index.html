@@ -4,7 +4,21 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Offline-ShortVideo-Agent - 短视频AI生产系统</title>
+    <link rel="icon" href="data:,">
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+    <!-- 内联样式：立即隐藏body防止闪烁，等DOM就绪后再显示 -->
+    <style>
+        body { visibility: hidden; }
+        body.ready { visibility: visible; }
+    </style>
+    <script>
+        // 等DOM完全就绪后再显示body
+        document.addEventListener('DOMContentLoaded', function() {
+            document.body.classList.add('ready');
+        });
+        // 同时处理deferred/async脚本场景：1秒后强制显示
+        setTimeout(function() { document.body.classList.add('ready'); }, 1000);
+    </script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -12,6 +26,7 @@
             background: #F5F6F7;
             color: #606773;
             line-height: 1.6;
+            visibility: visible;
         }
 
         /* ========== B站配色变量 ========== */
@@ -29,19 +44,6 @@
             --skeleton-base: #E5E6EB;
             --skeleton-light: #F0F1F3;
         }
-
-        /* ========== 顶部粉色进度条 ========== */
-        .top-progress {
-            position: fixed;
-            top: 0;
-            left: 0;
-            height: 2px;
-            background: var(--bili-pink);
-            z-index: 9999;
-            transition: width 0.3s ease, opacity 0.3s ease;
-            opacity: 0;
-        }
-        .top-progress.show { opacity: 1; }
 
         /* ========== 顶部导航 ========== */
         .bili-header {
@@ -291,37 +293,36 @@
             width: 60%;
         }
 
-        /* ========== 骨架屏-平台卡片 ========== */
-        .skeleton-platform-row {
-            display: flex;
-            gap: 16px;
+        /* ========== 卡片内进度条 ========== */
+        .card-progress-wrap {
+            margin-bottom: 16px;
         }
-        .skeleton-platform {
-            flex: 1;
+        .card-progress-bar {
+            height: 8px;
+            background: #F5F6F7;
+            border-radius: 4px;
+            overflow: hidden;
+            position: relative;
+        }
+        .card-progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--bili-pink), #FF9CC2);
+            border-radius: 4px;
+            transition: width 0.3s ease;
+            width: 0%;
+        }
+        .card-progress-text {
             display: flex;
+            justify-content: space-between;
             align-items: center;
-            gap: 16px;
-            padding: 20px;
-            background: #FFF;
-            border-radius: var(--radius);
-            box-shadow: var(--bili-shadow);
+            margin-top: 8px;
+            font-size: 12px;
+            color: #909090;
         }
-        .skeleton-platform-logo {
-            width: 48px;
-            height: 48px;
-            border-radius: var(--radius);
-        }
-        .skeleton-platform-text {
-            flex: 1;
-        }
-        .skeleton-platform-title {
-            height: 14px;
-            width: 50%;
-            margin-bottom: 2px;
-        }
-        .skeleton-platform-desc {
-            height: 12px;
-            width: 70%;
+        .card-progress-pct {
+            font-weight: 600;
+            color: var(--bili-pink);
+            font-size: 14px;
         }
 
         /* ========== 按钮 ========== */
@@ -525,10 +526,6 @@
         .topic-item:hover {
             border-color: var(--bili-pink);
             transform: translateX(4px);
-        }
-        .topic-item.selected {
-            border-color: var(--bili-pink);
-            background: #FFF5F7;
         }
         .topic-rank {
             width: 24px;
@@ -875,7 +872,6 @@
         /* ========== 响应式 ========== */
         @media (max-width: 768px) {
             .stats-grid { grid-template-columns: repeat(2, 1fr); }
-            .skeleton-stats-grid { grid-template-columns: repeat(2, 1fr); }
             .platform-row { flex-direction: column; }
             .category-grid { grid-template-columns: repeat(2, 1fr); }
             .header-title { display: none; }
@@ -885,9 +881,6 @@
     </style>
 </head>
 <body>
-    <!-- 顶部粉色进度条 -->
-    <div class="top-progress" id="top-progress"></div>
-
     <!-- B站风格顶部导航 -->
     <header class="bili-header">
         <div class="header-logo">
@@ -948,6 +941,17 @@
                     <span class="card-title">系统状态</span>
                 </div>
                 <div class="card-body">
+                    <!-- 卡片内进度条 -->
+                    <div class="card-progress-wrap" id="home-progress-wrap">
+                        <div class="card-progress-bar">
+                            <div class="card-progress-fill" id="home-progress-fill"></div>
+                        </div>
+                        <div class="card-progress-text">
+                            <span id="home-progress-msg">正在加载数据...</span>
+                            <span class="card-progress-pct" id="home-progress-pct">0%</span>
+                        </div>
+                    </div>
+
                     <!-- 骨架屏 -->
                     <div id="home-stats-skeleton" class="skeleton-stats-grid">
                         <div class="skeleton-stat"><div class="skeleton skeleton-icon"></div><div class="skeleton-text"><div class="skeleton skeleton-num"></div><div class="skeleton skeleton-label"></div></div></div>
@@ -1033,7 +1037,6 @@
                     </div>
                 </div>
                 <div class="card-body">
-                    <!-- 拖拽上传区 -->
                     <div class="upload-zone" id="upload-zone" onclick="document.getElementById('file-input').click()">
                         <div class="upload-zone-icon">📤</div>
                         <div class="upload-zone-text">拖拽文件到此处，或点击选择文件</div>
@@ -1041,13 +1044,11 @@
                     </div>
                     <input type="file" class="upload-input" id="file-input" multiple accept=".jpg,.jpeg,.png,.webp,.mp4,.avi,.mov,.mkv,.mp3,.wav,.aac,.m4a" onchange="handleFileSelect(this.files)">
 
-                    <!-- 已选赛道提示 -->
                     <div id="selected-cat-tip" style="margin-top: 16px; padding: 12px 16px; background: #FFF5F7; border-radius: 4px; display: none;">
                         <span style="color: var(--bili-pink);">📍 当前赛道：</span>
                         <span id="tip-cat-name" style="font-weight: 600; color: #232529;"></span>
                     </div>
 
-                    <!-- 素材分类 -->
                     <div class="material-tabs">
                         <button class="material-tab active" onclick="filterMaterials('all')">全部<span class="count" id="count-all">0</span></button>
                         <button class="material-tab" onclick="filterMaterials('image')">图片<span class="count" id="count-image">0</span></button>
@@ -1055,7 +1056,6 @@
                         <button class="material-tab" onclick="filterMaterials('audio')">音频<span class="count" id="count-audio">0</span></button>
                     </div>
 
-                    <!-- 骨架屏 -->
                     <div id="materials-skeleton" class="skeleton-material-grid">
                         <div class="skeleton-material"><div class="skeleton skeleton-thumb"></div><div class="skeleton skeleton-name"></div></div>
                         <div class="skeleton-material"><div class="skeleton skeleton-thumb"></div><div class="skeleton skeleton-name"></div></div>
@@ -1064,20 +1064,15 @@
                         <div class="skeleton-material"><div class="skeleton skeleton-thumb"></div><div class="skeleton skeleton-name"></div></div>
                         <div class="skeleton-material"><div class="skeleton skeleton-thumb"></div><div class="skeleton skeleton-name"></div></div>
                     </div>
-                    <!-- 真实内容 -->
                     <div class="material-grid" id="material-grid" style="display:none;"></div>
 
-                    <!-- 操作栏 -->
                     <div class="material-actions" id="material-actions" style="display: none;">
-                        <div class="material-info">
-                            已选择 <span id="selected-count">0</span> 个素材
-                        </div>
+                        <div class="material-info">已选择 <span id="selected-count">0</span> 个素材</div>
                         <div style="display: flex; gap: 8px;">
                             <button class="bili-btn bili-btn-danger" onclick="clearAllMaterials()">🗑️ 清空全部</button>
                         </div>
                     </div>
 
-                    <!-- 生成按钮 -->
                     <div style="text-align: center; margin-top: 24px; padding-top: 16px; border-top: 1px solid #E3E5E7;">
                         <div style="margin-bottom: 12px; font-size: 14px; color: #909090;">选择目标平台</div>
                         <div class="tab-row" style="border: none; padding: 0; margin: 0 0 16px 0; justify-content: center;">
@@ -1105,7 +1100,6 @@
                     </div>
                 </div>
                 <div class="card-body">
-                    <!-- 骨架屏-赛道 -->
                     <div id="topics-cat-skeleton" class="skeleton-category-grid" style="grid-template-columns: repeat(6, 1fr); margin-bottom: 20px;">
                         <div class="skeleton-category"><div class="skeleton skeleton-cat-icon"></div><div class="skeleton skeleton-cat-name"></div></div>
                         <div class="skeleton-category"><div class="skeleton skeleton-cat-icon"></div><div class="skeleton skeleton-cat-name"></div></div>
@@ -1114,10 +1108,8 @@
                         <div class="skeleton-category"><div class="skeleton skeleton-cat-icon"></div><div class="skeleton skeleton-cat-name"></div></div>
                         <div class="skeleton-category"><div class="skeleton skeleton-cat-icon"></div><div class="skeleton skeleton-cat-name"></div></div>
                     </div>
-                    <!-- 真实赛道 -->
                     <div class="category-grid" id="topic-category-grid" style="grid-template-columns: repeat(6, 1fr); margin-bottom: 20px; display:none;"></div>
 
-                    <!-- 骨架屏-选题列表 -->
                     <div id="topics-list-skeleton" class="skeleton-topic-list">
                         <div class="skeleton-topic"><div class="skeleton skeleton-rank"></div><div class="skeleton-topic-main"><div class="skeleton skeleton-title"></div><div class="skeleton skeleton-meta"></div></div></div>
                         <div class="skeleton-topic"><div class="skeleton skeleton-rank"></div><div class="skeleton-topic-main"><div class="skeleton skeleton-title"></div><div class="skeleton skeleton-meta"></div></div></div>
@@ -1125,7 +1117,6 @@
                         <div class="skeleton-topic"><div class="skeleton skeleton-rank"></div><div class="skeleton-topic-main"><div class="skeleton skeleton-title"></div><div class="skeleton skeleton-meta"></div></div></div>
                         <div class="skeleton-topic"><div class="skeleton skeleton-rank"></div><div class="skeleton-topic-main"><div class="skeleton skeleton-title"></div><div class="skeleton skeleton-meta"></div></div></div>
                     </div>
-                    <!-- 真实选题 -->
                     <div id="topic-list" class="topic-list" style="display:none;"></div>
                     <div style="text-align: center; margin-top: 20px;">
                         <button class="bili-btn bili-btn-secondary" id="load-more-btn" onclick="loadMoreTopics()" style="display:none;">加载更多</button>
@@ -1146,8 +1137,6 @@
                         <div class="progress-text" id="progress-text">准备中...</div>
                         <div class="progress-step" id="progress-step">步骤 0/6</div>
                     </div>
-
-                    <!-- 步骤日志 -->
                     <div class="step-log" id="step-log">
                         <div class="step-item" id="step-topic">
                             <div class="step-icon pending" id="step-topic-icon">1</div>
@@ -1192,7 +1181,6 @@
                             </div>
                         </div>
                     </div>
-
                     <div class="log-box" id="log-box"></div>
                 </div>
             </div>
@@ -1209,9 +1197,7 @@
                         <div style="font-size: 64px; margin-bottom: 16px;">🎉</div>
                         <div style="font-size: 20px; color: #232529; margin-bottom: 8px;">视频生成成功！</div>
                         <div style="font-size: 14px; color: #909090; margin-bottom: 24px;" id="result-summary"></div>
-
                         <div id="result-works" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 24px;"></div>
-
                         <div style="display: flex; justify-content: center; gap: 12px;">
                             <button class="bili-btn bili-btn-primary" onclick="showPage('works')">📺 查看我的投稿</button>
                             <button class="bili-btn bili-btn-secondary" onclick="goHome()">继续肝下一条</button>
@@ -1228,7 +1214,7 @@
                     <span class="card-title">我的投稿</span>
                     <div style="display: flex; gap: 8px;">
                         <button class="bili-btn bili-btn-secondary" onclick="openOutputFolder()">📂 打开文件夹</button>
-                        <button class="bili-btn bili-btn-secondary" onclick="loadWorks()">🔄 刷新</button>
+                        <button class="bili-btn bili-btn-secondary" onclick="loadWorksPage()">🔄 刷新</button>
                     </div>
                 </div>
                 <div class="card-body">
@@ -1238,15 +1224,12 @@
                         <span class="tab-item" data-wplatform="小红书" onclick="filterWorks('小红书')">📕 小红书</span>
                         <span class="tab-item" data-wplatform="B站" onclick="filterWorks('B站')">📺 B站</span>
                     </div>
-
-                    <!-- 骨架屏 -->
                     <div id="works-skeleton" class="skeleton-video-grid">
                         <div class="skeleton-video"><div class="skeleton skeleton-video-thumb"></div><div class="skeleton-video-info"><div class="skeleton skeleton-video-title"></div><div class="skeleton skeleton-video-meta"></div></div></div>
                         <div class="skeleton-video"><div class="skeleton skeleton-video-thumb"></div><div class="skeleton-video-info"><div class="skeleton skeleton-video-title"></div><div class="skeleton skeleton-video-meta"></div></div></div>
                         <div class="skeleton-video"><div class="skeleton skeleton-video-thumb"></div><div class="skeleton-video-info"><div class="skeleton skeleton-video-title"></div><div class="skeleton skeleton-video-meta"></div></div></div>
                         <div class="skeleton-video"><div class="skeleton skeleton-video-thumb"></div><div class="skeleton-video-info"><div class="skeleton skeleton-video-title"></div><div class="skeleton skeleton-video-meta"></div></div></div>
                     </div>
-                    <!-- 真实内容 -->
                     <div class="video-grid" id="video-grid" style="display:none;"></div>
                     <div id="works-empty" class="empty-state" style="display: none;">
                         <div class="empty-icon">📁</div>
@@ -1264,45 +1247,37 @@
                     <span class="card-title">数据中心</span>
                 </div>
                 <div class="card-body">
-                    <!-- 骨架屏 -->
                     <div id="stats-main-skeleton" class="skeleton-stats-grid" style="grid-template-columns: repeat(2, 1fr);">
                         <div class="skeleton-stat"><div class="skeleton skeleton-icon"></div><div class="skeleton-text"><div class="skeleton skeleton-num"></div><div class="skeleton skeleton-label"></div></div></div>
                         <div class="skeleton-stat"><div class="skeleton skeleton-icon"></div><div class="skeleton-text"><div class="skeleton skeleton-num"></div><div class="skeleton skeleton-label"></div></div></div>
                     </div>
-                    <!-- 真实内容 -->
                     <div class="stats-grid" id="stats-grid" style="grid-template-columns: repeat(2, 1fr); display:none;"></div>
                 </div>
             </div>
-
             <div class="bili-card">
                 <div class="card-header">
                     <span class="card-title">选题分布</span>
                 </div>
                 <div class="card-body">
-                    <!-- 骨架屏 -->
                     <div id="stats-cat-skeleton" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;">
                         <div class="skeleton" style="padding: 12px; border-radius: 4px; height: 60px;"></div>
                         <div class="skeleton" style="padding: 12px; border-radius: 4px; height: 60px;"></div>
                         <div class="skeleton" style="padding: 12px; border-radius: 4px; height: 60px;"></div>
                     </div>
-                    <!-- 真实内容 -->
                     <div id="cat-stats" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; display:none;"></div>
                 </div>
             </div>
-
             <div class="bili-card">
                 <div class="card-header">
                     <span class="card-title">缓存状态</span>
                 </div>
-                <div class="card-body" id="cache-info">
-                    <!-- 骨架屏 -->
+                <div class="card-body">
                     <div id="cache-skeleton" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px;">
                         <div class="skeleton" style="padding: 12px; border-radius: 4px; height: 60px;"></div>
                         <div class="skeleton" style="padding: 12px; border-radius: 4px; height: 60px;"></div>
                         <div class="skeleton" style="padding: 12px; border-radius: 4px; height: 60px;"></div>
                         <div class="skeleton" style="padding: 12px; border-radius: 4px; height: 60px;"></div>
                     </div>
-                    <!-- 真实内容 -->
                     <div id="cache-info-real" style="display: none;"></div>
                 </div>
             </div>
@@ -1326,7 +1301,7 @@
     <div class="modal" id="video-modal" onclick="closeModal('video-modal')">
         <div class="modal-content" onclick="event.stopPropagation()">
             <div class="modal-header">
-                <span style="font-weight: 600;">作品预览</span>
+                <span style="font-weight: 600;">素材预览</span>
                 <span class="modal-close" onclick="closeModal('video-modal')">&times;</span>
             </div>
             <div class="modal-body" style="text-align: center;">
@@ -1344,543 +1319,549 @@
             </div>
             <div class="modal-body" style="text-align: center;">
                 <audio id="preview-audio" controls style="width: 100%; margin-top: 20px;"></audio>
-                <div id="audio-info" style="margin-top: 12px; text-align: left;"></div>
             </div>
         </div>
     </div>
 
     <script>
         // ========== 全局状态 ==========
-        const API = '/api';
-        let currentPage = 'home';
-        let selectedCat = null;
-        let selectedPlatform = 'all';
-        let currentWorkPlatform = 'all';
-        let topicsData = [];
-        let topicsOffset = 0;
-        let materialsData = [];
-        let selectedMaterials = new Set();
-        let worksData = [];
+        var API = '/api';
+        var currentPage = 'home';
+        var selectedCat = null;
+        var selectedPlatform = 'all';
+        var currentWorkPlatform = 'all';
+        var topicsData = [];
+        var topicsOffset = 0;
+        var materialsData = [];
+        var selectedMaterials = new Set();
+        var worksData = [];
+        var isTransitioning = false;
 
-        // ========== 顶部进度条控制 ==========
-        let progressTimer = null;
-        function showProgress() {
-            const bar = document.getElementById('top-progress');
-            bar.style.width = '30%';
-            bar.classList.add('show');
+        // ========== 进度条控制 ==========
+        var homeProgressTimer = null;
+
+        function startHomeProgress() {
+            var fill = document.getElementById('home-progress-fill');
+            var pct = document.getElementById('home-progress-pct');
+            var msg = document.getElementById('home-progress-msg');
+            var wrap = document.getElementById('home-progress-wrap');
+            if (!fill || !pct || !msg || !wrap) return;
+
+            wrap.style.display = 'block';
+            fill.style.width = '0%';
+            pct.textContent = '0%';
+            msg.textContent = '正在加载数据...';
+
+            var current = 0;
+            homeProgressTimer = setInterval(function() {
+                current += Math.random() * 12;
+                if (current > 88) current = 88;
+                fill.style.width = current + '%';
+                pct.textContent = Math.round(current) + '%';
+            }, 100);
         }
-        function setProgress(pct) {
-            const bar = document.getElementById('top-progress');
-            bar.style.width = pct + '%';
-        }
-        function hideProgress() {
-            const bar = document.getElementById('top-progress');
-            bar.style.width = '100%';
-            setTimeout(() => {
-                bar.classList.remove('show');
-                bar.style.width = '0';
-            }, 200);
+
+        function finishHomeProgress() {
+            if (homeProgressTimer) {
+                clearInterval(homeProgressTimer);
+                homeProgressTimer = null;
+            }
+            var fill = document.getElementById('home-progress-fill');
+            var pct = document.getElementById('home-progress-pct');
+            var msg = document.getElementById('home-progress-msg');
+            var wrap = document.getElementById('home-progress-wrap');
+            if (!fill || !pct || !msg || !wrap) return;
+
+            fill.style.width = '100%';
+            pct.textContent = '100%';
+            msg.textContent = '加载完成';
+            setTimeout(function() { wrap.style.display = 'none'; }, 400);
         }
 
         // ========== 初始化 ==========
-        document.addEventListener('DOMContentLoaded', () => {
-            // 页面DOM已渲染完成，立即显示骨架屏对应区域
-            // 异步加载数据
-            Promise.all([
-                loadCategoriesPromise(),
-                loadStatsPromise()
-            ]).then(() => {
-                // 数据加载完成，隐藏骨架屏，显示真实内容
-                finishHomeLoading();
-            });
-
-            // 初始化上传区域
+        function init() {
             initUploadZone();
-        });
+            startHomeProgress();
 
-        // ========== 首页骨架屏切换 ==========
+            var timeout = setTimeout(function() {
+                finishHomeLoading();
+                finishHomeProgress();
+            }, 5000);
+
+            Promise.all([
+                fetchCategories().catch(function() {}),
+                fetchHomeData().catch(function() {})
+            ]).finally(function() {
+                clearTimeout(timeout);
+                finishHomeLoading();
+                finishHomeProgress();
+            });
+        }
+
         function finishHomeLoading() {
-            // 赛道
-            const catSk = document.getElementById('home-cat-skeleton');
-            const catReal = document.getElementById('home-category');
-            if (catSk && catReal) {
-                catSk.style.display = 'none';
-                catReal.style.display = 'grid';
-            }
+            var catSk = document.getElementById('home-cat-skeleton');
+            var catReal = document.getElementById('home-category');
+            if (catSk) catSk.style.display = 'none';
+            if (catReal) catReal.style.display = 'grid';
 
-            // 统计
-            const statsSk = document.getElementById('home-stats-skeleton');
-            const statsReal = document.getElementById('home-stats');
-            if (statsSk && statsReal) {
-                statsSk.style.display = 'none';
-                statsReal.style.display = 'grid';
-            }
-            hideProgress();
+            var statsSk = document.getElementById('home-stats-skeleton');
+            var statsReal = document.getElementById('home-stats');
+            if (statsSk) statsSk.style.display = 'none';
+            if (statsReal) statsReal.style.display = 'grid';
         }
 
-        // ========== Promise化数据加载 ==========
-        function loadCategoriesPromise() {
-            return new Promise((resolve) => {
-                loadCategories();
-                // 等待DOM更新后resolve
-                setTimeout(resolve, 100);
-            });
+        function fetchCategories() {
+            return fetch(API + '/categories')
+                .then(function(res) { return res.json(); })
+                .then(function(cats) {
+                    var icons = {'知识付费':'💡','美食探店':'🍜','生活方式':'🌿','情感心理':'💝','科技数码':'💻','娱乐搞笑':'🎮'};
+                    var homeGrid = document.getElementById('home-category');
+                    if (homeGrid && cats.length) {
+                        var html = '';
+                        cats.forEach(function(c) {
+                            html += '<div class="category-item" onclick="selectHomeCat(\'' + c.name + '\')">' +
+                                '<div class="category-icon">' + (icons[c.name] || '📁') + '</div>' +
+                                '<div class="category-name">' + c.name + '</div></div>';
+                        });
+                        homeGrid.innerHTML = html;
+                    }
+                    var topicGrid = document.getElementById('topic-category-grid');
+                    if (topicGrid && cats.length) {
+                        var html = '<div class="category-item" onclick="selectTopicCat(\'\')"><div class="category-icon">📁</div><div class="category-name">全部</div></div>';
+                        cats.forEach(function(c) {
+                            html += '<div class="category-item" onclick="selectTopicCat(\'' + c.name + '\')">' +
+                                '<div class="category-icon">' + (icons[c.name] || '📁') + '</div>' +
+                                '<div class="category-name">' + c.name + '</div></div>';
+                        });
+                        topicGrid.innerHTML = html;
+                    }
+                });
         }
 
-        function loadStatsPromise() {
-            return new Promise((resolve) => {
-                loadHome();
-                setTimeout(resolve, 100);
-            });
-        }
-
-        function loadTopicsPromise(cat) {
-            return new Promise((resolve) => {
-                loadTopics(cat);
-                setTimeout(resolve, 100);
-            });
-        }
-
-        function loadMaterialsPromise() {
-            return new Promise((resolve) => {
-                loadMaterials();
-                setTimeout(resolve, 100);
-            });
-        }
-
-        function loadWorksPromise() {
-            return new Promise((resolve) => {
-                loadWorks();
-                setTimeout(resolve, 100);
-            });
-        }
-
-        function loadStatsPagePromise() {
-            return new Promise((resolve) => {
-                loadStatsPage();
-                setTimeout(resolve, 100);
-            });
+        function fetchHomeData() {
+            return fetch(API + '/stats')
+                .then(function(res) { return res.json(); })
+                .then(function(data) {
+                    var el = document.getElementById('stat-topics');
+                    if (el) el.textContent = data.topics_count || 0;
+                    el = document.getElementById('stat-cache');
+                    if (el) el.textContent = data.cache_hit_rate || '0%';
+                    el = document.getElementById('stat-works');
+                    if (el) el.textContent = data.works_count || 0;
+                });
         }
 
         // ========== 页面切换 ==========
         function showPage(page) {
-            currentPage = page;
-            document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-            document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-            document.getElementById('page-' + page).classList.add('active');
-            document.querySelector(`.nav-item[data-page="${page}"]`)?.classList.add('active');
+            if (isTransitioning) return;
+            if (page === currentPage) return;
+            isTransitioning = true;
 
-            if (page === 'stats') {
-                showStatsPage();
+            var pages = document.querySelectorAll('.page');
+            for (var i = 0; i < pages.length; i++) {
+                pages[i].classList.remove('active');
             }
-            if (page === 'works') {
-                showWorksPage();
+            var navs = document.querySelectorAll('.nav-item');
+            for (var j = 0; j < navs.length; j++) {
+                navs[j].classList.remove('active');
             }
-            if (page === 'materials') {
-                showMaterialsPage();
-            }
-            if (page === 'topics') {
-                showTopicsPage();
-            }
+
+            var targetPage = document.getElementById('page-' + page);
+            if (targetPage) targetPage.classList.add('active');
+            var targetNav = document.querySelector('.nav-item[data-page="' + page + '"]');
+            if (targetNav) targetNav.classList.add('active');
+
+            currentPage = page;
+
+            if (page === 'stats') loadStatsPage();
+            else if (page === 'works') loadWorksPage();
+            else if (page === 'materials') loadMaterialsPage();
+            else if (page === 'topics') loadTopicsPage();
+
+            isTransitioning = false;
         }
 
-        // ========== 各页面骨架屏切换 ==========
-        function showStatsPage() {
-            showProgress();
-            const skeletonIds = ['stats-main-skeleton', 'stats-cat-skeleton', 'cache-skeleton'];
-            const realIds = ['stats-grid', 'cat-stats', 'cache-info-real'];
+        function loadStatsPage() {
+            var skMain = document.getElementById('stats-main-skeleton');
+            var realMain = document.getElementById('stats-grid');
+            var skCat = document.getElementById('stats-cat-skeleton');
+            var realCat = document.getElementById('cat-stats');
+            var skCache = document.getElementById('cache-skeleton');
+            var realCache = document.getElementById('cache-info-real');
 
-            loadStatsPagePromise().then(() => {
-                skeletonIds.forEach((id, i) => {
-                    const sk = document.getElementById(id);
-                    const real = document.getElementById(realIds[i]);
+            fetch(API + '/stats')
+                .then(function(res) { return res.json(); })
+                .then(function(data) {
+                    if (realMain) {
+                        realMain.innerHTML = '<div class="stat-item"><div class="stat-icon">📝</div><div><div class="stat-num">' + (data.topics_count || 0) + '</div><div class="stat-label">选题总数</div></div></div>' +
+                            '<div class="stat-item blue"><div class="stat-icon">🎬</div><div><div class="stat-num">' + (data.works_count || 0) + '</div><div class="stat-label">作品总数</div></div></div>';
+                        realMain.style.display = 'grid';
+                    }
+                    if (skMain) skMain.style.display = 'none';
+
+                    var catStats = data.category_stats || {};
+                    if (realCat) {
+                        var catHtml = '';
+                        Object.entries(catStats).forEach(function(kv) {
+                            catHtml += '<div style="background:#F5F6F7;border-radius:4px;padding:12px;text-align:center;"><div style="font-size:12px;color:#909090;">' + kv[0] + '</div><div style="font-size:20px;font-weight:700;color:#FB7299;margin-top:4px;">' + kv[1] + '</div></div>';
+                        });
+                        realCat.innerHTML = catHtml;
+                        realCat.style.display = 'grid';
+                    }
+                    if (skCat) skCat.style.display = 'none';
+
+                    var cs = data.cache_stats || {};
+                    if (realCache) {
+                        realCache.innerHTML = '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;">' +
+                            '<div style="background:#F5F6F7;padding:12px;border-radius:4px;text-align:center;"><div style="font-size:18px;font-weight:700;color:#23ADE5;">' + (cs.hits || 0) + '</div><div style="font-size:12px;color:#909090;">命中</div></div>' +
+                            '<div style="background:#F5F6F7;padding:12px;border-radius:4px;text-align:center;"><div style="font-size:18px;font-weight:700;color:#909090;">' + (cs.misses || 0) + '</div><div style="font-size:12px;color:#909090;">未命中</div></div>' +
+                            '<div style="background:#F5F6F7;padding:12px;border-radius:4px;text-align:center;"><div style="font-size:18px;font-weight:700;color:#FB7299;">' + (cs.size || 0) + '</div><div style="font-size:12px;color:#909090;">缓存条目</div></div>' +
+                            '<div style="background:#F5F6F7;padding:12px;border-radius:4px;text-align:center;"><div style="font-size:18px;font-weight:700;color:#52C41A;">' + (data.cache_hit_rate || '0%') + '</div><div style="font-size:12px;color:#909090;">命中率</div></div></div>';
+                        realCache.style.display = 'block';
+                    }
+                    if (skCache) skCache.style.display = 'none';
+                })
+                .catch(function(e) { console.error(e); });
+        }
+
+        function loadWorksPage() {
+            var sk = document.getElementById('works-skeleton');
+            var real = document.getElementById('video-grid');
+
+            fetch(API + '/works')
+                .then(function(res) { return res.json(); })
+                .then(function(data) {
+                    worksData = data.works || [];
                     if (sk) sk.style.display = 'none';
                     if (real) real.style.display = 'grid';
-                });
-                document.getElementById('cache-info').querySelector('#cache-skeleton').style.display = 'none';
-                hideProgress();
-            });
-        }
-
-        function showWorksPage() {
-            showProgress();
-            const sk = document.getElementById('works-skeleton');
-            const real = document.getElementById('video-grid');
-            const empty = document.getElementById('works-empty');
-
-            loadWorksPromise().then(() => {
-                if (sk) sk.style.display = 'none';
-                if (real) {
-                    real.style.display = 'grid';
                     renderWorks();
-                }
-                hideProgress();
-            });
+                })
+                .catch(function(e) { if (sk) sk.style.display = 'none'; });
         }
 
-        function showMaterialsPage() {
-            showProgress();
-            const sk = document.getElementById('materials-skeleton');
-            const real = document.getElementById('material-grid');
+        function loadMaterialsPage() {
+            var sk = document.getElementById('materials-skeleton');
+            var real = document.getElementById('material-grid');
 
-            loadMaterialsPromise().then(() => {
-                if (sk) sk.style.display = 'none';
-                if (real) real.style.display = 'grid';
-                hideProgress();
-            });
+            fetch(API + '/materials')
+                .then(function(res) { return res.json(); })
+                .then(function(data) {
+                    materialsData = data.materials || [];
+                    updateCounts();
+                    if (sk) sk.style.display = 'none';
+                    if (real) real.style.display = 'grid';
+                    renderMaterials();
+                })
+                .catch(function(e) { if (sk) sk.style.display = 'none'; });
         }
 
-        function showTopicsPage() {
-            showProgress();
-            const catSk = document.getElementById('topics-cat-skeleton');
-            const catReal = document.getElementById('topic-category-grid');
-            const listSk = document.getElementById('topics-list-skeleton');
-            const listReal = document.getElementById('topic-list');
-            const loadMore = document.getElementById('load-more-btn');
+        function loadTopicsPage() {
+            var catSk = document.getElementById('topics-cat-skeleton');
+            var catReal = document.getElementById('topic-category-grid');
+            var listSk = document.getElementById('topics-list-skeleton');
+            var listReal = document.getElementById('topic-list');
+            var loadMore = document.getElementById('load-more-btn');
 
-            // 先加载赛道分类
-            loadCategoriesPromise().then(() => {
-                if (catSk) catSk.style.display = 'none';
-                if (catReal) catReal.style.display = 'grid';
-
-                // 再加载选题
-                return loadTopicsPromise('');
-            }).then(() => {
-                if (listSk) listSk.style.display = 'none';
-                if (listReal) listReal.style.display = 'flex';
-                if (loadMore) loadMore.style.display = 'inline-block';
-                hideProgress();
-            });
-        }
-
-        // ========== 首页加载 ==========
-        async function loadHome() {
-            try {
-                const res = await fetch(API + '/stats');
-                const data = await res.json();
-                document.getElementById('stat-topics').textContent = data.topics_count || 0;
-                document.getElementById('stat-cache').textContent = data.cache_hit_rate || '0%';
-                document.getElementById('stat-works').textContent = data.works_count || 0;
-            } catch (e) {
-                console.error(e);
-            }
-        }
-
-        // ========== 分类加载 ==========
-        async function loadCategories() {
-            try {
-                const res = await fetch(API + '/categories');
-                const cats = await res.json();
-                const icons = {'知识付费':'💡','美食探店':'🍜','生活方式':'🌿','情感心理':'💝','科技数码':'💻','娱乐搞笑':'🎮'};
-
-                const homeGrid = document.getElementById('home-category');
-                homeGrid.innerHTML = cats.map(c => `
-                    <div class="category-item" onclick="selectHomeCat('${c.name}')">
-                        <div class="category-icon">${icons[c.name] || '📁'}</div>
-                        <div class="category-name">${c.name}</div>
-                    </div>
-                `).join('');
-
-                const topicGrid = document.getElementById('topic-category-grid');
-                topicGrid.innerHTML = `<div class="category-item" onclick="selectTopicCat('')"><div class="category-icon">📁</div><div class="category-name">全部</div></div>` +
-                    cats.map(c => `
-                        <div class="category-item" onclick="selectTopicCat('${c.name}')">
-                            <div class="category-icon">${icons[c.name] || '📁'}</div>
-                            <div class="category-name">${c.name}</div>
-                        </div>
-                    `).join('');
-
-            } catch (e) {
-                console.error(e);
-            }
+            fetchCategories()
+                .then(function() {
+                    if (catSk) catSk.style.display = 'none';
+                    if (catReal) catReal.style.display = 'grid';
+                    return fetch(API + '/topics?limit=20&offset=0').then(function(res) { return res.json(); });
+                })
+                .then(function(data) {
+                    topicsData = data.topics || [];
+                    if (listSk) listSk.style.display = 'none';
+                    if (listReal) listReal.style.display = 'flex';
+                    if (loadMore) loadMore.style.display = (data.topics || []).length === 20 ? 'inline-block' : 'none';
+                    renderTopics();
+                })
+                .catch(function(e) {});
         }
 
         function selectHomeCat(cat) {
             selectedCat = selectedCat === cat ? null : cat;
-            document.querySelectorAll('#home-category .category-item').forEach(item => {
-                item.classList.toggle('selected', item.querySelector('.category-name').textContent === cat);
-            });
-            document.getElementById('go-materials-btn').disabled = !selectedCat;
+            var items = document.querySelectorAll('#home-category .category-item');
+            for (var i = 0; i < items.length; i++) {
+                var name = items[i].querySelector('.category-name').textContent;
+                items[i].classList.toggle('selected', name === cat);
+            }
+            var btn = document.getElementById('go-materials-btn');
+            if (btn) btn.disabled = !selectedCat;
         }
 
         function selectTopicCat(cat) {
-            document.querySelectorAll('#topic-category-grid .category-item').forEach(item => {
-                const name = item.querySelector('.category-name').textContent;
-                item.classList.toggle('selected', cat === '' ? name === '全部' : name === cat);
-            });
+            var items = document.querySelectorAll('#topic-category-grid .category-item');
+            for (var i = 0; i < items.length; i++) {
+                var name = items[i].querySelector('.category-name').textContent;
+                items[i].classList.toggle('selected', cat === '' ? name === '全部' : name === cat);
+            }
             topicsOffset = 0;
             topicsData = [];
+            var listSk = document.getElementById('topics-list-skeleton');
+            var listReal = document.getElementById('topic-list');
 
-            const listSk = document.getElementById('topics-list-skeleton');
-            const listReal = document.getElementById('topic-list');
-
-            showProgress();
-            loadTopicsPromise(cat === '全部' ? '' : cat).then(() => {
-                if (listSk) listSk.style.display = 'none';
-                if (listReal) listReal.style.display = 'flex';
-                hideProgress();
-            });
+            var url = API + '/topics?limit=20&offset=0';
+            if (cat) url += '&category=' + encodeURIComponent(cat);
+            fetch(url)
+                .then(function(res) { return res.json(); })
+                .then(function(data) {
+                    topicsData = data.topics || [];
+                    if (listSk) listSk.style.display = 'none';
+                    if (listReal) listReal.style.display = 'flex';
+                    renderTopics();
+                })
+                .catch(function(e) {});
         }
 
         function goToMaterials() {
-            if (!selectedCat) {
-                alert('请先选择赛道！');
-                return;
-            }
-            document.getElementById('selected-cat-tip').style.display = 'block';
-            document.getElementById('tip-cat-name').textContent = selectedCat;
+            if (!selectedCat) { alert('请先选择赛道！'); return; }
+            var tip = document.getElementById('selected-cat-tip');
+            var tipName = document.getElementById('tip-cat-name');
+            if (tip) tip.style.display = 'block';
+            if (tipName) tipName.textContent = selectedCat;
             showPage('materials');
-        }
-
-        // ========== 选题加载 ==========
-        async function loadTopics(cat = '') {
-            try {
-                let url = API + '/topics?limit=20&offset=' + topicsOffset;
-                if (cat) url += '&category=' + encodeURIComponent(cat);
-                const res = await fetch(url);
-                const data = await res.json();
-                if (topicsOffset === 0) topicsData = data.topics || [];
-                else topicsData = topicsData.concat(data.topics || []);
-                renderTopics();
-                document.getElementById('load-more-btn').style.display = (data.topics || []).length === 20 ? 'inline-block' : 'none';
-            } catch (e) {
-                console.error(e);
-            }
         }
 
         function loadMoreTopics() {
             topicsOffset += 20;
-            loadTopics(currentCat);
+            var url = API + '/topics?limit=20&offset=' + topicsOffset;
+            if (selectedCat) url += '&category=' + encodeURIComponent(selectedCat);
+            fetch(url)
+                .then(function(res) { return res.json(); })
+                .then(function(data) {
+                    topicsData = topicsData.concat(data.topics || []);
+                    renderTopics();
+                    var btn = document.getElementById('load-more-btn');
+                    if (btn) btn.style.display = (data.topics || []).length === 20 ? 'inline-block' : 'none';
+                })
+                .catch(function(e) {});
         }
 
         function searchTopics() {
-            const kw = document.getElementById('topic-search').value.trim();
+            var kw = document.getElementById('topic-search').value.trim();
             topicsOffset = 0;
             topicsData = [];
-            if (kw) {
-                showProgress();
-                fetch(API + '/topics?keyword=' + encodeURIComponent(kw) + '&limit=100')
-                    .then(r => r.json())
-                    .then(data => {
-                        topicsData = data.topics || [];
-                        renderTopics();
-                        hideProgress();
-                    });
-            } else {
-                loadTopics();
-            }
+            var url = API + '/topics?limit=100';
+            if (kw) url += '&keyword=' + encodeURIComponent(kw);
+            fetch(url)
+                .then(function(res) { return res.json(); })
+                .then(function(data) {
+                    topicsData = data.topics || [];
+                    renderTopics();
+                })
+                .catch(function(e) {});
         }
 
         function renderTopics() {
-            const list = document.getElementById('topic-list');
+            var list = document.getElementById('topic-list');
+            if (!list) return;
             if (!topicsData.length) {
                 list.innerHTML = '<div class="empty-state"><div class="empty-icon">📝</div><div>暂无选题</div></div>';
                 return;
             }
-            list.innerHTML = topicsData.map((t, i) => `
-                <div class="topic-item">
-                    <div class="topic-rank">${i + 1 + topicsOffset}</div>
-                    <div class="topic-main">
-                        <div class="topic-title">${t.title}</div>
-                        <div class="topic-meta">
-                            <span class="topic-tag cat">${t.category}</span>
-                            <span class="topic-tag">${t.sub_category || ''}</span>
-                            <span>🔥 ${t.heat_score}</span>
-                            <span>📈 ${Math.round(t.transform_rate * 100)}%</span>
-                            <span>⏱️ ${t.duration}</span>
-                        </div>
-                    </div>
-                </div>
-            `).join('');
+            var html = '';
+            for (var i = 0; i < topicsData.length; i++) {
+                var t = topicsData[i];
+                html += '<div class="topic-item">' +
+                    '<div class="topic-rank">' + (i + 1 + topicsOffset) + '</div>' +
+                    '<div class="topic-main"><div class="topic-title">' + t.title + '</div>' +
+                    '<div class="topic-meta"><span class="topic-tag cat">' + t.category + '</span>' +
+                    '<span class="topic-tag">' + (t.sub_category || '') + '</span>' +
+                    '<span>🔥 ' + t.heat_score + '</span><span>📈 ' + Math.round(t.transform_rate * 100) + '%</span>' +
+                    '<span>⏱️ ' + t.duration + '</span></div></div></div>';
+            }
+            list.innerHTML = html;
         }
 
-        // ========== 素材上传 ==========
         function initUploadZone() {
-            const zone = document.getElementById('upload-zone');
-
-            zone.addEventListener('dragover', (e) => {
-                e.preventDefault();
-                zone.classList.add('dragover');
-            });
-
-            zone.addEventListener('dragleave', () => {
-                zone.classList.remove('dragover');
-            });
-
-            zone.addEventListener('drop', (e) => {
+            var zone = document.getElementById('upload-zone');
+            if (!zone) return;
+            zone.addEventListener('dragover', function(e) { e.preventDefault(); zone.classList.add('dragover'); });
+            zone.addEventListener('dragleave', function() { zone.classList.remove('dragover'); });
+            zone.addEventListener('drop', function(e) {
                 e.preventDefault();
                 zone.classList.remove('dragover');
-                handleFileSelect(e.dataTransfer.files);
-            });
-        }
-
-        async function handleFileSelect(files) {
-            if (!files || files.length === 0) return;
-
-            showProgress();
-
-            const formData = new FormData();
-            for (let f of files) {
-                formData.append('file', f);
-            }
-
-            try {
-                const res = await fetch(API + '/materials/upload', {
-                    method: 'POST',
-                    body: formData
-                });
-                const data = await res.json();
-                if (data.success) {
-                    refreshMaterials();
+                var files = e.dataTransfer.files;
+                if (!files || files.length === 0) {
+                    // 可能是从外部服务拖拽（云盘/微信等），浏览器无法获取文件内容
+                    alert('拖拽失败：请使用「点击选择文件」按钮上传素材。\n外部文件请先下载到本地，再拖入或点击上传。');
+                    return;
                 }
-                hideProgress();
-            } catch (e) {
-                console.error(e);
-                hideProgress();
-            }
+                handleFileSelect(files);
+            });
         }
 
-        // ========== 素材加载 ==========
-        async function loadMaterials() {
-            try {
-                const res = await fetch(API + '/materials');
-                const data = await res.json();
-                materialsData = data.materials || [];
-                updateCounts();
-                renderMaterials();
-            } catch (e) {
-                console.error(e);
-            }
+        function handleFileSelect(files) {
+            if (!files || files.length === 0) return;
+            var formData = new FormData();
+            for (var i = 0; i < files.length; i++) formData.append('file', files[i]);
+            fetch(API + '/materials/upload', { method: 'POST', body: formData })
+                .then(function(res) { return res.json(); })
+                .then(function(data) { if (data.success) refreshMaterials(); })
+                .catch(function(e) {});
         }
 
         function refreshMaterials() {
-            loadMaterials();
+            fetch(API + '/materials')
+                .then(function(res) { return res.json(); })
+                .then(function(data) {
+                    materialsData = data.materials || [];
+                    updateCounts();
+                    renderMaterials();
+                })
+                .catch(function(e) {});
         }
 
         function updateCounts() {
-            const counts = { all: materialsData.length, image: 0, video: 0, audio: 0 };
-            materialsData.forEach(m => {
+            var counts = { all: materialsData.length, image: 0, video: 0, audio: 0 };
+            for (var i = 0; i < materialsData.length; i++) {
+                var m = materialsData[i];
                 if (m.type === 'image') counts.image++;
-                if (m.type === 'video') counts.video++;
-                if (m.type === 'audio') counts.audio++;
-            });
-            document.getElementById('count-all').textContent = counts.all;
-            document.getElementById('count-image').textContent = counts.image;
-            document.getElementById('count-video').textContent = counts.video;
-            document.getElementById('count-audio').textContent = counts.audio;
+                else if (m.type === 'video') counts.video++;
+                else if (m.type === 'audio') counts.audio++;
+            }
+            var el = document.getElementById('count-all');
+            if (el) el.textContent = counts.all;
+            el = document.getElementById('count-image');
+            if (el) el.textContent = counts.image;
+            el = document.getElementById('count-video');
+            if (el) el.textContent = counts.video;
+            el = document.getElementById('count-audio');
+            if (el) el.textContent = counts.audio;
         }
 
         function filterMaterials(type) {
-            document.querySelectorAll('.material-tab').forEach(t => {
-                t.classList.toggle('active', t.textContent.includes(type === 'all' ? '全部' : type === 'image' ? '图片' : type === 'video' ? '视频' : '音频'));
-            });
+            var tabs = document.querySelectorAll('.material-tab');
+            for (var i = 0; i < tabs.length; i++) {
+                var text = tabs[i].textContent;
+                var isActive = (type === 'all' && text.indexOf('全部') > -1) ||
+                    (type === 'image' && text.indexOf('图片') > -1) ||
+                    (type === 'video' && text.indexOf('视频') > -1) ||
+                    (type === 'audio' && text.indexOf('音频') > -1);
+                tabs[i].classList.toggle('active', isActive);
+            }
             renderMaterials(type);
         }
 
-        function renderMaterials(type = 'all') {
-            const grid = document.getElementById('material-grid');
-            const actions = document.getElementById('material-actions');
-            let list = materialsData;
-            if (type === 'image') list = materialsData.filter(m => m.type === 'image');
-            if (type === 'video') list = materialsData.filter(m => m.type === 'video');
-            if (type === 'audio') list = materialsData.filter(m => m.type === 'audio');
+        function renderMaterials(type) {
+            type = type || 'all';
+            var grid = document.getElementById('material-grid');
+            var actions = document.getElementById('material-actions');
+            if (!grid) return;
 
-            if (!list.length) {
+            var list = materialsData;
+            var filtered = [];
+            for (var i = 0; i < list.length; i++) {
+                if (type === 'all' || list[i].type === type) filtered.push(list[i]);
+            }
+
+            if (!filtered.length) {
                 grid.innerHTML = '<div class="empty-state" style="grid-column: 1/-1;"><div class="empty-icon">📂</div><div>暂无素材</div><div style="margin-top:8px;font-size:12px;">拖拽或点击上方区域上传素材</div></div>';
-                actions.style.display = 'none';
+                if (actions) actions.style.display = 'none';
                 return;
             }
 
-            actions.style.display = 'flex';
+            if (actions) actions.style.display = 'flex';
 
-            grid.innerHTML = list.map(m => {
-                const isSelected = selectedMaterials.has(m.path);
-                let thumb = '';
+            var html = '';
+            for (var j = 0; j < filtered.length; j++) {
+                var m = filtered[j];
+                var isSelected = selectedMaterials.has(m.path);
+                var fileUrl = '/static/materials/' + encodeURIComponent(m.name);
+                var thumb;
                 if (m.type === 'image') {
-                    thumb = `<img src="file:///${m.path.replace(/\\/g, '/')}" alt="${m.name}">`;
+                    thumb = '<img src="' + fileUrl + '" alt="' + m.name + '" onerror="this.style.display=\'none\'; this.nextSibling.style.display=\'flex\';">' +
+                        '<div style="display:none;align-items:center;justify-content:center;width:100%;height:100%;color:#909090;font-size:24px;">📷</div>';
                 } else if (m.type === 'video') {
-                    thumb = '▶';
+                    if (m.has_thumb && m.thumb_name) {
+                        thumb = '<img src="/static/thumbnails/' + encodeURIComponent(m.thumb_name) + '" alt="' + m.name + '" style="width:100%;height:100%;object-fit:cover;">' +
+                            '<div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:28px;color:#fff;text-shadow:0 1px 4px rgba(0,0,0,0.5);">▶</div>';
+                    } else {
+                        thumb = '<div style="display:flex;align-items:center;justify-content:center;width:100%;height:100%;color:#909090;font-size:28px;">▶</div>';
+                    }
                 } else {
-                    thumb = '🎵';
+                    thumb = '<div style="display:flex;align-items:center;justify-content:center;width:100%;height:100%;color:#909090;font-size:28px;">🎵</div>';
                 }
-                return `
-                    <div class="material-item ${isSelected ? 'selected' : ''}" onclick="toggleMaterial('${m.path.replace(/\\/g, '\\\\')}', event)">
-                        <div class="material-thumb">
-                            ${thumb}
-                            <span class="type-badge">${m.type === 'image' ? '图片' : m.type === 'video' ? '视频' : '音频'}</span>
-                            ${isSelected ? '<div class="check-overlay">✓</div>' : ''}
-                        </div>
-                        <div class="material-name" title="${m.name}">${m.name}</div>
-                        <button class="material-del" onclick="deleteMaterial('${m.name.replace(/'/g, "\\'")}', event)">×</button>
-                    </div>
-                `;
-            }).join('');
+                var badge = m.type === 'image' ? '图片' : (m.type === 'video' ? '视频' : '音频');
+                html += '<div class="material-item ' + (isSelected ? 'selected' : '') + '" data-path="' + m.path.replace(/\\/g, '\\\\') + '" data-type="' + m.type + '">' +
+                    '<div class="material-thumb" onclick="previewMaterial(\'' + m.name.replace(/\\/g, '\\\\').replace(/'/g, "\\'") + '\', \'' + m.type + '\')" style="' + (m.type === 'video' && m.has_thumb ? 'position:relative;' : '') + '">' + thumb +
+                    '<span class="type-badge">' + badge + '</span>' +
+                    (isSelected ? '<div class="check-overlay">✓</div>' : '') + '</div>' +
+                    '<div class="material-name" title="' + m.name + '">' + m.name + '</div>' +
+                    '<button class="material-del" onclick="deleteMaterial(\'' + m.name.replace(/'/g, "\\'") + '\', event)">×</button></div>';
+            }
+            grid.innerHTML = html;
+        }
+
+        function previewMaterial(name, type) {
+            var fileUrl = '/static/materials/' + encodeURIComponent(name);
+            if (type === 'image') {
+                var pi = document.getElementById('preview-img');
+                if (pi) { pi.src = fileUrl; pi.onerror = function() { this.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200"><rect fill="%23E3E5E7" width="200" height="200"/><text x="50%" y="50%" text-anchor="middle" dy=".3em" fill="%23909090" font-size="14">图片加载失败</text></svg>'; }; document.getElementById('img-modal').classList.add('show'); }
+            } else if (type === 'video') {
+                var pv = document.getElementById('preview-video');
+                if (pv) { pv.src = fileUrl; document.getElementById('video-modal').classList.add('show'); }
+            } else if (type === 'audio') {
+                var pa = document.getElementById('preview-audio');
+                if (pa) { pa.src = fileUrl; document.getElementById('audio-modal').classList.add('show'); }
+            }
         }
 
         function toggleMaterial(path, event) {
-            if (event.target.classList.contains('material-del') || event.target.classList.contains('material-name')) {
-                return;
+            if (event.target.classList.contains('material-del') || event.target.classList.contains('material-name') || event.target.closest('.material-thumb')) return;
+            if (selectedMaterials.has(path)) selectedMaterials.delete(path);
+            else selectedMaterials.add(path);
+            var el = document.getElementById('selected-count');
+            if (el) el.textContent = selectedMaterials.size;
+            var activeTab = document.querySelector('.material-tab.active');
+            var type = 'all';
+            if (activeTab) {
+                var text = activeTab.textContent;
+                if (text.indexOf('图片') > -1) type = 'image';
+                else if (text.indexOf('视频') > -1) type = 'video';
+                else if (text.indexOf('音频') > -1) type = 'audio';
             }
-            if (selectedMaterials.has(path)) {
-                selectedMaterials.delete(path);
-            } else {
-                selectedMaterials.add(path);
-            }
-            document.getElementById('selected-count').textContent = selectedMaterials.size;
-            renderMaterials(document.querySelector('.material-tab.active')?.textContent.includes('全部') ? 'all' :
-                           document.querySelector('.material-tab.active')?.textContent.includes('图片') ? 'image' :
-                           document.querySelector('.material-tab.active')?.textContent.includes('视频') ? 'video' : 'audio');
+            renderMaterials(type);
         }
 
-        async function deleteMaterial(name, event) {
+        function deleteMaterial(name, event) {
             event.stopPropagation();
-            if (!confirm(`确定删除素材 "${name}" 吗？`)) return;
-            showProgress();
-            try {
-                await fetch(API + '/materials/' + encodeURIComponent(name), { method: 'DELETE' });
-                selectedMaterials.delete([...materialsData].find(m => m.name === name)?.path || '');
-                refreshMaterials();
-                hideProgress();
-            } catch (e) {
-                console.error(e);
-                hideProgress();
-            }
+            if (!confirm('确定删除素材 "' + name + '" 吗？')) return;
+            fetch(API + '/materials/' + encodeURIComponent(name), { method: 'DELETE' })
+                .then(function(res) { return res.json(); })
+                .then(function() {
+                    for (var i = 0; i < materialsData.length; i++) {
+                        if (materialsData[i].name === name) selectedMaterials.delete(materialsData[i].path);
+                    }
+                    refreshMaterials();
+                })
+                .catch(function(e) {});
         }
 
-        async function clearAllMaterials() {
+        function clearAllMaterials() {
             if (!confirm('确定清空所有素材吗？此操作不可恢复！')) return;
-            showProgress();
-            try {
-                await fetch(API + '/materials/clear', { method: 'POST' });
-                selectedMaterials.clear();
-                refreshMaterials();
-                hideProgress();
-            } catch (e) {
-                console.error(e);
-                hideProgress();
-            }
+            fetch(API + '/materials/clear', { method: 'POST' })
+                .then(function(res) { return res.json(); })
+                .then(function() { selectedMaterials.clear(); refreshMaterials(); })
+                .catch(function(e) {});
         }
 
         function openMaterialFolder() {
             window.open('file:///D:/Offline-ShortVideo-Agent/assets/素材池_待剪辑');
         }
 
-        // ========== 平台选择 ==========
         function selectGenPlatform(p) {
             selectedPlatform = p;
-            document.querySelectorAll('.tab-row .tab-item').forEach(t => {
-                t.classList.toggle('active', t.dataset.platform === p);
-            });
+            var items = document.querySelectorAll('.tab-row .tab-item');
+            for (var i = 0; i < items.length; i++) {
+                if (items[i].dataset.platform !== undefined) {
+                    items[i].classList.toggle('active', items[i].dataset.platform === p);
+                }
+            }
         }
 
-        // ========== 生成视频 ==========
-        async function startGenerateWithMaterials() {
-            if (!selectedCat) {
-                alert('请先选择赛道！');
-                showPage('home');
-                return;
-            }
-
+        function startGenerateWithMaterials() {
+            if (!selectedCat) { alert('请先选择赛道！'); showPage('home'); return; }
             showPage('generating');
             updateStep('topic', 'running', '正在从爆款库中选择...');
             updateStep('script', 'pending', '等待选题...');
@@ -1889,140 +1870,141 @@
             updateStep('subtitle', 'pending', '等待剪辑...');
             updateStep('export', 'pending', '等待字幕...');
 
-            const log = document.getElementById('log-box');
-            log.innerHTML = '';
+            var log = document.getElementById('log-box');
+            if (log) log.innerHTML = '';
             addLog('info', '开始生成视频...');
 
-            const platforms = selectedPlatform === 'all' ? ['抖音', '小红书', 'B站'] : [selectedPlatform];
+            var platforms = selectedPlatform === 'all' ? ['抖音', '小红书', 'B站'] : [selectedPlatform];
 
-            try {
-                const res = await fetch(API + '/generate/with-materials', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        category: selectedCat,
-                        platforms: platforms,
-                        materials: [...selectedMaterials]
-                    })
-                });
-
-                const data = await res.json();
-
+            fetch(API + '/generate/with-materials', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ category: selectedCat, platforms: platforms, materials: Array.from(selectedMaterials) })
+            })
+            .then(function(res) { return res.json(); })
+            .then(function(data) {
                 if (data.error) {
                     addLog('err', '错误: ' + data.error);
                     alert('生成失败: ' + data.error);
                     showPage('materials');
                     return;
                 }
-
-                // 更新所有步骤为成功
-                const steps = ['topic', 'script', 'material', 'video', 'subtitle', 'export'];
-                steps.forEach(s => updateStep(s, 'success', '完成'));
-
+                var steps = ['topic', 'script', 'material', 'video', 'subtitle', 'export'];
+                for (var i = 0; i < steps.length; i++) updateStep(steps[i], 'success', '完成');
                 addLog('suc', '视频生成成功！');
-                document.getElementById('progress-text').textContent = '完成！';
-                document.getElementById('progress-step').textContent = '6/6';
-
-                // 显示结果
+                var pt = document.getElementById('progress-text');
+                if (pt) pt.textContent = '完成！';
+                var ps = document.getElementById('progress-step');
+                if (ps) ps.textContent = '6/6';
                 showResult(data);
-
-            } catch (e) {
+            })
+            .catch(function(e) {
                 addLog('err', '请求失败: ' + e.message);
                 alert('生成失败: ' + e.message);
                 showPage('materials');
-            }
+            });
         }
 
         function updateStep(step, status, msg) {
-            const icon = document.getElementById(`step-${step}-icon`);
-            const msgEl = document.getElementById(`step-${step}-msg`);
+            var icon = document.getElementById('step-' + step + '-icon');
+            var msgEl = document.getElementById('step-' + step + '-msg');
             if (icon) {
-                icon.className = `step-icon ${status}`;
-                icon.textContent = status === 'success' ? '✓' : status === 'error' ? '✗' : status === 'running' ? '...' : '○';
+                icon.className = 'step-icon ' + status;
+                icon.textContent = status === 'success' ? '✓' : (status === 'error' ? '✗' : (status === 'running' ? '...' : '○'));
             }
             if (msgEl) msgEl.textContent = msg;
         }
 
         function addLog(type, msg) {
-            const log = document.getElementById('log-box');
-            log.innerHTML += `<div class="log-line log-${type}">${msg}</div>`;
-            log.scrollTop = log.scrollHeight;
+            var log = document.getElementById('log-box');
+            if (log) { log.innerHTML += '<div class="log-line log-' + type + '">' + msg + '</div>'; log.scrollTop = log.scrollHeight; }
         }
 
         function showResult(data) {
-            const works = data.works || [];
-            document.getElementById('result-summary').textContent = `已为 ${works.length} 个平台生成投稿`;
-
-            const worksGrid = document.getElementById('result-works');
-            worksGrid.innerHTML = works.map(w => `
-                <div style="background: #F5F6F7; border-radius: 4px; padding: 16px; text-align: center;">
-                    <div style="font-size: 32px; margin-bottom: 8px;">${w.platform === '抖音' ? '🎵' : w.platform === '小红书' ? '📕' : '📺'}</div>
-                    <div style="font-weight: 600; color: #232529;">${w.platform}</div>
-                    <div style="font-size: 12px; color: #909090; margin-top: 4px;">已导出</div>
-                </div>
-            `).join('');
-
+            var works = data.works || [];
+            var summary = document.getElementById('result-summary');
+            if (summary) summary.textContent = '已为 ' + works.length + ' 个平台生成投稿';
+            var worksGrid = document.getElementById('result-works');
+            if (worksGrid) {
+                var html = '';
+                for (var i = 0; i < works.length; i++) {
+                    var w = works[i];
+                    var icon = w.platform === '抖音' ? '🎵' : (w.platform === '小红书' ? '📕' : '📺');
+                    html += '<div style="background: #F5F6F7; border-radius: 4px; padding: 16px; text-align: center;">' +
+                        '<div style="font-size: 32px; margin-bottom: 8px;">' + icon + '</div>' +
+                        '<div style="font-weight: 600; color: #232529;">' + w.platform + '</div>' +
+                        '<div style="font-size: 12px; color: #909090; margin-top: 4px;">已导出</div></div>';
+                }
+                worksGrid.innerHTML = html;
+            }
             showPage('result');
         }
 
         function goHome() {
             selectedCat = null;
             selectedMaterials.clear();
-            document.querySelectorAll('#home-category .category-item').forEach(item => item.classList.remove('selected'));
-            document.getElementById('go-materials-btn').disabled = true;
+            var items = document.querySelectorAll('#home-category .category-item');
+            for (var i = 0; i < items.length; i++) items[i].classList.remove('selected');
+            var btn = document.getElementById('go-materials-btn');
+            if (btn) btn.disabled = true;
             showPage('home');
-            loadHome();
         }
 
-        // ========== 作品加载 ==========
-        async function loadWorks() {
-            try {
-                const res = await fetch(API + '/works');
-                const data = await res.json();
-                worksData = data.works || [];
-                renderWorks();
-            } catch (e) {
-                console.error(e);
-            }
+        function loadWorks() {
+            fetch(API + '/works')
+                .then(function(res) { return res.json(); })
+                .then(function(data) { worksData = data.works || []; renderWorks(); })
+                .catch(function(e) {});
         }
 
         function filterWorks(p) {
             currentWorkPlatform = p;
-            document.querySelectorAll('#page-works .tab-item').forEach(t => {
-                t.classList.toggle('active', t.dataset.wplatform === p);
-            });
+            var items = document.querySelectorAll('#page-works .tab-item');
+            for (var i = 0; i < items.length; i++) {
+                if (items[i].dataset.wplatform !== undefined) {
+                    items[i].classList.toggle('active', items[i].dataset.wplatform === p);
+                }
+            }
             renderWorks();
         }
 
         function renderWorks() {
-            const grid = document.getElementById('video-grid');
-            const empty = document.getElementById('works-empty');
-            let list = worksData;
-            if (currentWorkPlatform !== 'all') list = worksData.filter(w => w.platform === currentWorkPlatform);
+            var grid = document.getElementById('video-grid');
+            var empty = document.getElementById('works-empty');
+            if (!grid) return;
 
-            if (!list.length) {
+            var list = worksData;
+            var filtered = [];
+            for (var i = 0; i < list.length; i++) {
+                if (currentWorkPlatform === 'all' || list[i].platform === currentWorkPlatform) filtered.push(list[i]);
+            }
+
+            if (!filtered.length) {
                 grid.innerHTML = '';
-                empty.style.display = 'block';
                 grid.style.display = 'none';
+                if (empty) empty.style.display = 'block';
                 return;
             }
-            empty.style.display = 'none';
+
+            if (empty) empty.style.display = 'none';
             grid.style.display = 'grid';
-            grid.innerHTML = list.map(w => `
-                <div class="video-item" onclick="previewWork('${w.path.replace(/\\/g, '\\\\')}')">
-                    <div class="video-thumb">${w.platform === '抖音' ? '🎵' : w.platform === '小红书' ? '📕' : '📺'}</div>
-                    <div class="video-info">
-                        <div class="video-title">${w.title || '未命名'}</div>
-                        <div class="video-meta">${w.platform} · ${w.date}</div>
-                    </div>
-                </div>
-            `).join('');
+
+            var html = '';
+            for (var j = 0; j < filtered.length; j++) {
+                var w = filtered[j];
+                var icon = w.platform === '抖音' ? '🎵' : (w.platform === '小红书' ? '📕' : '📺');
+                html += '<div class="video-item" onclick="previewWork(\'' + w.path.replace(/\\/g, '\\\\') + '\')">' +
+                    '<div class="video-thumb">' + icon + '</div>' +
+                    '<div class="video-info"><div class="video-title">' + (w.title || '未命名') + '</div>' +
+                    '<div class="video-meta">' + w.platform + ' · ' + w.date + '</div></div></div>';
+            }
+            grid.innerHTML = html;
         }
 
         function previewWork(path) {
             if (/\.(mp4|avi|mov)$/i.test(path)) {
-                document.getElementById('preview-video').src = 'file:///' + path;
-                document.getElementById('video-modal').classList.add('show');
+                var pv = document.getElementById('preview-video');
+                if (pv) { pv.src = 'file:///' + path; document.getElementById('video-modal').classList.add('show'); }
             }
         }
 
@@ -2030,66 +2012,22 @@
             window.open('file:///D:/Offline-ShortVideo-Agent/output');
         }
 
-        // ========== 统计页加载 ==========
-        async function loadStatsPage() {
-            try {
-                const res = await fetch(API + '/stats');
-                const data = await res.json();
-
-                document.getElementById('stats-grid').innerHTML = `
-                    <div class="stat-item">
-                        <div class="stat-icon">📝</div>
-                        <div><div class="stat-num">${data.topics_count || 0}</div><div class="stat-label">选题总数</div></div>
-                    </div>
-                    <div class="stat-item blue">
-                        <div class="stat-icon">🎬</div>
-                        <div><div class="stat-num">${data.works_count || 0}</div><div class="stat-label">作品总数</div></div>
-                    </div>
-                `;
-
-                const catStats = data.category_stats || {};
-                document.getElementById('cat-stats').innerHTML = Object.entries(catStats).map(([k, v]) => `
-                    <div style="background:#F5F6F7;border-radius:4px;padding:12px;text-align:center;">
-                        <div style="font-size:12px;color:#909090;">${k}</div>
-                        <div style="font-size:20px;font-weight:700;color:#FB7299;margin-top:4px;">${v}</div>
-                    </div>
-                `).join('');
-
-                const cs = data.cache_stats || {};
-                document.getElementById('cache-info-real').innerHTML = `
-                    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;">
-                        <div style="background:#F5F6F7;padding:12px;border-radius:4px;text-align:center;">
-                            <div style="font-size:18px;font-weight:700;color:#23ADE5;">${cs.hits || 0}</div>
-                            <div style="font-size:12px;color:#909090;">命中</div>
-                        </div>
-                        <div style="background:#F5F6F7;padding:12px;border-radius:4px;text-align:center;">
-                            <div style="font-size:18px;font-weight:700;color:#909090;">${cs.misses || 0}</div>
-                            <div style="font-size:12px;color:#909090;">未命中</div>
-                        </div>
-                        <div style="background:#F5F6F7;padding:12px;border-radius:4px;text-align:center;">
-                            <div style="font-size:18px;font-weight:700;color:#FB7299;">${cs.size || 0}</div>
-                            <div style="font-size:12px;color:#909090;">缓存条目</div>
-                        </div>
-                        <div style="background:#F5F6F7;padding:12px;border-radius:4px;text-align:center;">
-                            <div style="font-size:18px;font-weight:700;color:#52C41A;">${data.cache_hit_rate || '0%'}</div>
-                            <div style="font-size:12px;color:#909090;">命中率</div>
-                        </div>
-                    </div>
-                `;
-            } catch (e) {
-                console.error(e);
-            }
-        }
-
-        // ========== 模态框 ==========
         function closeModal(id) {
             document.getElementById(id).classList.remove('show');
             if (id === 'video-modal') {
-                document.getElementById('preview-video').pause();
+                var pv = document.getElementById('preview-video');
+                if (pv) pv.pause();
+            } else if (id === 'audio-modal') {
+                var pa = document.getElementById('preview-audio');
+                if (pa) pa.pause();
             }
-            if (id === 'audio-modal') {
-                document.getElementById('preview-audio').pause();
-            }
+        }
+
+        // 页面加载完成后初始化
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', init);
+        } else {
+            init();
         }
     </script>
 </body>

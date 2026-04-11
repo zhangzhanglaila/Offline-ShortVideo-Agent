@@ -12,6 +12,9 @@ import time
 import webbrowser
 import threading
 import shutil
+import subprocess
+import base64
+import uuid
 from pathlib import Path
 from datetime import datetime
 from functools import wraps
@@ -47,6 +50,78 @@ _analytics_module = None
 
 # 素材暂存目录
 UPLOAD_TEMP_DIR = config.MATERIAL_DIR
+THUMBNAILS_DIR = config.ASSETS_DIR / "thumbnails"
+
+# 确保缩略图目录存在
+THUMBNAILS_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def generate_video_thumbnail(video_path, output_path=None):
+    """使用ffmpeg生成视频缩略图"""
+    if output_path is None:
+        output_path = THUMBNAILS_DIR / (Path(video_path).stem + '_thumb.jpg')
+    else:
+        output_path = Path(output_path)
+
+    try:
+        # 提取第1秒的第1帧
+        cmd = [
+            'ffmpeg', '-y', '-i', str(video_path),
+            '-ss', '00:00:01', '-vframes', '1',
+            '-vf', 'scale=320:180',
+            '-q:v', '2',
+            str(output_path)
+        ]
+        result = subprocess.run(cmd, capture_output=True, timeout=30)
+        if result.returncode == 0 and output_path.exists():
+            return str(output_path)
+    except Exception as e:
+        print(f"缩略图生成失败: {e}")
+    return None
+
+
+def transcode_video_for_web(video_path):
+    """转码视频为浏览器兼容的H.264格式，解决黑屏问题"""
+    original = Path(video_path)
+    if not original.exists():
+        return video_path
+
+    # 检查是否已经是H.264编码（快速检查）
+    try:
+        probe = subprocess.run(
+            ['ffprobe', '-v', 'quiet', '-print_format', 'json', '-show_streams', str(original)],
+            capture_output=True, text=True, timeout=10
+        )
+        streams = json.loads(probe.stdout).get('streams', [])
+        for s in streams:
+            if s.get('codec_type') == 'video':
+                codec = s.get('codec_name', '')
+                # 已经是H.264且不是 HEVC (H.265)，直接返回原文件
+                if codec in ('h264', 'libx264') and 'hevc' not in original.name.lower():
+                    return video_path
+    except Exception:
+        pass
+
+    # 需要转码，输出到临时文件
+    temp_output = original.parent / (original.stem + '_web.mp4')
+    if temp_output.exists():
+        return str(temp_output)
+
+    try:
+        cmd = [
+            'ffmpeg', '-y', '-i', str(original),
+            '-c:v', 'libx264', '-preset', 'fast', '-crf', '23',
+            '-c:a', 'aac', '-b:a', '128k',
+            '-movflags', '+faststart',
+            str(temp_output)
+        ]
+        result = subprocess.run(cmd, capture_output=True, timeout=300)
+        if result.returncode == 0 and temp_output.exists():
+            return str(temp_output)
+    except Exception as e:
+        print(f"视频转码失败: {e}")
+
+    return video_path  # 转码失败返回原文件
 
 
 def get_topics_module():
@@ -113,6 +188,20 @@ def init_database():
 def index():
     """首页"""
     return send_file('web/index.html')
+
+
+@app.route('/static/materials/<path:filename>')
+def serve_material(filename):
+    """提供素材文件访问"""
+    from flask import send_from_directory
+    return send_from_directory(UPLOAD_TEMP_DIR, filename)
+
+
+@app.route('/static/thumbnails/<path:filename>')
+def serve_thumbnail(filename):
+    """提供视频缩略图访问"""
+    from flask import send_from_directory
+    return send_from_directory(THUMBNAILS_DIR, filename)
 
 
 @app.route('/api/stats')
@@ -227,13 +316,19 @@ def api_materials():
                     else:
                         continue
 
+                    thumb_name = f.stem + '_thumb.jpg'
+                    thumb_path = THUMBNAILS_DIR / thumb_name
+                    has_thumb = thumb_path.exists()
+
                     materials.append({
                         'name': f.name,
                         'path': str(f),
                         'type': mtype,
                         'size': f.stat().st_size,
                         'size_str': format_size(f.stat().st_size),
-                        'date': datetime.fromtimestamp(f.stat().st_mtime).strftime('%Y-%m-%d %H:%M')
+                        'date': datetime.fromtimestamp(f.stat().st_mtime).strftime('%Y-%m-%d %H:%M'),
+                        'has_thumb': has_thumb,
+                        'thumb_name': thumb_name if has_thumb else None
                     })
 
         materials.sort(key=lambda x: x['date'], reverse=True)
@@ -257,6 +352,24 @@ def api_materials_upload():
                 # 保存到素材目录
                 save_path = Path(UPLOAD_TEMP_DIR) / f.filename
                 f.save(str(save_path))
+
+                ext = Path(f.filename).suffix.lower()
+                # 视频文件：生成缩略图 + 转码
+                if ext in ['.mp4', '.avi', '.mov', '.mkv']:
+                    print(f"[上传] 处理视频: {f.filename}")
+                    # 生成缩略图
+                    thumb = generate_video_thumbnail(str(save_path))
+                    print(f"[上传] 缩略图: {thumb}")
+                    # 转码为H.264
+                    web_path = transcode_video_for_web(str(save_path))
+                    if web_path != str(save_path):
+                        # 替换原文件为转码后的文件
+                        try:
+                            shutil.move(web_path, str(save_path))
+                            print(f"[上传] 已转码: {f.filename}")
+                        except Exception as e:
+                            print(f"[上传] 移动转码文件失败: {e}")
+
                 uploaded.append(f.filename)
 
         return jsonify({
@@ -628,6 +741,17 @@ def format_size(size):
 
 # ==================== 启动 ====================
 
+def check_port_in_use(port):
+    """检查端口是否已被占用"""
+    import socket
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        try:
+            s.bind(('127.0.0.1', port))
+            return False  # 端口可用
+        except OSError:
+            return True   # 端口已被占用
+
+
 def open_browser():
     """延迟打开浏览器"""
     def _open():
@@ -638,6 +762,12 @@ def open_browser():
 
 def main():
     """主函数"""
+    # 检查是否已有实例在运行
+    if check_port_in_use(5000):
+        print("检测到已有实例在运行，请先关闭后再启动")
+        print("或者直接访问: http://127.0.0.1:5000")
+        return
+
     print("=" * 60)
     print("   Offline-ShortVideo-Agent Web 前端")
     print("   访问地址: http://127.0.0.1:5000")
@@ -654,9 +784,6 @@ def main():
 
     # 确保素材目录存在
     Path(UPLOAD_TEMP_DIR).mkdir(parents=True, exist_ok=True)
-
-    # 打开浏览器
-    open_browser()
 
     # 启动Flask
     print("\n[启动] Web服务已启动，请访问 http://127.0.0.1:5000")
