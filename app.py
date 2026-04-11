@@ -15,6 +15,7 @@ import shutil
 import subprocess
 import base64
 import uuid
+import queue
 from pathlib import Path
 from datetime import datetime
 from functools import wraps
@@ -55,6 +56,47 @@ THUMBNAILS_DIR = config.ASSETS_DIR / "thumbnails"
 # 确保缩略图目录存在
 THUMBNAILS_DIR.mkdir(parents=True, exist_ok=True)
 
+# 日志推送队列
+_log_queue = queue.Queue()
+_log_clients = []
+_clients_lock = threading.Lock()
+
+
+def push_log(msg, level='info'):
+    """推送日志到所有客户端"""
+    entry = {'time': time.strftime('%H:%M:%S'), 'msg': msg, 'level': level}
+    _log_queue.put(entry)
+    with _clients_lock:
+        for q in _log_clients:
+            try:
+                q.put_nowait(entry)
+            except:
+                pass
+
+
+@app.route('/api/logs/stream')
+def log_stream():
+    """SSE日志流"""
+    from flask import Response
+    def gen():
+        q = queue.Queue()
+        with _clients_lock:
+            _log_clients.append(q)
+        try:
+            while True:
+                try:
+                    entry = q.get(timeout=30)
+                    yield f"data: {json.dumps(entry, ensure_ascii=False)}\n\n"
+                except queue.Empty:
+                    yield f"data: {json.dumps({'type':'ping'})}\n\n"
+        finally:
+            with _clients_lock:
+                _log_clients.remove(q)
+    return Response(gen(), mimetype='text/event-stream', headers={
+        'Cache-Control': 'no-cache',
+        'X-Accel-Buffering': 'no'
+    })
+
 
 def generate_video_thumbnail(video_path, output_path=None):
     """使用ffmpeg生成视频缩略图"""
@@ -76,7 +118,7 @@ def generate_video_thumbnail(video_path, output_path=None):
         if result.returncode == 0 and output_path.exists():
             return str(output_path)
     except Exception as e:
-        print(f"缩略图生成失败: {e}")
+        push_log(f'缩略图生成失败: {e}', 'error')
     return None
 
 
@@ -119,7 +161,7 @@ def transcode_video_for_web(video_path):
         if result.returncode == 0 and temp_output.exists():
             return str(temp_output)
     except Exception as e:
-        print(f"视频转码失败: {e}")
+        push_log(f'视频转码失败: {e}', 'error')
 
     return video_path  # 转码失败返回原文件
 
@@ -320,6 +362,17 @@ def api_materials():
                     thumb_path = THUMBNAILS_DIR / thumb_name
                     has_thumb = thumb_path.exists()
 
+                    # 视频没有缩略图，自动生成
+                    if mtype == 'video' and not has_thumb:
+                        def gen():
+                            push_log(f"🎬 生成缩略图: {f.name}", 'info')
+                            thumb = generate_video_thumbnail(str(f))
+                            if thumb:
+                                push_log(f"🖼️ 缩略图完成: {Path(thumb).name}", 'success')
+                            else:
+                                push_log(f"❌ 缩略图失败: {f.name}", 'error')
+                        threading.Thread(target=gen, daemon=True).start()
+
                     materials.append({
                         'name': f.name,
                         'path': str(f),
@@ -354,21 +407,22 @@ def api_materials_upload():
                 f.save(str(save_path))
 
                 ext = Path(f.filename).suffix.lower()
-                # 视频文件：生成缩略图 + 转码
+                # 视频文件：后台生成缩略图 + 转码
                 if ext in ['.mp4', '.avi', '.mov', '.mkv']:
-                    print(f"[上传] 处理视频: {f.filename}")
-                    # 生成缩略图
-                    thumb = generate_video_thumbnail(str(save_path))
-                    print(f"[上传] 缩略图: {thumb}")
-                    # 转码为H.264
-                    web_path = transcode_video_for_web(str(save_path))
-                    if web_path != str(save_path):
-                        # 替换原文件为转码后的文件
-                        try:
-                            shutil.move(web_path, str(save_path))
-                            print(f"[上传] 已转码: {f.filename}")
-                        except Exception as e:
-                            print(f"[上传] 移动转码文件失败: {e}")
+                    def process_video():
+                        push_log(f"🎬 开始处理: {f.name}", 'info')
+                        thumb = generate_video_thumbnail(str(save_path))
+                        if thumb:
+                            push_log(f"🖼️ 缩略图完成: {Path(thumb).name}", 'success')
+                        # 转码为H.264
+                        web_path = transcode_video_for_web(str(save_path))
+                        if web_path != str(save_path):
+                            try:
+                                shutil.move(web_path, str(save_path))
+                                push_log(f"✅ 转码完成: {f.name}", 'success')
+                            except Exception as e:
+                                push_log(f"❌ 转码失败: {e}", 'error')
+                    threading.Thread(target=process_video, daemon=True).start()
 
                 uploaded.append(f.filename)
 

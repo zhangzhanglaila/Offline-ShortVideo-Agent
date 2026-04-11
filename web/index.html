@@ -878,6 +878,30 @@
             .bili-header { padding: 0 12px; }
             .nav-item { padding: 0 12px; font-size: 13px; }
         }
+        /* ========== 实时日志通知 ========== */
+        .toast-item {
+            background: #FFF;
+            color: #18191C;
+            padding: 16px 22px;
+            border-radius: 10px;
+            font-size: 15px;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+            border: 1px solid #E3E5E7;
+            animation: toastIn 0.3s ease;
+            opacity: 1;
+            transition: opacity 0.5s ease;
+            max-width: 440px;
+            min-width: 300px;
+            line-height: 1.6;
+        }
+        .toast-item.toast-success { border-left: 5px solid #23ADE5; }
+        .toast-item.toast-error { border-left: 5px solid #FB7299; }
+        .toast-item.toast-info { border-left: 5px solid #FB7299; }
+        .toast-item.toast-fadeout { opacity: 0; }
+        @keyframes toastIn {
+            from { transform: translateX(120%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
     </style>
 </head>
 <body>
@@ -1323,6 +1347,9 @@
         </div>
     </div>
 
+    <!-- 实时日志通知 -->
+    <div id="toast-container" style="position:fixed;bottom:80px;right:20px;z-index:9999;display:flex;flex-direction:column;gap:8px;pointer-events:none;"></div>
+
     <script>
         // ========== 全局状态 ==========
         var API = '/api';
@@ -1382,6 +1409,7 @@
         function init() {
             initUploadZone();
             startHomeProgress();
+            initLogStream();
 
             var timeout = setTimeout(function() {
                 finishHomeLoading();
@@ -1396,6 +1424,37 @@
                 finishHomeLoading();
                 finishHomeProgress();
             });
+        }
+
+        // ========== 实时日志通知 ==========
+        function initLogStream() {
+            try {
+                var es = new EventSource(API + '/logs/stream');
+                es.onmessage = function(e) {
+                    var data = JSON.parse(e.data);
+                    if (data.type === 'ping') return;
+                    showToast(data.msg, data.level || 'info');
+                };
+                es.onerror = function() {
+                    es.close();
+                    // 3秒后重连
+                    setTimeout(initLogStream, 3000);
+                };
+            } catch(e) {}
+        }
+
+        function showToast(msg, level) {
+            var container = document.getElementById('toast-container');
+            if (!container) return;
+            var item = document.createElement('div');
+            item.className = 'toast-item toast-' + (level || 'info');
+            item.textContent = msg;
+            container.appendChild(item);
+            // 6秒后淡出
+            setTimeout(function() {
+                item.classList.add('toast-fadeout');
+                setTimeout(function() { if (item.parentNode) item.parentNode.removeChild(item); }, 500);
+            }, 6000);
         }
 
         function finishHomeLoading() {
