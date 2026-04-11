@@ -1068,6 +1068,17 @@
                     </div>
                     <input type="file" class="upload-input" id="file-input" multiple accept=".jpg,.jpeg,.png,.webp,.mp4,.avi,.mov,.mkv,.mp3,.wav,.aac,.m4a" onchange="handleFileSelect(this.files)">
 
+                    <!-- 上传进度条 -->
+                    <div id="upload-progress-wrap" style="display:none; margin-top: 12px;">
+                        <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+                            <span style="font-size:13px;color:#606773;">上传中...</span>
+                            <span id="upload-progress-pct" style="font-size:13px;color:var(--bili-pink);font-weight:600;">0%</span>
+                        </div>
+                        <div style="height:6px;background:#E3E5E7;border-radius:3px;overflow:hidden;">
+                            <div id="upload-progress-fill" style="height:100%;background:var(--bili-pink);border-radius:3px;transition:width 0.2s ease;width:0%;"></div>
+                        </div>
+                    </div>
+
                     <div id="selected-cat-tip" style="margin-top: 16px; padding: 12px 16px; background: #FFF5F7; border-radius: 4px; display: none;">
                         <span style="color: var(--bili-pink);">📍 当前赛道：</span>
                         <span id="tip-cat-name" style="font-weight: 600; color: #232529;"></span>
@@ -1753,11 +1764,56 @@
         function handleFileSelect(files) {
             if (!files || files.length === 0) return;
             var formData = new FormData();
-            for (var i = 0; i < files.length; i++) formData.append('file', files[i]);
-            fetch(API + '/materials/upload', { method: 'POST', body: formData })
-                .then(function(res) { return res.json(); })
-                .then(function(data) { if (data.success) refreshMaterials(); })
-                .catch(function(e) {});
+            var filenames = [];
+            for (var i = 0; i < files.length; i++) {
+                formData.append('file', files[i]);
+                filenames.push(files[i].name);
+            }
+
+            // 立即在列表显示占位项
+            for (var i = 0; i < filenames.length; i++) {
+                var fakeItem = {
+                    name: filenames[i],
+                    path: '',
+                    type: filenames[i].match(/\.(mp4|avi|mov|mkv)$/i) ? 'video' :
+                          filenames[i].match(/\.(mp3|wav|aac|m4a)$/i) ? 'audio' : 'image',
+                    has_thumb: false,
+                    thumb_name: null
+                };
+                materialsData.unshift(fakeItem);
+            }
+            renderMaterials();
+            updateCounts();
+
+            // 显示进度条
+            var progressWrap = document.getElementById('upload-progress-wrap');
+            var progressFill = document.getElementById('upload-progress-fill');
+            var progressPct = document.getElementById('upload-progress-pct');
+            if (progressWrap) progressWrap.style.display = 'block';
+            if (progressFill) progressFill.style.width = '0%';
+            if (progressPct) progressPct.textContent = '0%';
+
+            // 用XMLHttpRequest追踪上传进度
+            var xhr = new XMLHttpRequest();
+            xhr.open('POST', API + '/materials/upload', true);
+            xhr.upload.onprogress = function(e) {
+                if (e.lengthComputable && progressFill) {
+                    var pct = Math.round((e.loaded / e.total) * 100);
+                    progressFill.style.width = pct + '%';
+                    if (progressPct) progressPct.textContent = pct + '%';
+                }
+            };
+            xhr.onload = function() {
+                if (progressWrap) progressWrap.style.display = 'none';
+                if (xhr.status === 200) {
+                    refreshMaterials();
+                }
+            };
+            xhr.onerror = function() {
+                if (progressWrap) progressWrap.style.display = 'none';
+                refreshMaterials();
+            };
+            xhr.send(formData);
         }
 
         function refreshMaterials() {

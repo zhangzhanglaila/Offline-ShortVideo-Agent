@@ -39,7 +39,7 @@ from core.db_init import init_topics_db, insert_sample_topics
 app = Flask(__name__, static_folder='web', static_url_path='')
 app.config['JSON_AS_ASCII'] = False
 app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
-app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500MB max
+app.config['MAX_CONTENT_LENGTH'] = 2 * 1024 * 1024 * 1024  # 2GB max
 
 # 全局模块实例
 _topics_module = None
@@ -106,7 +106,6 @@ def generate_video_thumbnail(video_path, output_path=None):
         output_path = Path(output_path)
 
     try:
-        # 提取第1秒的第1帧
         cmd = [
             'ffmpeg', '-y', '-i', str(video_path),
             '-ss', '00:00:01', '-vframes', '1',
@@ -114,11 +113,13 @@ def generate_video_thumbnail(video_path, output_path=None):
             '-q:v', '2',
             str(output_path)
         ]
-        result = subprocess.run(cmd, capture_output=True, timeout=30)
+        result = subprocess.run(cmd, capture_output=True, timeout=60)
         if result.returncode == 0 and output_path.exists():
             return str(output_path)
+    except subprocess.TimeoutExpired:
+        print(f"[缩略图] 超时: {video_path}")
     except Exception as e:
-        push_log(f'缩略图生成失败: {e}', 'error')
+        print(f"[缩略图] 失败: {e}")
     return None
 
 
@@ -128,23 +129,22 @@ def transcode_video_for_web(video_path):
     if not original.exists():
         return video_path
 
-    # 检查是否已经是H.264编码（快速检查）
+    # 检查是否已经是H.264编码
     try:
         probe = subprocess.run(
             ['ffprobe', '-v', 'quiet', '-print_format', 'json', '-show_streams', str(original)],
-            capture_output=True, text=True, timeout=10
+            capture_output=True, text=True, timeout=15
         )
         streams = json.loads(probe.stdout).get('streams', [])
         for s in streams:
             if s.get('codec_type') == 'video':
                 codec = s.get('codec_name', '')
-                # 已经是H.264且不是 HEVC (H.265)，直接返回原文件
                 if codec in ('h264', 'libx264') and 'hevc' not in original.name.lower():
                     return video_path
     except Exception:
         pass
 
-    # 需要转码，输出到临时文件
+    # 需要转码
     temp_output = original.parent / (original.stem + '_web.mp4')
     if temp_output.exists():
         return str(temp_output)
@@ -157,13 +157,15 @@ def transcode_video_for_web(video_path):
             '-movflags', '+faststart',
             str(temp_output)
         ]
-        result = subprocess.run(cmd, capture_output=True, timeout=300)
+        result = subprocess.run(cmd, capture_output=True, timeout=600)
         if result.returncode == 0 and temp_output.exists():
             return str(temp_output)
+    except subprocess.TimeoutExpired:
+        print(f"[转码] 超时: {original.name}")
     except Exception as e:
-        push_log(f'视频转码失败: {e}', 'error')
+        print(f"[转码] 失败: {e}")
 
-    return video_path  # 转码失败返回原文件
+    return video_path
 
 
 def get_topics_module():
@@ -364,13 +366,13 @@ def api_materials():
 
                     # 视频没有缩略图，自动生成
                     if mtype == 'video' and not has_thumb:
-                        def gen():
-                            push_log(f"🎬 生成缩略图: {f.name}", 'info')
-                            thumb = generate_video_thumbnail(str(f))
+                        def gen(fname=f.name, fpath=str(f)):
+                            print(f"[缩略图] 后台生成: {fname}")
+                            thumb = generate_video_thumbnail(fpath)
                             if thumb:
-                                push_log(f"🖼️ 缩略图完成: {Path(thumb).name}", 'success')
+                                print(f"[缩略图] 完成: {Path(thumb).name}")
                             else:
-                                push_log(f"❌ 缩略图失败: {f.name}", 'error')
+                                print(f"[缩略图] 失败: {fname}")
                         threading.Thread(target=gen, daemon=True).start()
 
                     materials.append({
@@ -387,6 +389,8 @@ def api_materials():
         materials.sort(key=lambda x: x['date'], reverse=True)
         return jsonify({'materials': materials})
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
 
@@ -405,24 +409,37 @@ def api_materials_upload():
                 # 保存到素材目录
                 save_path = Path(UPLOAD_TEMP_DIR) / f.filename
                 f.save(str(save_path))
+                print(f"[上传] 保存成功: {f.name}")
 
                 ext = Path(f.filename).suffix.lower()
-                # 视频文件：后台生成缩略图 + 转码
+                # 视频文件：立即提示，后台处理
                 if ext in ['.mp4', '.avi', '.mov', '.mkv']:
+                    push_log(f"🎬 开始处理: {f.name}", 'info')
+                    fname = f.name
+                    fpath = str(save_path)
                     def process_video():
-                        push_log(f"🎬 开始处理: {f.name}", 'info')
-                        thumb = generate_video_thumbnail(str(save_path))
-                        if thumb:
-                            push_log(f"🖼️ 缩略图完成: {Path(thumb).name}", 'success')
-                        # 转码为H.264
-                        web_path = transcode_video_for_web(str(save_path))
-                        if web_path != str(save_path):
-                            try:
-                                shutil.move(web_path, str(save_path))
-                                push_log(f"✅ 转码完成: {f.name}", 'success')
-                            except Exception as e:
-                                push_log(f"❌ 转码失败: {e}", 'error')
+                        try:
+                            print(f"[上传] 处理视频: {fname}")
+                            thumb = generate_video_thumbnail(fpath)
+                            print(f"[上传] 缩略图: {thumb if thumb else '失败'}")
+                            if thumb:
+                                push_log(f"🖼️ 缩略图完成", 'success')
+                            web_path = transcode_video_for_web(fpath)
+                            if web_path != fpath:
+                                try:
+                                    shutil.move(web_path, fpath)
+                                    print(f"[上传] 已转码: {fname}")
+                                    push_log(f"✅ 转码完成: {fname}", 'success')
+                                except Exception as e:
+                                    print(f"[上传] 移动转码文件失败: {e}")
+                                    push_log(f"❌ 转码失败: {e}", 'error')
+                        except Exception as e:
+                            print(f"[上传] 处理异常: {e}")
+                            push_log(f"❌ 处理异常: {e}", 'error')
                     threading.Thread(target=process_video, daemon=True).start()
+                else:
+                    print(f"[上传] 保存成功: {f.name}")
+                    push_log(f"✅ 已上传: {f.name}", 'success')
 
                 uploaded.append(f.filename)
 
@@ -432,6 +449,8 @@ def api_materials_upload():
             'count': len(uploaded)
         })
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
 
