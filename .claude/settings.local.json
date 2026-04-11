@@ -5,7 +5,10 @@
       "Bash(python -m py_compile main.py config.py core/*.py)",
       "Bash(sqlite3 data/topics.db \"SELECT COUNT\\(*\\) FROM topics;\")",
       "Bash(sqlite3 data/topics.db \".tables\")",
-      "Bash(sqlite3:*)"
+      "Bash(sqlite3:*)",
+      "Bash(ls -la *.bat)",
+      "Bash(python -c ':*)",
+      "Bash(python:*)"
     ]
   }
 }

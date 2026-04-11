@@ -16,10 +16,14 @@ from dataclasses import dataclass
 from concurrent.futures import ThreadPoolExecutor
 
 try:
-    from playwright.async_api import async_playwright, Page, Browser
+    from playwright.async_api import async_playwright
+    from playwright.async_api import Page as PlaywrightPage
+    from playwright.async_api import Browser as PlaywrightBrowser
     PLAYWRIGHT_AVAILABLE = True
 except ImportError:
     PLAYWRIGHT_AVAILABLE = False
+    PlaywrightPage = None
+    PlaywrightBrowser = None
 
 import config
 
@@ -44,7 +48,7 @@ class TrendingCrawler:
 
     def __init__(self, db_path: Optional[Path] = None):
         self.db_path = db_path or config.TOPICS_DB
-        self.browser: Optional[Browser] = None
+        self.browser: Optional[PlaywrightBrowser] = None
         self.playwright = None
         self._crawl_count = 0
         self._offline_mode = False
@@ -141,7 +145,7 @@ class TrendingCrawler:
 
         return random.choice(list(config.CATEGORIES.keys())), "综合"
 
-    async def _crawl_douyin_page(self, page: Page, keyword: str) -> List[CrawledTopic]:
+    async def _crawl_douyin_page(self, page: PlaywrightPage, keyword: str) -> List[CrawledTopic]:
         """爬取抖音搜索结果页"""
         topics = []
         try:
@@ -192,7 +196,7 @@ class TrendingCrawler:
 
         return topics
 
-    async def _crawl_xiaohongshu_page(self, page: Page, keyword: str) -> List[CrawledTopic]:
+    async def _crawl_xiaohongshu_page(self, page: PlaywrightPage, keyword: str) -> List[CrawledTopic]:
         """爬取小红书搜索结果页"""
         topics = []
         try:
@@ -239,7 +243,7 @@ class TrendingCrawler:
 
         return topics
 
-    async def _crawl_bilibili_page(self, page: Page, keyword: str) -> List[CrawledTopic]:
+    async def _crawl_bilibili_page(self, page: PlaywrightPage, keyword: str) -> List[CrawledTopic]:
         """爬取B站搜索结果页"""
         topics = []
         try:

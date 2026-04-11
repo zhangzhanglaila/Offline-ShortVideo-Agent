@@ -168,18 +168,28 @@ def _generate_1000_topics():
         adj = random.choice(adj_pool)
         result = random.choice(result_pool)
 
-        title = template.format(keyword, num, result) if "{}" in template else template.format(keyword)
+        title_count = template.count("{}")
+        if title_count == 1:
+            title = template.format(keyword)
+        elif title_count == 2:
+            title = template.format(keyword, result)
+        elif title_count == 3:
+            title = template.format(keyword, num, result)
+        else:
+            title = template
 
         hook_template = random.choice(hook_templates)
-        if "{}" in hook_template:
-            if hook_template.count("{}") == 1:
-                hook = hook_template.format(keyword)
-            elif hook_template.count("{}") == 2:
-                n = random.choice(num_pool)
-                r = random.choice(result_pool)
-                hook = hook_template.format(n, r)
-            else:
-                hook = hook_template.format(keyword)
+        count = hook_template.count("{}")
+        if count == 1:
+            hook = hook_template.format(keyword)
+        elif count == 2:
+            n = random.choice(num_pool)
+            r = random.choice(result_pool)
+            hook = hook_template.format(n, r)
+        elif count == 3:
+            n = random.choice(num_pool)
+            r = random.choice(result_pool)
+            hook = hook_template.format(n, n, r)
         else:
             hook = hook_template
 
