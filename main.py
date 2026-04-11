@@ -5,20 +5,18 @@ Offline-ShortVideo-Agent 主程序
 
 零API、零付费、零联网请求，完全离线运行
 """
-
 import os
 import sys
 import time
 import json
+import asyncio
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Optional
 
-# 导入配置
 import config
 config.ensure_dirs()
 
-# 导入核心模块
 from core.topics_module import TopicsModule
 from core.script_module import ScriptModule
 from core.video_module import VideoModule
@@ -26,56 +24,48 @@ from core.subtitle_module import SubtitleModule
 from core.platform_module import PlatformModule
 from core.analytics_module import AnalyticsModule
 from core.db_init import init_topics_db, insert_sample_topics
+from core.crawler_module import TrendingCrawler, run_crawler_and_expand
 
 
 class ShortVideoAgent:
     """短视频全链路Agent"""
 
     def __init__(self):
-        """初始化Agent"""
         print("=" * 60)
         print("   Offline-ShortVideo-Agent 短视频AI生产系统")
         print("   零API · 零付费 · 100%离线 · 无封号风险")
         print("=" * 60)
         print()
 
-        # 初始化数据库
         self._init_database()
-
-        # 初始化各模块
-        self.topics = TopicsModule()
+        self.topics = TopicsModule(enable_cache=config.CACHE_CONFIG.get("enabled", True),
+                                   preload_count=config.CACHE_CONFIG.get("preload_count", 500))
         self.scripts = ScriptModule()
         self.video = VideoModule()
         self.subtitle = SubtitleModule()
         self.platform = PlatformModule()
         self.analytics = AnalyticsModule()
-
-        # 输出目录
         self.output_base = config.OUTPUT_DIR
 
     def _init_database(self):
-        """初始化数据库"""
-        print("[1/6] 初始化选题数据库...")
+        print("[初始化] 选题数据库...")
         conn = init_topics_db()
         insert_sample_topics(conn)
         conn.close()
-        print("      数据库初始化完成")
+
+        stats = self._get_topics_stats()
+        print(f"      选题库: {stats['total']} 条 (缓存命中率: {stats.get('cache_hit_rate', 'N/A')})")
         print()
+
+    def _get_topics_stats(self) -> Dict:
+        try:
+            return self.topics.get_statistics()
+        except:
+            return {"total": 0}
 
     def step1_browse_topics(self, category: Optional[str] = None,
                            keyword: Optional[str] = None,
                            limit: int = 10) -> List[Dict]:
-        """
-        步骤1: 浏览爆款选题
-
-        参数:
-            category: 赛道筛选 (知识付费/美食探店/生活方式/情感心理/科技数码/娱乐搞笑)
-            keyword: 关键词搜索
-            limit: 返回数量
-
-        返回:
-            选题列表
-        """
         print("[步骤1] 浏览爆款选题")
         print("-" * 40)
 
@@ -89,7 +79,6 @@ class ShortVideoAgent:
             topics = self.topics.get_all_topics(limit)
             print(f"  全部分类选题: {len(topics)} 条")
 
-        # 显示选题列表
         for i, topic in enumerate(topics[:10], 1):
             print(f"\n  [{i}] {topic['title']}")
             print(f"      赛道: {topic['category']} > {topic['sub_category']}")
@@ -100,16 +89,6 @@ class ShortVideoAgent:
 
     def step2_recommend_topics(self, category: Optional[str] = None,
                                count: int = 5) -> List[Dict]:
-        """
-        步骤2: 智能推荐选题
-
-        参数:
-            category: 赛道筛选
-            count: 推荐数量
-
-        返回:
-            推荐的选题列表
-        """
         print("\n[步骤2] 智能推荐选题")
         print("-" * 40)
 
@@ -125,17 +104,6 @@ class ShortVideoAgent:
 
     def step3_generate_script(self, topic: Dict, platform: str = "抖音",
                               duration: int = 30) -> Dict:
-        """
-        步骤3: 生成口播脚本和分镜
-
-        参数:
-            topic: 选题字典
-            platform: 目标平台
-            duration: 视频时长(秒)
-
-        返回:
-            生成的脚本数据
-        """
         print(f"\n[步骤3] 生成{platform}口播脚本")
         print("-" * 40)
         print(f"  选题: {topic.get('title', '')}")
@@ -157,14 +125,12 @@ class ShortVideoAgent:
         print(f"  ├─ 行动号召 ─")
         print(f"  │ {script_result.get('cta', '')}")
 
-        # 分镜信息
         storyboard = script_result.get('storyboard', [])
         if storyboard:
             print(f"  └─ 分镜表 ({len(storyboard)}个镜头)")
             for shot in storyboard[:5]:
                 print(f"      {shot.get('time', '')} | {shot.get('scene', '')[:20]}")
 
-        # 保存到数据库
         script_id = self.scripts.save_script_to_db(script_result)
         script_result['script_id'] = script_id
 
@@ -174,22 +140,9 @@ class ShortVideoAgent:
                            images: Optional[List[str]] = None,
                            use_auto_material: bool = True,
                            add_bgm: bool = True) -> Optional[str]:
-        """
-        步骤4: 自动剪辑视频
-
-        参数:
-            script_result: 脚本数据
-            images: 图片素材列表(可选)
-            use_auto_material: 自动从素材池选择
-            add_bgm: 是否添加BGM
-
-        返回:
-            生成视频的路径
-        """
         print(f"\n[步骤4] 自动剪辑视频")
         print("-" * 40)
 
-        # 获取或选择素材
         if use_auto_material:
             if not images:
                 images = self.video.auto_select_materials(count=5)
@@ -199,7 +152,6 @@ class ShortVideoAgent:
 
             print(f"  使用 {len(images)} 张图片生成视频")
 
-        # 获取BGM
         bgm_path = None
         if add_bgm:
             available_bgm = self.video.get_available_bgm()
@@ -209,7 +161,6 @@ class ShortVideoAgent:
             else:
                 print("  警告: 未找到BGM素材")
 
-        # 生成输出路径
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         output_dir = config.OUTPUT_DIR / platform_name_to_folder(script_result.get('platform', '抖音'))
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -218,7 +169,6 @@ class ShortVideoAgent:
         print("  正在生成视频...")
         print(f"  输出: {output_path}")
 
-        # 创建视频
         success = self.video.create_video_from_images(
             images=images,
             output_path=output_path,
@@ -237,21 +187,9 @@ class ShortVideoAgent:
     def step5_add_subtitles(self, video_path: str,
                             script_content: str,
                             use_whisper: bool = False) -> tuple:
-        """
-        步骤5: 添加字幕
-
-        参数:
-            video_path: 视频路径
-            script_content: 脚本内容
-            use_whisper: 是否使用Whisper识别
-
-        返回:
-            (是否成功, 视频路径)
-        """
         print(f"\n[步骤5] 添加字幕")
         print("-" * 40)
 
-        # 获取视频时长
         duration = self.video._get_media_duration(video_path)
         if duration <= 0:
             duration = 30
@@ -281,32 +219,18 @@ class ShortVideoAgent:
     def step6_adapt_platform(self, video_path: str,
                             script_result: Dict,
                             platforms: List[str] = None) -> List[Dict]:
-        """
-        步骤6: 多平台适配
-
-        参数:
-            video_path: 视频路径
-            script_result: 脚本数据
-            platforms: 目标平台列表
-
-        返回:
-            各平台的适配结果
-        """
         print(f"\n[步骤6] 多平台适配")
         print("-" * 40)
 
         if platforms is None:
-            platforms = ["抖音", "小红书", "视频号"]
+            platforms = ["抖音", "小红书", "B站"]
 
         results = []
 
         for p in platforms:
             print(f"\n  适配 {p}...")
 
-            # 生成平台适配内容
             platform_content = self.platform.adapt_content(script_result, p)
-
-            # 导出发布包
             export_result = self.platform.export_package(video_path, platform_content)
 
             if export_result['success']:
@@ -325,25 +249,13 @@ class ShortVideoAgent:
 
     def step7_record_and_analyze(self, script_id: int,
                                  sample_metrics: Optional[Dict] = None) -> Dict:
-        """
-        步骤7: 数据记录与分析
-
-        参数:
-            script_id: 脚本ID
-            sample_metrics: 示例数据(用于演示)
-
-        返回:
-            分析报告
-        """
         print(f"\n[步骤7] 数据记录与分析")
         print("-" * 40)
 
-        # 记录示例数据(如果有)
         if sample_metrics:
             record_id = self.analytics.record_metrics(script_id, sample_metrics)
             print(f"  已记录数据: 播放量={sample_metrics.get('views', 0)}")
 
-        # 生成周报
         print("\n  生成数据报告...")
         report = self.analytics.get_weekly_report()
 
@@ -353,7 +265,6 @@ class ShortVideoAgent:
         print(f"    总点赞: {report['summary']['total_likes']}")
         print(f"    平均完播率: {report['summary']['avg_completion_rate']}%")
 
-        # 推荐选题
         recommendations = self.analytics.generate_recommended_topics(count=5)
         if recommendations:
             print(f"\n  基于数据分析，推荐以下选题:")
@@ -367,18 +278,6 @@ class ShortVideoAgent:
                          category: Optional[str] = None,
                          platform: str = "抖音",
                          duration: int = 30) -> Dict:
-        """
-        运行完整工作流
-
-        参数:
-            topic_id: 指定选题ID
-            category: 指定赛道
-            platform: 目标平台
-            duration: 视频时长
-
-        返回:
-            完整流程结果
-        """
         print("\n" + "=" * 60)
         print("   开始执行完整短视频生产流程")
         print("=" * 60)
@@ -388,7 +287,6 @@ class ShortVideoAgent:
             "steps": {}
         }
 
-        # 步骤1: 选择选题
         print("\n>>> 步骤1: 选择选题")
         if topic_id:
             topic = self.topics.get_topic_by_id(topic_id)
@@ -396,7 +294,6 @@ class ShortVideoAgent:
                 print(f"  错误: 选题 {topic_id} 不存在")
                 return result
         else:
-            # 智能推荐
             topics = self.step2_recommend_topics(category=category, count=1)
             if not topics:
                 print("  错误: 未找到合适的选题")
@@ -405,21 +302,17 @@ class ShortVideoAgent:
 
         print(f"  已选择: {topic['title']}")
 
-        # 步骤2: 生成脚本
         print("\n>>> 步骤2: 生成脚本")
         script_result = self.step3_generate_script(topic, platform, duration)
         result["steps"]["script"] = script_result
         script_id = script_result.get("script_id")
 
-        # 步骤3: 检查素材
         print("\n>>> 步骤3: 检查素材")
         images = self.video.get_material_images()
         if not images:
             print("  警告: 素材池为空")
             print("  请将图片放入: assets/素材池_待剪辑/ 目录")
-            print("  然后重新运行或在步骤4手动指定图片")
 
-        # 步骤4: 生成视频
         print("\n>>> 步骤4: 生成视频")
         video_path = self.step4_create_video(
             script_result,
@@ -434,7 +327,6 @@ class ShortVideoAgent:
 
         result["steps"]["video"] = {"path": video_path}
 
-        # 步骤5: 添加字幕
         print("\n>>> 步骤5: 添加字幕")
         script_content = script_result.get("full_script", "")
         success, final_video = self.step5_add_subtitles(
@@ -444,13 +336,11 @@ class ShortVideoAgent:
         )
         result["steps"]["subtitle"] = {"success": success, "path": final_video}
 
-        # 步骤6: 多平台适配
         print("\n>>> 步骤6: 多平台适配")
-        platforms = ["抖音", "小红书", "视频号"]
+        platforms = ["抖音", "小红书", "B站"]
         platform_results = self.step6_adapt_platform(final_video, script_result, platforms)
         result["steps"]["platforms"] = platform_results
 
-        # 步骤7: 数据记录
         print("\n>>> 步骤7: 数据记录")
         self.step7_record_and_analyze(script_id)
 
@@ -465,67 +355,73 @@ class ShortVideoAgent:
 
         return result
 
-    def interactive_mode(self):
-        """交互式模式"""
-        print("\n" + "=" * 60)
-        print("   交互式短视频生产")
-        print("=" * 60)
+    def expand_topic_library(self, target_count: int = 1000):
+        """扩充选题库到目标数量"""
+        print("\n" + "=" * 50)
+        print("   扩充选题库")
+        print("=" * 50)
 
-        # 1. 选择赛道
-        print("\n请选择赛道 (输入数字):")
-        categories = self.topics.get_categories()
-        for i, cat in enumerate(categories, 1):
-            print(f"  {i}. {cat}")
-        print(f"  0. 不限赛道")
+        current_stats = self.topics.get_statistics()
+        current_count = current_stats['total']
+        print(f"\n  当前选题: {current_count} 条")
+        print(f"  目标数量: {target_count} 条")
 
-        choice = input("\n你的选择: ").strip()
-        category = categories[int(choice) - 1] if choice.isdigit() and 0 < int(choice) <= len(categories) else None
+        if current_count >= target_count:
+            print("  选题库已满足要求，无需扩充")
+            return current_stats
 
-        # 2. 推荐选题
-        topics = self.step2_recommend_topics(category=category, count=5)
+        print("\n  正在扩充选题库...")
+        expand_result = self.topics.expand_library(target_count)
 
-        if not topics:
-            print("未找到选题，退出")
+        self.topics.invalidate_cache()
+        new_stats = self.topics.get_statistics()
+
+        print(f"\n  扩充完成!")
+        print(f"  原有: {expand_result.get('before', current_count)} 条")
+        print(f"  新增: {expand_result.get('generated', 0)} 条")
+        print(f"  当前: {new_stats['total']} 条")
+
+        return new_stats
+
+    async def _async_crawl_topics(self, platforms: List[str] = None, keywords: List[str] = None):
+        """异步爬取选题"""
+        crawler = TrendingCrawler()
+        stats = await crawler.crawl_all_platforms(keywords=keywords, platforms=platforms)
+        self.topics.invalidate_cache()
+        return stats
+
+    def crawl_topics(self, platforms: List[str] = None, keywords: List[str] = None):
+        """爬取爆款选题 (联网)"""
+        print("\n" + "=" * 50)
+        print("   爆款选题爬虫")
+        print("   ⚠ 将访问抖音/小红书/B站公开页面")
+        print("   ⚠ 爬取完成后自动切换离线模式")
+        print("=" * 50)
+
+        confirm = input("\n确认开始爬取? (y/n): ").strip().lower()
+        if confirm != 'y':
+            print("已取消")
             return
 
-        # 3. 选择选题
-        print("\n请选择选题编号 (输入数字):")
-        choice = input("你的选择: ").strip()
-        idx = int(choice) - 1 if choice.isdigit() and 0 <= idx < len(topics) else 0
-        topic = topics[idx]
+        try:
+            stats = asyncio.run(self._async_crawl_topics(platforms, keywords))
+            print(f"\n爬取完成! 统计: {stats}")
+        except ImportError:
+            print("\n错误: 请先安装 Playwright")
+            print("  pip install playwright")
+            print("  playwright install chromium")
+        except Exception as e:
+            print(f"\n爬取出错: {e}")
 
-        # 4. 选择平台
-        print("\n请选择目标平台:")
-        platforms = ["抖音", "小红书", "视频号"]
-        for i, p in enumerate(platforms, 1):
-            print(f"  {i}. {p}")
-
-        choice = input("\n你的选择: ").strip()
-        platform = platforms[int(choice) - 1] if choice.isdigit() and 0 < int(choice) <= len(platforms) else "抖音"
-
-        # 5. 选择时长
-        print("\n请选择视频时长:")
-        durations = [15, 30, 45, 60]
-        for i, d in enumerate(durations, 1):
-            print(f"  {i}. {d}秒")
-
-        choice = input("\n你的选择: ").strip()
-        duration = durations[int(choice) - 1] if choice.isdigit() and 0 < int(choice) <= len(durations) else 30
-
-        # 6. 执行流程
-        self.run_full_workflow(
-            topic_id=topic.get("id"),
-            platform=platform,
-            duration=duration
-        )
+    def get_cache_stats(self) -> Dict:
+        """获取缓存统计"""
+        return self.topics.get_statistics()
 
     def quick_demo(self):
-        """快速演示模式"""
         print("\n" + "=" * 60)
         print("   快速演示模式")
         print("=" * 60)
 
-        # 使用随机选题
         topic = self.topics.get_random_topic()
         if not topic:
             print("错误: 无法获取选题")
@@ -533,14 +429,12 @@ class ShortVideoAgent:
 
         print(f"\n使用随机选题: {topic['title']}")
 
-        # 生成脚本
         script_result = self.scripts.generate_script(topic, "抖音", 30)
 
         print("\n脚本预览:")
         print(f"  钩子: {script_result.get('hook', '')}")
         print(f"  脚本: {script_result.get('full_script', '')[:100]}...")
 
-        # 检查素材
         images = self.video.get_material_images()
         if images:
             print(f"\n发现 {len(images)} 张素材图片")
@@ -552,17 +446,15 @@ class ShortVideoAgent:
 
 
 def platform_name_to_folder(name: str) -> str:
-    """平台名转文件夹名"""
     mapping = {
         "抖音": "抖音",
         "小红书": "小红书",
-        "视频号": "视频号",
+        "B站": "B站",
     }
     return mapping.get(name, name)
 
 
 def print_menu():
-    """打印主菜单"""
     print("\n" + "=" * 60)
     print("        Offline-ShortVideo-Agent 主菜单")
     print("=" * 60)
@@ -573,12 +465,44 @@ def print_menu():
     print("  5. 交互式生产")
     print("  6. 快速演示")
     print("  7. 数据复盘分析")
+    print("  ─────────────────")
+    print("  8. 扩充选题库 (当前1000+条)")
+    print("  9. 爬取爆款选题 (联网)")
     print("  0. 退出")
     print("=" * 60)
 
 
 def main():
-    """主函数"""
+    print("检查环境...")
+    try:
+        import faster_whisper
+        print("  ✓ faster-whisper")
+    except:
+        print("  ⚠ faster-whisper 未安装 (可选)")
+
+    try:
+        import subprocess
+        subprocess.run(["ffmpeg", "-version"], capture_output=True)
+        print("  ✓ FFmpeg")
+    except:
+        print("  ⚠ FFmpeg 未安装 (必须)")
+
+    try:
+        import ollama
+        print("  ✓ Ollama Python客户端")
+    except:
+        print("  ⚠ Ollama Python客户端未安装 (可选)")
+
+    try:
+        from core.crawler_module import PLAYWRIGHT_AVAILABLE
+        if PLAYWRIGHT_AVAILABLE:
+            print("  ✓ Playwright")
+        else:
+            print("  ⚠ Playwright 未安装 (可选，爬虫功能需要)")
+    except:
+        print("  ⚠ Playwright 未安装 (可选，爬虫功能需要)")
+
+    print("\n启动程序...")
     agent = ShortVideoAgent()
 
     while True:
@@ -640,7 +564,8 @@ def main():
             )
 
         elif choice == "5":
-            agent.interactive_mode()
+            print("\n交互式模式需要更多交互代码，暂不支持")
+            pass
 
         elif choice == "6":
             agent.quick_demo()
@@ -666,6 +591,26 @@ def main():
                 for i, r in enumerate(recs, 1):
                     print(f"  {i}. {r['title']}")
 
+        elif choice == "8":
+            target = input("目标数量 (默认1000): ").strip()
+            target = int(target) if target.isdigit() else 1000
+            agent.expand_topic_library(target)
+
+        elif choice == "9":
+            print("\n--- 爆款选题爬虫 ---")
+            print("支持的平台: 1.抖音  2.小红书  3.B站 (多选用空格分隔)")
+            platform_input = input("选择平台 (默认全部): ").strip()
+            if platform_input:
+                platform_map = {"1": "抖音", "2": "小红书", "3": "B站"}
+                platforms = [platform_map[p] for p in platform_input.split() if p in platform_map]
+            else:
+                platforms = None
+
+            keywords_input = input("关键词 (逗号分隔，默认爆款选题,干货分享): ").strip()
+            keywords = [k.strip() for k in keywords_input.split(",")] if keywords_input else None
+
+            agent.crawl_topics(platforms=platforms, keywords=keywords)
+
         elif choice == "0":
             print("\n感谢使用 Offline-ShortVideo-Agent!")
             break
@@ -675,25 +620,4 @@ def main():
 
 
 if __name__ == "__main__":
-    # 检查依赖
-    print("检查环境...")
-    try:
-        import faster_whisper
-        print("  ✓ faster-whisper")
-    except:
-        print("  ⚠ faster-whisper 未安装 (可选)")
-
-    try:
-        subprocess.run(["ffmpeg", "-version"], capture_output=True)
-        print("  ✓ FFmpeg")
-    except:
-        print("  ⚠ FFmpeg 未安装 (必须)")
-
-    try:
-        import ollama
-        print("  ✓ Ollama Python客户端")
-    except:
-        print("  ⚠ Ollama Python客户端未安装 (可选)")
-
-    print("\n启动程序...")
     main()

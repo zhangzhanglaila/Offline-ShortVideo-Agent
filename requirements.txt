@@ -5,6 +5,9 @@
 faster-whisper>=1.0.0
 ollama>=0.1.0
 
+# 爆款爬虫 (可选，需要联网)
+playwright>=1.40.0
+
 # 可选: 如果使用GPU加速whisper
 # faster-whisper[cuda]>=1.0.0
 
@@ -16,3 +19,7 @@ ollama>=0.1.0
 # macOS/Linux: curl -fsSL https://ollama.com/install.sh | sh
 # Windows: https://ollama.com/download
 # 模型: ollama pull qwen2:7b
+#
+# Playwright 安装 (爬虫功能需要)
+# pip install playwright
+# playwright install chromium

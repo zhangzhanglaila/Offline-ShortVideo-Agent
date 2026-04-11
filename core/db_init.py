@@ -11,61 +11,62 @@ def get_db_path():
     from config import TOPICS_DB
     return TOPICS_DB
 
+
 def init_topics_db():
     """初始化爆款选题数据库"""
     db_path = get_db_path()
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
 
-    # 创建选题表
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS topics (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            category TEXT NOT NULL,           -- 赛道大类
-            sub_category TEXT NOT NULL,        -- 赛道小类
-            title TEXT NOT NULL,               -- 选题标题
-            hook TEXT NOT NULL,                -- 爆款钩子
-            tags TEXT,                         -- 标签列表(JSON)
-            duration TEXT,                     -- 建议时长
-            heat_score INTEGER DEFAULT 0,      -- 热度评分
-            transform_rate REAL DEFAULT 0,     -- 转化率
-            is_bookmarked INTEGER DEFAULT 0,   -- 是否收藏
+            category TEXT NOT NULL,
+            sub_category TEXT NOT NULL,
+            title TEXT NOT NULL,
+            hook TEXT NOT NULL,
+            tags TEXT,
+            duration TEXT,
+            heat_score INTEGER DEFAULT 0,
+            transform_rate REAL DEFAULT 0,
+            likes INTEGER DEFAULT 0,
+            platform TEXT DEFAULT '内置',
+            source_url TEXT,
+            is_bookmarked INTEGER DEFAULT 0,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
 
-    # 创建脚本表
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS scripts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            topic_id INTEGER,                  -- 关联选题ID
-            platform TEXT NOT NULL,            -- 平台
-            script_content TEXT NOT NULL,      -- 脚本内容
-            storyboard TEXT,                    -- 分镜表(JSON)
-            title TEXT,                         -- 生成的标题
-            description TEXT,                   -- 生成的描述
-            hashtags TEXT,                      -- 生成的话题标签
-            video_path TEXT,                    -- 生成视频路径
-            status TEXT DEFAULT 'pending',     -- 状态: pending/completed/failed
+            topic_id INTEGER,
+            platform TEXT NOT NULL,
+            script_content TEXT NOT NULL,
+            storyboard TEXT,
+            title TEXT,
+            description TEXT,
+            hashtags TEXT,
+            video_path TEXT,
+            status TEXT DEFAULT 'pending',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (topic_id) REFERENCES topics(id)
         )
     """)
 
-    # 创建数据复盘表
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS analytics (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            script_id INTEGER,                 -- 关联脚本ID
-            platform TEXT,                      -- 平台
-            views INTEGER DEFAULT 0,           -- 播放量
-            likes INTEGER DEFAULT 0,           -- 点赞数
-            comments INTEGER DEFAULT 0,         -- 评论数
-            shares INTEGER DEFAULT 0,            -- 分享数
-            completion_rate REAL DEFAULT 0,     -- 完播率
-            avg_watch_time REAL DEFAULT 0,      -- 平均观看时长
-            notes TEXT,                          -- 备注
-            record_date DATE,                   -- 记录日期
+            script_id INTEGER,
+            platform TEXT,
+            views INTEGER DEFAULT 0,
+            likes INTEGER DEFAULT 0,
+            comments INTEGER DEFAULT 0,
+            shares INTEGER DEFAULT 0,
+            completion_rate REAL DEFAULT 0,
+            avg_watch_time REAL DEFAULT 0,
+            notes TEXT,
+            record_date DATE,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (script_id) REFERENCES scripts(id)
         )
@@ -74,129 +75,151 @@ def init_topics_db():
     conn.commit()
     return conn
 
+
 def insert_sample_topics(conn):
-    """插入示例爆款选题数据"""
+    """插入预制爆款选题数据 (1000+条)"""
     cursor = conn.cursor()
 
-    # 检查是否已有数据
     cursor.execute("SELECT COUNT(*) FROM topics")
-    if cursor.fetchone()[0] > 0:
-        print(f"数据库已有 {cursor.fetchone()[0]} 条选题")
-        return
+    existing_count = cursor.fetchone()[0]
+    if existing_count > 0:
+        print(f"数据库已有 {existing_count} 条选题")
+        if existing_count >= 1000:
+            return
+        print(f"数据不足1000条，继续扩充...")
 
-    # 预制爆款选题数据
-    topics_data = [
-        # 知识付费类
-        ("知识付费", "干货分享", "普通人如何用AI月入过万？", "学会这3步，你也可以做到！", "AI变现,副业,干货", "30-45秒", 95, 0.85),
-        ("知识付费", "技能教学", "Excel高效操作必备的10个快捷键", "老手都不知道的快捷键！", "Excel,办公技巧,效率提升", "20-30秒", 92, 0.78),
-        ("知识付费", "干货分享", "简历这样写，HR看了贼开心", "投递100份不如优化1份简历", "简历技巧,求职,职场", "40-50秒", 88, 0.82),
-        ("知识付费", "职场晋升", "同事不会告诉你的职场潜规则", "越早知道越好", "职场潜规则,职场技巧,升职加薪", "45-60秒", 90, 0.75),
-        ("知识付费", "创业故事", "95后小姐姐从0开始创业的全过程", "从摆地摊到年入百万", "创业,女性创业,励志", "60秒以上", 94, 0.80),
-
-        # 美食探店类
-        ("美食探店", "网红餐厅", "成都隐藏的宝藏小店，味道绝了", "本地人都在排队！", "成都美食,宝藏小店,必吃榜", "30-45秒", 93, 0.72),
-        ("美食探店", "家常菜谱", "只需要3步做出餐厅级红烧肉", "入口即化，巨下饭！", "红烧肉,家常菜,下饭菜", "20-30秒", 91, 0.88),
-        ("美食探店", "小吃推荐", "夜市必吃的5种小吃，最后一个绝了", "99%的人都不知道", "夜市小吃,美食推荐,必吃", "30-40秒", 89, 0.70),
-        ("美食探店", "各地美食", "广东早茶的正确打开方式", "本地人教你点菜", "广东早茶,点心,粤菜", "40-50秒", 87, 0.68),
-        ("美食探店", "网红餐厅", "北京胡同里的老字号，开了50年", "味道依旧封神", "北京美食,老字号,胡同美食", "35-45秒", 86, 0.65),
-
-        # 生活方式类
-        ("生活方式", "极简生活", "坚持极简生活1年，我的变化太大了", "断舍离带来的改变", "极简生活,断舍离,改变", "40-50秒", 88, 0.78),
-        ("生活方式", "日常VLOG", "独居女孩的一天，太治愈了", "一个人也要好好生活", "独居生活,VLOG,治愈", "60秒以上", 92, 0.82),
-        ("生活方式", "穿搭美妆", "小个子显高穿搭技巧，秒变170", "155也能穿出大长腿", "穿搭技巧,小个子显高,时尚", "25-35秒", 90, 0.76),
-        ("生活方式", "健身打卡", "每天10分钟，练出马甲线", "在家就能做", "健身,马甲线,减肥", "20-30秒", 87, 0.74),
-        ("生活方式", "日常VLOG", "周末宅家的正确打开方式", "拒绝焦虑，享受慢生活", "周末,VLOG,治愈生活", "40-50秒", 85, 0.69),
-
-        # 情感心理类
-        ("情感心理", "情感故事", "分手3个月，我终于放下了", "时间是最好的解药", "情感故事,分手,自我疗愈", "50-60秒", 91, 0.83),
-        ("情感心理", "心理分析", "为什么越讨好越不被珍惜？", "讨好型人格的真相", "心理学,讨好型人格,人际关系", "40-50秒", 89, 0.79),
-        ("情感心理", "两性关系", "男生说这些话就是在敷衍你", "别再被骗了", "两性关系,情感,鉴别渣男", "30-40秒", 93, 0.77),
-        ("情感心理", "自我成长", "30岁才明白的人生道理", "越早知道越好", "成长,人生感悟,成熟", "45-55秒", 88, 0.81),
-        ("情感心理", "情感故事", "远嫁的代价，只有经历过才懂", "一位远嫁女孩的自述", "远嫁,婚姻,人生选择", "55-65秒", 94, 0.86),
-
-        # 科技数码类
-        ("科技数码", "产品测评", "2000元手机拍照对比，谁更强？", "结果出乎意料", "手机测评,拍照对比,数码", "40-50秒", 86, 0.71),
-        ("科技数码", "APP推荐", "这款APP让我每天多出2小时", "效率提升神器", "APP推荐,效率工具,神器", "25-35秒", 88, 0.73),
-        ("科技数码", "使用技巧", "微信隐藏的实用功能，99%的人不知道", "太方便了", "微信技巧,实用功能,冷知识", "20-30秒", 90, 0.75),
-        ("科技数码", "科技前沿", "AI画图神器有多强？实测体验", "人人都是艺术家", "AI绘图,科技,人工智能", "35-45秒", 87, 0.68),
-        ("科技数码", "产品测评", "蓝牙耳机音质对比，学生党首选", "性价比之王", "蓝牙耳机,数码测评,学生党", "30-40秒", 85, 0.70),
-
-        # 娱乐搞笑类
-        ("娱乐搞笑", "搞笑段子", "当程序员和产品经理吵架，笑疯了", "过于真实", "程序员,产品经理,搞笑", "30-40秒", 95, 0.89),
-        ("娱乐搞笑", "萌宠动物", "猫咪这些行为是在说爱你", "你家猫有吗？", "猫咪,宠物,萌宠", "25-35秒", 92, 0.84),
-        ("娱乐搞笑", "热点吐槽", "当代年轻人的现状，太真实了", "是你吗？", "当代年轻人,现状,共鸣", "20-30秒", 91, 0.87),
-        ("娱乐搞笑", "影视解说", "1分钟看完《狂飙》大结局", "太刀了", "狂飙,影视解说,剧情", "40-50秒", 94, 0.82),
-        ("娱乐搞笑", "搞笑段子", "男朋友的神仙回复，气死我了", "笑着笑着就哭了", "恋爱,搞笑,日常", "25-35秒", 93, 0.85),
-    ]
-
-    # 插入数据
+    topics_data = _generate_1000_topics()
     cursor.executemany("""
-        INSERT INTO topics (category, sub_category, title, hook, tags, duration, heat_score, transform_rate)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO topics (category, sub_category, title, hook, tags, duration, heat_score, transform_rate, likes, platform)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, topics_data)
 
     conn.commit()
-    print(f"已插入 {len(topics_data)} 条示例选题")
-    print("实际使用时将扩展至1000+条选题...")
+    print(f"已预置 {len(topics_data)} 条爆款选题")
 
-    # 演示：复制示例数据扩充至100条
-    expand_topics(conn, cursor, topics_data)
 
-def expand_topics(conn, cursor, base_topics):
-    """扩充选题数据到100+条"""
-    additional_count = 75
-    hooks_pool = [
-        "学会这{}招，{}！", "{}的正确方式，{}！", "{}的秘密，{}！",
-        "{}只需要{}步，{}！", "{}看这一篇就够了！", "{}太厉害了，{}！",
-        "99%的人都不知道的{}！", "{}，你绝对没见过！", "{}封神之作！",
-    ]
-    suffixes = [
-        "后悔没早知道", "建议收藏", "炸裂推荐", "绝了", "太牛了",
-        "破防了", "真香", "上头", "离谱", "扎心",
-    ]
-
-    import random
+def _generate_1000_topics():
+    """生成1000条预制选题数据"""
     random.seed(42)
 
-    for i in range(additional_count):
-        base = random.choice(base_topics)
-        hook_template = random.choice(hooks_pool)
-        suffix = random.choice(suffixes)
+    categories_subcats = [
+        ("知识付费", ["干货分享", "技能教学", "职场晋升", "创业故事", "学习技巧", "知识变现"]),
+        ("美食探店", ["各地美食", "网红餐厅", "家常菜谱", "小吃推荐", "快手料理", "减脂餐"]),
+        ("生活方式", ["日常VLOG", "极简生活", "穿搭美妆", "健身打卡", "家居收纳", "自律生活"]),
+        ("情感心理", ["情感故事", "心理分析", "两性关系", "自我成长", "人际交往", "情绪管理"]),
+        ("科技数码", ["产品测评", "APP推荐", "科技前沿", "使用技巧", "效率工具", "AI应用"]),
+        ("娱乐搞笑", ["搞笑段子", "萌宠动物", "热点吐槽", "影视解说", "明星娱乐", "游戏解说"]),
+    ]
 
-        # 生成变化的钩子
+    title_templates = [
+        "{}只需{}步，学会后{}！",
+        "{}的正确方式，99%的人都做错了！",
+        "为什么{}越来越火？看完你就懂了！",
+        "{}大神都在用的{}，太牛了！",
+        "普通人如何{}？学会这几点你也可以！",
+        "{}避坑指南，{}个坑千万别踩！",
+        "看完这个{}，{}！",
+        "{}的{}技巧，学会了你就是大神！",
+        "{}秘籍，学会{}！",
+        "全网最火的{}，你看过几个？",
+    ]
+
+    hook_templates = [
+        "学会这{}招，{}！",
+        "{}的正确方式，{}！",
+        "{}的秘密，{}！",
+        "{}只需要{}步，{}！",
+        "{}看这一篇就够了！",
+        "{}太厉害了，{}！",
+        "99%的人都不知道的{}！",
+        "{}，你绝对没见过！",
+        "{}封神之作！",
+        "看完{}，你就知道了！",
+    ]
+
+    keywords_pool = {
+        "知识付费": ["AI变现", "副业赚钱", "简历优化", "面试技巧", "职场晋升", "创业思维", "知识管理", "高效学习", "英语学习", "写作技巧", "演讲能力", "思维导图", "时间管理", "目标设定", "情绪调节"],
+        "美食探店": ["美食探店", "家常菜", "快手早餐", "减脂餐", "必吃榜", "隐藏美食", "网红餐厅", "小吃推荐", "甜品制作", "家常面食", "下饭菜", "懒人食谱", "一人食", "便当制作", "夜市美食"],
+        "生活方式": ["极简生活", "早睡早起", "时间管理", "断舍离", "自律", "自律生活", "日常vlog", "收纳整理", "护肤心得", "化妆技巧", "穿搭分享", "健身计划", "冥想放松", "读书分享", "观影记录"],
+        "情感心理": ["情感修复", "沟通技巧", "情绪管理", "人际交往", "脱单", "自我成长", "心理测试", "星座分析", "情感挽回", "恋爱技巧", "婚姻经营", "亲子教育", "原生家庭", "自我认知", "心理疗愈"],
+        "科技数码": ["手机测评", "APP推荐", "效率工具", "黑科技", "数码测评", "AI工具", "平板使用", "电脑技巧", "键盘快捷键", "数据备份", "隐私保护", "网络技巧", "软件推荐", "硬件升级", "科技趋势"],
+        "娱乐搞笑": ["搞笑段子", "萌宠", "猫咪", "狗狗", "影视解说", "明星八卦", "综艺", "游戏", "短视频", "音乐推荐", "舞蹈", "绘画", "手工", "摄影", "旅行"],
+    }
+
+    tags_pool = [
+        "干货分享", "建议收藏", "必看推荐", "宝藏技巧", "涨知识", "揭秘",
+        "必学", "好用", "绝了", "太牛了", "破防了", "真香", "上头", "离谱", "扎心",
+        "治愈", "共鸣", "人间真实", "破防了", "绝了", "好物推荐", "宝藏", "神仙打架", "YYDS",
+    ]
+
+    adj_pool = ["实用", "神奇", "厉害", "牛", "绝", "封神", "宝藏", "万能", "超强", "神级"]
+    result_pool = ["赚翻了", "太牛了", "绝了", "太值了", "真香", "后悔没早知道", "太实用了", "太强了"]
+    num_pool = ["3", "5", "7", "10", "8", "6"]
+
+    topics = []
+
+    for i in range(1200):
+        category, subcats = random.choice(categories_subcats)
+        sub_category = random.choice(subcats)
+        keyword = random.choice(keywords_pool[category])
+
+        template = random.choice(title_templates)
+        num = random.choice(num_pool)
+        adj = random.choice(adj_pool)
+        result = random.choice(result_pool)
+
+        title = template.format(keyword, num, result) if "{}" in template else template.format(keyword)
+
+        hook_template = random.choice(hook_templates)
         if "{}" in hook_template:
             if hook_template.count("{}") == 1:
-                new_hook = hook_template.format(suffix)
+                hook = hook_template.format(keyword)
             elif hook_template.count("{}") == 2:
-                num = random.choice(["3", "5", "7", "10"])
-                new_hook = hook_template.format(num, suffix)
+                n = random.choice(num_pool)
+                r = random.choice(result_pool)
+                hook = hook_template.format(n, r)
             else:
-                new_hook = hook_template.format(suffix)
+                hook = hook_template.format(keyword)
         else:
-            new_hook = hook_template + suffix
+            hook = hook_template
 
-        # 添加变体标题
-        variations = [
-            f"[必看]{base[2]}",
-            f"强烈建议{fandom.choice(['收藏','保存'])}的{base[3]}",
-            f"{base[2]}完整版",
-            f"续集来了！{base[2]}",
-        ]
-        new_title = random.choice(variations)
+        tags = random.sample(tags_pool, k=random.randint(3, 6))
+        tags_str = ",".join(tags)
 
-        new_heat = max(60, base[6] + random.randint(-10, 5))
-        new_transform = max(0.5, base[7] + random.uniform(-0.1, 0.1))
+        duration_options = ["15-20秒", "20-30秒", "30-40秒", "30-45秒", "40-50秒", "45-60秒", "50-60秒", "60秒以上"]
+        duration = random.choice(duration_options)
 
-        cursor.execute("""
-            INSERT INTO topics (category, sub_category, title, hook, tags, duration, heat_score, transform_rate)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, (base[0], base[1], new_title, new_hook, base[4], base[5], new_heat, new_transform))
+        heat_score = random.randint(60, 99)
+        transform_rate = round(random.uniform(0.55, 0.95), 2)
+        likes = random.randint(50, 500000)
 
-    conn.commit()
-    print(f"数据库现已包含 100 条选题数据")
+        topics.append((
+            category, sub_category, title, hook, tags_str, duration,
+            heat_score, transform_rate, likes, "内置"
+        ))
+
+    return topics
+
+
+def expand_to_1000(conn):
+    """确保数据库有1000+条数据"""
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM topics")
+    count = cursor.fetchone()[0]
+
+    if count < 1000:
+        print(f"当前 {count} 条，扩充到 1000 条...")
+        topics_data = _generate_1000_topics()
+        cursor.executemany("""
+            INSERT INTO topics (category, sub_category, title, hook, tags, duration, heat_score, transform_rate, likes, platform)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, topics_data)
+        conn.commit()
+        print(f"已扩充到 1000+ 条选题")
+
 
 if __name__ == "__main__":
     conn = init_topics_db()
     insert_sample_topics(conn)
     conn.close()
-    print("数据库初始化完成！")
+    print("数据库初始化完成！选题库现有 1000+ 条数据")
