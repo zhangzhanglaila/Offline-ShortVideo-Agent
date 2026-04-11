@@ -11,6 +11,7 @@ import json
 import time
 import webbrowser
 import threading
+import shutil
 from pathlib import Path
 from datetime import datetime
 from functools import wraps
@@ -34,6 +35,7 @@ from core.db_init import init_topics_db, insert_sample_topics
 app = Flask(__name__, static_folder='web', static_url_path='')
 app.config['JSON_AS_ASCII'] = False
 app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
+app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500MB max
 
 # 全局模块实例
 _topics_module = None
@@ -42,6 +44,9 @@ _video_module = None
 _subtitle_module = None
 _platform_module = None
 _analytics_module = None
+
+# 素材暂存目录
+UPLOAD_TEMP_DIR = config.MATERIAL_DIR
 
 
 def get_topics_module():
@@ -206,30 +211,90 @@ def api_recommend():
 def api_materials():
     """获取素材列表"""
     try:
-        video = get_video_module()
+        materials = []
+        material_dir = Path(UPLOAD_TEMP_DIR)
 
-        # 获取图片
-        images = []
-        for ext in ['*.jpg', '*.jpeg', '*.png', '*.webp']:
-            for f in config.MATERIAL_DIR.glob(ext):
-                images.append({
-                    'name': f.name,
-                    'path': str(f),
-                    'type': 'image'
-                })
+        if material_dir.exists():
+            for f in material_dir.iterdir():
+                if f.is_file():
+                    ext = f.suffix.lower()
+                    if ext in ['.jpg', '.jpeg', '.png', '.webp']:
+                        mtype = 'image'
+                    elif ext in ['.mp4', '.avi', '.mov', '.mkv']:
+                        mtype = 'video'
+                    elif ext in ['.mp3', '.wav', '.aac', '.m4a']:
+                        mtype = 'audio'
+                    else:
+                        continue
 
-        # 获取视频
-        videos = []
-        for ext in ['*.mp4', '*.avi', '*.mov', '*.mkv']:
-            for f in config.MATERIAL_DIR.glob(ext):
-                videos.append({
-                    'name': f.name,
-                    'path': str(f),
-                    'type': 'video'
-                })
+                    materials.append({
+                        'name': f.name,
+                        'path': str(f),
+                        'type': mtype,
+                        'size': f.stat().st_size,
+                        'size_str': format_size(f.stat().st_size),
+                        'date': datetime.fromtimestamp(f.stat().st_mtime).strftime('%Y-%m-%d %H:%M')
+                    })
 
-        materials = sorted(images + videos, key=lambda x: x['name'], reverse=True)
+        materials.sort(key=lambda x: x['date'], reverse=True)
         return jsonify({'materials': materials})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/materials/upload', methods=['POST'])
+def api_materials_upload():
+    """上传素材文件"""
+    try:
+        if 'file' not in request.files:
+            return jsonify({'error': '没有文件'}), 400
+
+        files = request.files.getlist('file')
+        uploaded = []
+
+        for f in files:
+            if f.filename:
+                # 保存到素材目录
+                save_path = Path(UPLOAD_TEMP_DIR) / f.filename
+                f.save(str(save_path))
+                uploaded.append(f.filename)
+
+        return jsonify({
+            'success': True,
+            'uploaded': uploaded,
+            'count': len(uploaded)
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/materials/<filename>', methods=['DELETE'])
+def api_materials_delete(filename):
+    """删除单个素材"""
+    try:
+        file_path = Path(UPLOAD_TEMP_DIR) / filename
+        if file_path.exists():
+            file_path.unlink()
+            return jsonify({'success': True})
+        return jsonify({'error': '文件不存在'}), 404
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/materials/clear', methods=['POST'])
+def api_materials_clear():
+    """清空所有素材"""
+    try:
+        count = 0
+        material_dir = Path(UPLOAD_TEMP_DIR)
+        if material_dir.exists():
+            for f in material_dir.iterdir():
+                if f.is_file():
+                    ext = f.suffix.lower()
+                    if ext in ['.jpg', '.jpeg', '.png', '.webp', '.mp4', '.avi', '.mov', '.mkv', '.mp3', '.wav', '.aac', '.m4a']:
+                        f.unlink()
+                        count += 1
+        return jsonify({'success': True, 'cleared': count})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -274,9 +339,138 @@ def api_works():
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/generate/with-materials', methods=['POST'])
+def api_generate_with_materials():
+    """使用用户素材生成视频"""
+    try:
+        data = request.get_json()
+        category = data.get('category', '')
+        platforms = data.get('platforms', ['抖音', '小红书', 'B站'])
+        material_paths = data.get('materials', [])
+
+        # 初始化模块
+        topics = get_topics_module()
+        scripts = get_script_module()
+        video = get_video_module()
+        subtitle = get_subtitle_module()
+        platform_mod = get_platform_module()
+
+        logs = []
+
+        # 1. 推荐选题
+        topic_list = topics.recommend_topics(
+            category=category if category else None,
+            count=1
+        )
+
+        if not topic_list:
+            return jsonify({'error': '未找到合适的选题', 'logs': logs}), 400
+
+        topic = topic_list[0]
+        logs.append({'step': '选题', 'status': 'success', 'msg': f'已选择: {topic.get("title", "")}'})
+
+        # 2. 生成脚本
+        script_result = scripts.generate_script(topic, platforms[0] if platforms else '抖音', 30)
+        logs.append({'step': '脚本', 'status': 'success', 'msg': '脚本生成完成'})
+
+        # 3. 处理素材
+        images = []
+        audio = None
+
+        for m in material_paths:
+            p = Path(m)
+            if p.exists():
+                ext = p.suffix.lower()
+                if ext in ['.jpg', '.jpeg', '.png', '.webp']:
+                    images.append(str(p))
+                elif ext in ['.mp3', '.wav', '.aac', '.m4a']:
+                    audio = str(p)
+
+        # 如果没有用户素材，使用自动选择
+        if not images:
+            images = video.auto_select_materials(count=5)
+
+        if not images:
+            return jsonify({'error': '素材池为空，请先上传素材', 'logs': logs}), 400
+
+        logs.append({'step': '素材', 'status': 'success', 'msg': f'已加载 {len(images)} 个素材'})
+
+        # 4. 生成视频
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_path = str(config.OUTPUT_DIR / "临时" / f"video_{timestamp}.mp4")
+        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+
+        # 计算时长
+        duration_per_image = 5
+        total_duration = len(images) * duration_per_image
+
+        success = video.create_video_from_images(
+            images=images,
+            output_path=output_path,
+            duration_per_image=duration_per_image,
+            transition="fade",
+            bgm_path=audio
+        )
+
+        if not success:
+            return jsonify({'error': '视频生成失败', 'logs': logs}), 500
+
+        logs.append({'step': '剪辑', 'status': 'success', 'msg': '视频剪辑完成'})
+
+        # 5. 添加字幕
+        script_content = script_result.get('full_script', '')
+        final_video = output_path.replace('.mp4', '_subtitled.mp4')
+
+        sub_success, srt_path = subtitle.generate_subtitle_video(
+            video_path=output_path,
+            script=script_content,
+            output_path=final_video,
+            duration=total_duration,
+            use_whisper=False
+        )
+
+        if not sub_success:
+            final_video = output_path
+
+        logs.append({'step': '字幕', 'status': 'success', 'msg': '字幕烧录完成'})
+
+        # 6. 多平台导出
+        works = []
+        for p in platforms:
+            platform_content = platform_mod.adapt_content(script_result, p)
+            export_result = platform_mod.export_package(final_video, platform_content)
+
+            if export_result['success']:
+                works.append({
+                    'platform': p,
+                    'path': export_result['video_path'],
+                    'output_dir': export_result['output_dir']
+                })
+                logs.append({'step': p, 'status': 'success', 'msg': f'{p} 投稿包已生成'})
+
+        # 清理临时文件
+        try:
+            if Path(output_path).exists() and output_path != final_video:
+                Path(output_path).unlink()
+        except:
+            pass
+
+        return jsonify({
+            'success': True,
+            'topic': topic,
+            'works': works,
+            'logs': logs,
+            'message': f'成功生成 {len(works)} 个平台的作品'
+        })
+
+    except Exception as e:
+        import traceback
+        return jsonify({'error': str(e), 'trace': traceback.format_exc()}), 500
+
+
 @app.route('/api/generate', methods=['POST'])
 def api_generate():
-    """一键生成视频"""
+    """一键生成视频（原有接口，保持兼容）"""
     try:
         data = request.get_json()
         category = data.get('category', '')
@@ -421,6 +615,17 @@ def api_file_open():
         return jsonify({'error': str(e)}), 500
 
 
+# ==================== 辅助函数 ====================
+
+def format_size(size):
+    """格式化文件大小"""
+    for unit in ['B', 'KB', 'MB', 'GB']:
+        if size < 1024:
+            return f"{size:.1f}{unit}"
+        size /= 1024
+    return f"{size:.1f}GB"
+
+
 # ==================== 启动 ====================
 
 def open_browser():
@@ -446,6 +651,9 @@ def main():
     topics = get_topics_module()
     stats = topics.get_statistics()
     print(f"      选题库: {stats['total']} 条")
+
+    # 确保素材目录存在
+    Path(UPLOAD_TEMP_DIR).mkdir(parents=True, exist_ok=True)
 
     # 打开浏览器
     open_browser()

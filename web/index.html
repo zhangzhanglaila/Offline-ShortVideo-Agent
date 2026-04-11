@@ -4,67 +4,132 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Offline-ShortVideo-Agent - 短视频AI生产系统</title>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            color: #333;
+            font-family: 'Noto Sans SC', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: #F5F6F7;
+            color: #606773;
+            line-height: 1.6;
         }
-        .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
 
-        /* 导航栏 */
-        .navbar {
-            background: rgba(255,255,255,0.95);
-            backdrop-filter: blur(10px);
-            border-radius: 16px;
-            padding: 20px 30px;
-            margin-bottom: 30px;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+        /* ========== B站配色变量 ========== */
+        :root {
+            --bili-pink: #FB7299;
+            --bili-pink-hover: #E65C85;
+            --bili-blue: #23ADE5;
+            --bili-gray: #F5F6F7;
+            --bili-white: #FFFFFF;
+            --bili-dark: #232529;
+            --bili-text: #606773;
+            --bili-border: #E3E5E7;
+            --bili-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            --radius: 4px;
+            --skeleton-base: #E5E6EB;
+            --skeleton-light: #F0F1F3;
+        }
+
+        /* ========== 顶部粉色进度条 ========== */
+        .top-progress {
+            position: fixed;
+            top: 0;
+            left: 0;
+            height: 2px;
+            background: var(--bili-pink);
+            z-index: 9999;
+            transition: width 0.3s ease, opacity 0.3s ease;
+            opacity: 0;
+        }
+        .top-progress.show { opacity: 1; }
+
+        /* ========== 顶部导航 ========== */
+        .bili-header {
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            background: #FFF;
+            border-bottom: 1px solid #E3E5E7;
+            height: 64px;
             display: flex;
-            justify-content: space-between;
             align-items: center;
+            padding: 0 24px;
         }
-        .nav-brand {
-            font-size: 24px;
+        .header-logo {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-right: 40px;
+        }
+        .logo-tv {
+            width: 36px;
+            height: 36px;
+            background: linear-gradient(135deg, #FB7299, #FFA4C4);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            color: white;
+        }
+        .header-title {
+            font-size: 18px;
             font-weight: 700;
-            background: linear-gradient(135deg, #667eea, #764ba2);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
+            color: #232529;
         }
-        .nav-links { display: flex; gap: 10px; flex-wrap: wrap; }
-        .nav-btn {
-            padding: 10px 20px;
-            border: none;
-            border-radius: 25px;
-            cursor: pointer;
+        .header-nav {
+            display: flex;
+            height: 100%;
+            flex: 1;
+        }
+        .nav-item {
+            height: 100%;
+            display: flex;
+            align-items: center;
+            padding: 0 20px;
             font-size: 14px;
-            font-weight: 500;
-            transition: all 0.3s;
-            background: #f0f0f0;
-            color: #666;
+            color: #606773;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            transition: all 0.2s;
+            text-decoration: none;
         }
-        .nav-btn:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
-        .nav-btn.active { background: linear-gradient(135deg, #667eea, #764ba2); color: white; }
+        .nav-item:hover { color: #232529; }
+        .nav-item.active {
+            color: #FB7299;
+            border-bottom-color: #FB7299;
+        }
 
-        /* 页面卡片 */
+        /* ========== 主容器 ========== */
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px 24px;
+        }
+
+        /* ========== 页面切换 ========== */
         .page { display: none; }
         .page.active { display: block; }
 
-        .card {
-            background: rgba(255,255,255,0.95);
-            backdrop-filter: blur(10px);
-            border-radius: 16px;
-            padding: 30px;
-            margin-bottom: 20px;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+        /* ========== B站卡片 ========== */
+        .bili-card {
+            background: #FFF;
+            border-radius: var(--radius);
+            box-shadow: var(--bili-shadow);
+            margin-bottom: 16px;
+            overflow: hidden;
+        }
+        .card-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid #E3E5E7;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
         }
         .card-title {
-            font-size: 20px;
+            font-size: 16px;
             font-weight: 600;
-            margin-bottom: 20px;
-            color: #333;
+            color: #232529;
             display: flex;
             align-items: center;
             gap: 10px;
@@ -72,197 +137,691 @@
         .card-title::before {
             content: '';
             width: 4px;
-            height: 20px;
-            background: linear-gradient(135deg, #667eea, #764ba2);
+            height: 16px;
+            background: var(--bili-pink);
             border-radius: 2px;
         }
+        .card-body { padding: 20px; }
 
-        /* 按钮 */
-        .btn {
-            padding: 12px 24px;
-            border: none;
-            border-radius: 25px;
-            cursor: pointer;
-            font-size: 14px;
-            font-weight: 500;
-            transition: all 0.3s;
+        /* ========== 骨架屏基础样式 ========== */
+        .skeleton {
+            background: linear-gradient(90deg, var(--skeleton-base) 25%, var(--skeleton-light) 50%, var(--skeleton-base) 75%);
+            background-size: 200% 100%;
+            animation: skeleton-loading 1.5s infinite;
+            border-radius: var(--radius);
         }
-        .btn-primary {
-            background: linear-gradient(135deg, #667eea, #764ba2);
-            color: white;
-        }
-        .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(102,126,234,0.4); }
-        .btn-secondary { background: #f0f0f0; color: #666; }
-        .btn-secondary:hover { background: #e0e0e0; }
-        .btn:disabled { opacity: 0.6; cursor: not-allowed; }
-
-        /* 首页 */
-        .hero {
-            text-align: center;
-            padding: 60px 20px;
-        }
-        .hero h1 {
-            font-size: 42px;
-            margin-bottom: 20px;
-            background: linear-gradient(135deg, #667eea, #764ba2);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }
-        .hero p { font-size: 18px; color: #666; margin-bottom: 30px; }
-        .hero-tags { display: flex; justify-content: center; gap: 15px; flex-wrap: wrap; margin-bottom: 40px; }
-        .tag {
-            padding: 8px 16px;
-            background: rgba(102,126,234,0.1);
-            border-radius: 20px;
-            font-size: 14px;
-            color: #667eea;
-        }
-        .quick-actions { display: flex; justify-content: center; gap: 15px; flex-wrap: wrap; }
-
-        /* 统计卡片 */
-        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; }
-        .stat-card {
-            background: linear-gradient(135deg, rgba(102,126,234,0.1), rgba(118,75,162,0.1));
-            border-radius: 12px;
-            padding: 20px;
-            text-align: center;
-        }
-        .stat-num { font-size: 32px; font-weight: 700; color: #667eea; }
-        .stat-label { font-size: 14px; color: #666; margin-top: 5px; }
-
-        /* 素材网格 */
-        .material-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 15px; }
-        .material-item {
-            border-radius: 12px;
-            overflow: hidden;
-            cursor: pointer;
-            transition: all 0.3s;
-            background: #f5f5f5;
-        }
-        .material-item:hover { transform: scale(1.05); box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
-        .material-item img { width: 100%; aspect-ratio: 9/16; object-fit: cover; }
-        .material-info { padding: 10px; font-size: 12px; color: #666; }
-
-        /* 选题列表 */
-        .topic-list { display: flex; flex-direction: column; gap: 15px; }
-        .topic-item {
-            border: 1px solid #eee;
-            border-radius: 12px;
-            padding: 20px;
-            cursor: pointer;
-            transition: all 0.3s;
-        }
-        .topic-item:hover { border-color: #667eea; box-shadow: 0 4px 12px rgba(102,126,234,0.1); }
-        .topic-item.selected { border-color: #667eea; background: rgba(102,126,234,0.05); }
-        .topic-title { font-size: 16px; font-weight: 600; margin-bottom: 8px; }
-        .topic-meta { display: flex; gap: 15px; font-size: 13px; color: #999; }
-        .topic-tag {
-            display: inline-block;
-            padding: 4px 10px;
-            background: rgba(102,126,234,0.1);
-            border-radius: 12px;
-            font-size: 12px;
-            color: #667eea;
-            margin-right: 8px;
+        @keyframes skeleton-loading {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
         }
 
-        /* 赛道选择 */
-        .category-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; }
-        .category-item {
-            border: 2px solid #eee;
-            border-radius: 12px;
-            padding: 20px;
-            text-align: center;
-            cursor: pointer;
-            transition: all 0.3s;
+        /* ========== 骨架屏-统计卡片 ========== */
+        .skeleton-stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
         }
-        .category-item:hover { border-color: #667eea; }
-        .category-item.selected { border-color: #667eea; background: rgba(102,126,234,0.05); }
-        .category-icon { font-size: 32px; margin-bottom: 10px; }
-        .category-name { font-weight: 500; }
-
-        /* 视频列表 */
-        .video-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 20px; }
-        .video-item {
-            border-radius: 12px;
-            overflow: hidden;
-            background: #f5f5f5;
-            cursor: pointer;
-            transition: all 0.3s;
-        }
-        .video-item:hover { transform: translateY(-5px); box-shadow: 0 8px 20px rgba(0,0,0,0.15); }
-        .video-thumb {
-            width: 100%;
-            aspect-ratio: 9/16;
-            background: linear-gradient(135deg, #667eea, #764ba2);
+        .skeleton-stat {
             display: flex;
             align-items: center;
-            justify-content: center;
-            color: white;
-            font-size: 48px;
+            gap: 12px;
+            padding: 16px;
+            background: #FFF;
+            border-radius: var(--radius);
+            box-shadow: var(--bili-shadow);
         }
-        .video-info { padding: 15px; }
-        .video-title { font-size: 14px; font-weight: 500; margin-bottom: 8px; }
-        .video-meta { font-size: 12px; color: #999; }
+        .skeleton-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: var(--radius);
+        }
+        .skeleton-text {
+            flex: 1;
+        }
+        .skeleton-num {
+            height: 22px;
+            width: 60%;
+            margin-bottom: 4px;
+        }
+        .skeleton-label {
+            height: 12px;
+            width: 80%;
+        }
 
-        /* 生成进度 */
-        .progress-container { text-align: center; padding: 40px; }
-        .progress-circle {
-            width: 120px;
-            height: 120px;
+        /* ========== 骨架屏-赛道选择 ========== */
+        .skeleton-category-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+        }
+        .skeleton-category {
+            padding: 16px;
+            text-align: center;
+            border: 2px solid #E3E5E7;
+            border-radius: var(--radius);
+        }
+        .skeleton-cat-icon {
+            width: 28px;
+            height: 28px;
+            margin: 0 auto 8px;
             border-radius: 50%;
-            background: conic-gradient(#667eea var(--progress, 0%), #e0e0e0 0%);
+        }
+        .skeleton-cat-name {
+            height: 13px;
+            width: 70%;
+            margin: 0 auto;
+        }
+
+        /* ========== 骨架屏-选题列表 ========== */
+        .skeleton-topic-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .skeleton-topic {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            padding: 16px;
+            border: 1px solid #E3E5E7;
+            border-radius: var(--radius);
+        }
+        .skeleton-rank {
+            width: 24px;
+            height: 24px;
+            border-radius: var(--radius);
+            flex-shrink: 0;
+        }
+        .skeleton-topic-main {
+            flex: 1;
+        }
+        .skeleton-title {
+            height: 14px;
+            width: 70%;
+            margin-bottom: 6px;
+        }
+        .skeleton-meta {
+            height: 12px;
+            width: 50%;
+        }
+
+        /* ========== 骨架屏-素材网格 ========== */
+        .skeleton-material-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+            gap: 16px;
+        }
+        .skeleton-material {
+            border-radius: var(--radius);
+            overflow: hidden;
+            background: #F5F6F7;
+        }
+        .skeleton-thumb {
+            aspect-ratio: 1;
+        }
+        .skeleton-name {
+            height: 11px;
+            margin: 8px;
+        }
+
+        /* ========== 骨架屏-视频网格 ========== */
+        .skeleton-video-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+            gap: 16px;
+        }
+        .skeleton-video {
+            border-radius: var(--radius);
+            overflow: hidden;
+            border: 1px solid #E3E5E7;
+        }
+        .skeleton-video-thumb {
+            aspect-ratio: 9/16;
+        }
+        .skeleton-video-info {
+            padding: 12px;
+        }
+        .skeleton-video-title {
+            height: 13px;
+            width: 80%;
+            margin-bottom: 4px;
+        }
+        .skeleton-video-meta {
+            height: 11px;
+            width: 60%;
+        }
+
+        /* ========== 骨架屏-平台卡片 ========== */
+        .skeleton-platform-row {
+            display: flex;
+            gap: 16px;
+        }
+        .skeleton-platform {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            padding: 20px;
+            background: #FFF;
+            border-radius: var(--radius);
+            box-shadow: var(--bili-shadow);
+        }
+        .skeleton-platform-logo {
+            width: 48px;
+            height: 48px;
+            border-radius: var(--radius);
+        }
+        .skeleton-platform-text {
+            flex: 1;
+        }
+        .skeleton-platform-title {
+            height: 14px;
+            width: 50%;
+            margin-bottom: 2px;
+        }
+        .skeleton-platform-desc {
+            height: 12px;
+            width: 70%;
+        }
+
+        /* ========== 按钮 ========== */
+        .bili-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            padding: 8px 16px;
+            border: none;
+            border-radius: var(--radius);
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-family: inherit;
+        }
+        .bili-btn-primary {
+            background: var(--bili-pink);
+            color: #FFF;
+        }
+        .bili-btn-primary:hover { background: var(--bili-pink-hover); transform: translateY(-1px); }
+        .bili-btn-secondary {
+            background: #F5F6F7;
+            color: #606773;
+            border: 1px solid #E3E5E7;
+        }
+        .bili-btn-secondary:hover { background: #E3E5E7; color: #232529; }
+        .bili-btn-danger {
+            background: #FFF;
+            color: #FF4D4F;
+            border: 1px solid #FF4D4F;
+        }
+        .bili-btn-danger:hover { background: #FFF1F0; }
+        .bili-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+        /* ========== 首页 ========== */
+        .home-hero {
+            text-align: center;
+            padding: 48px 20px;
+        }
+        .hero-logo {
+            width: 80px;
+            height: 80px;
+            background: linear-gradient(135deg, #FB7299, #FFA4C4);
+            border-radius: 12px;
             display: flex;
             align-items: center;
             justify-content: center;
             margin: 0 auto 20px;
+            font-size: 36px;
+            color: white;
+            box-shadow: 0 4px 16px rgba(251,114,153,0.3);
         }
-        .progress-inner {
-            width: 100px;
-            height: 100px;
-            border-radius: 50%;
-            background: white;
+        .hero-title {
+            font-size: 28px;
+            font-weight: 700;
+            color: #232529;
+            margin-bottom: 8px;
+        }
+        .hero-sub {
+            font-size: 14px;
+            color: #909090;
+            margin-bottom: 24px;
+        }
+        .hero-tags {
+            display: flex;
+            justify-content: center;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-bottom: 32px;
+        }
+        .hero-tag {
+            padding: 4px 12px;
+            background: #FFF;
+            border: 1px solid #E3E5E7;
+            border-radius: 12px;
+            font-size: 12px;
+            color: #606773;
+        }
+
+        /* ========== 数据卡片 ========== */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
+        }
+        .stat-item {
+            background: #FFF;
+            border-radius: var(--radius);
+            padding: 16px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            box-shadow: var(--bili-shadow);
+            border-left: 3px solid var(--bili-pink);
+        }
+        .stat-item.blue { border-left-color: var(--bili-blue); }
+        .stat-item.green { border-left-color: #52C41A; }
+        .stat-item.orange { border-left-color: #FFA940; }
+        .stat-icon {
+            width: 40px;
+            height: 40px;
+            background: #FFF5F7;
+            border-radius: var(--radius);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+        }
+        .stat-num {
+            font-size: 22px;
+            font-weight: 700;
+            color: #232529;
+        }
+        .stat-label {
+            font-size: 12px;
+            color: #909090;
+        }
+
+        /* ========== 平台卡片 ========== */
+        .platform-row {
+            display: flex;
+            gap: 16px;
+        }
+        .platform-card {
+            flex: 1;
+            background: #FFF;
+            border-radius: var(--radius);
+            padding: 20px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            box-shadow: var(--bili-shadow);
+            cursor: pointer;
+            transition: all 0.2s;
+            border: 1px solid transparent;
+        }
+        .platform-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        .platform-card.douyin { border-left: 3px solid #000; }
+        .platform-card.xiaohongshu { border-left: 3px solid #FE2C25; }
+        .platform-card.bilibili { border-left: 3px solid var(--bili-pink); }
+        .platform-logo {
+            width: 48px;
+            height: 48px;
+            border-radius: var(--radius);
             display: flex;
             align-items: center;
             justify-content: center;
             font-size: 24px;
-            font-weight: 700;
-            color: #667eea;
+            color: white;
         }
-        .progress-text { font-size: 16px; color: #666; margin-bottom: 10px; }
-        .progress-step { font-size: 14px; color: #999; }
+        .douyin .platform-logo { background: #000; }
+        .xiaohongshu .platform-logo { background: #FE2C25; }
+        .bilibili .platform-logo { background: var(--bili-pink); }
+        .platform-info h4 { font-size: 14px; color: #232529; margin-bottom: 2px; }
+        .platform-info p { font-size: 12px; color: #909090; }
 
-        /* 平台标签 */
-        .platform-tabs { display: flex; gap: 10px; margin-bottom: 20px; }
-        .platform-tab {
-            padding: 8px 16px;
-            border-radius: 20px;
-            font-size: 13px;
+        /* ========== 赛道选择 ========== */
+        .category-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+        }
+        .category-item {
+            background: #FFF;
+            border-radius: var(--radius);
+            padding: 16px;
+            text-align: center;
             cursor: pointer;
-            background: #f0f0f0;
-            color: #666;
-            transition: all 0.3s;
+            transition: all 0.2s;
+            border: 2px solid #E3E5E7;
         }
-        .platform-tab.active { background: linear-gradient(135deg, #667eea, #764ba2); color: white; }
+        .category-item:hover {
+            border-color: var(--bili-pink);
+            transform: translateY(-2px);
+        }
+        .category-item.selected {
+            border-color: var(--bili-pink);
+            background: #FFF5F7;
+        }
+        .category-icon { font-size: 28px; margin-bottom: 8px; }
+        .category-name { font-size: 13px; font-weight: 500; color: #232529; }
 
-        /* 日志输出 */
-        .log-box {
-            background: #1a1a2e;
-            color: #0f0;
-            padding: 20px;
-            border-radius: 12px;
-            font-family: "Consolas", monospace;
+        /* ========== 选题列表 ========== */
+        .topic-list { display: flex; flex-direction: column; gap: 12px; }
+        .topic-item {
+            background: #FFF;
+            border-radius: var(--radius);
+            padding: 16px;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: 1px solid #E3E5E7;
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+        }
+        .topic-item:hover {
+            border-color: var(--bili-pink);
+            transform: translateX(4px);
+        }
+        .topic-item.selected {
+            border-color: var(--bili-pink);
+            background: #FFF5F7;
+        }
+        .topic-rank {
+            width: 24px;
+            height: 24px;
+            background: #F5F6F7;
+            border-radius: var(--radius);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: 600;
+            color: #909090;
+            flex-shrink: 0;
+        }
+        .topic-item:nth-child(1) .topic-rank { background: #FFD700; color: #FFF; }
+        .topic-item:nth-child(2) .topic-rank { background: #C0C0C0; color: #FFF; }
+        .topic-item:nth-child(3) .topic-rank { background: #CD7F32; color: #FFF; }
+        .topic-main { flex: 1; }
+        .topic-title { font-size: 14px; font-weight: 600; color: #232529; margin-bottom: 6px; }
+        .topic-meta { display: flex; gap: 12px; font-size: 12px; color: #909090; flex-wrap: wrap; }
+        .topic-tag {
+            padding: 2px 8px;
+            background: #FFF5F7;
+            color: var(--bili-pink);
+            border-radius: 2px;
+            font-size: 11px;
+        }
+        .topic-tag.cat { background: #F0F9FF; color: var(--bili-blue); }
+
+        /* ========== 素材拖拽上传区 ========== */
+        .upload-zone {
+            border: 2px dashed #E3E5E7;
+            border-radius: var(--radius);
+            padding: 48px 24px;
+            text-align: center;
+            transition: all 0.2s;
+            cursor: pointer;
+            background: #FAFBFC;
+        }
+        .upload-zone:hover, .upload-zone.dragover {
+            border-color: var(--bili-pink);
+            background: #FFF5F7;
+        }
+        .upload-zone-icon { font-size: 48px; margin-bottom: 12px; color: #909090; }
+        .upload-zone-text { font-size: 14px; color: #606773; margin-bottom: 8px; }
+        .upload-zone-hint { font-size: 12px; color: #909090; }
+        .upload-input { display: none; }
+
+        /* ========== 素材网格 ========== */
+        .material-tabs {
+            display: flex;
+            gap: 8px;
+            padding: 16px 0;
+            border-bottom: 1px solid #E3E5E7;
+            margin-bottom: 16px;
+        }
+        .material-tab {
+            padding: 6px 16px;
+            border-radius: var(--radius);
             font-size: 13px;
-            max-height: 300px;
+            color: #606773;
+            cursor: pointer;
+            background: #F5F6F7;
+            transition: all 0.2s;
+            border: none;
+        }
+        .material-tab:hover { color: #232529; }
+        .material-tab.active { background: var(--bili-pink); color: #FFF; }
+        .material-tab .count {
+            display: inline-block;
+            background: rgba(0,0,0,0.1);
+            padding: 0 6px;
+            border-radius: 10px;
+            font-size: 11px;
+            margin-left: 4px;
+        }
+        .material-tab.active .count { background: rgba(255,255,255,0.2); }
+
+        .material-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+            gap: 16px;
+        }
+        .material-item {
+            border-radius: var(--radius);
+            overflow: hidden;
+            background: #F5F6F7;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: 2px solid transparent;
+            position: relative;
+        }
+        .material-item:hover {
+            transform: translateY(-2px);
+            border-color: var(--bili-pink);
+        }
+        .material-item.selected {
+            border-color: var(--bili-pink);
+            background: #FFF5F7;
+        }
+        .material-thumb {
+            aspect-ratio: 1;
+            background: #E3E5E7;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #909090;
+            font-size: 32px;
+            position: relative;
+            overflow: hidden;
+        }
+        .material-thumb img { width: 100%; height: 100%; object-fit: cover; }
+        .material-thumb .type-badge {
+            position: absolute;
+            top: 4px;
+            left: 4px;
+            background: rgba(0,0,0,0.6);
+            color: #FFF;
+            font-size: 10px;
+            padding: 2px 6px;
+            border-radius: 2px;
+        }
+        .material-thumb .check-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(251,114,153,0.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 32px;
+            color: #FFF;
+        }
+        .material-name {
+            padding: 8px;
+            font-size: 11px;
+            color: #606773;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .material-del {
+            position: absolute;
+            top: 4px;
+            right: 4px;
+            width: 24px;
+            height: 24px;
+            background: rgba(0,0,0,0.6);
+            color: #FFF;
+            border: none;
+            border-radius: 50%;
+            cursor: pointer;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+        }
+        .material-item:hover .material-del { display: flex; }
+
+        /* ========== 素材操作栏 ========== */
+        .material-actions {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px 0;
+            border-top: 1px solid #E3E5E7;
+            margin-top: 16px;
+        }
+        .material-info { font-size: 13px; color: #909090; }
+
+        /* ========== 平台标签 ========== */
+        .tab-row {
+            display: flex;
+            gap: 8px;
+            padding: 12px 0;
+            border-bottom: 1px solid #E3E5E7;
+            margin-bottom: 16px;
+        }
+        .tab-item {
+            padding: 6px 16px;
+            border-radius: var(--radius);
+            font-size: 13px;
+            color: #606773;
+            cursor: pointer;
+            background: #F5F6F7;
+            transition: all 0.2s;
+        }
+        .tab-item:hover { color: #232529; }
+        .tab-item.active { background: var(--bili-pink); color: #FFF; }
+
+        /* ========== 视频卡片 ========== */
+        .video-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+            gap: 16px;
+        }
+        .video-item {
+            background: #FFF;
+            border-radius: var(--radius);
+            overflow: hidden;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: 1px solid #E3E5E7;
+        }
+        .video-item:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        .video-thumb {
+            aspect-ratio: 9/16;
+            background: linear-gradient(135deg, #FB7299, #FFA4C4);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 32px;
+        }
+        .video-thumb img { width: 100%; height: 100%; object-fit: cover; }
+        .video-info { padding: 12px; }
+        .video-title { font-size: 13px; color: #232529; margin-bottom: 4px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+        .video-meta { font-size: 11px; color: #909090; }
+
+        /* ========== 进度 ========== */
+        .progress-wrap { text-align: center; padding: 40px; }
+        .progress-tv {
+            width: 80px;
+            height: 80px;
+            margin: 0 auto 20px;
+            background: var(--bili-pink);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .progress-tv::before {
+            content: '📺';
+            font-size: 36px;
+            animation: spin 1s linear infinite reverse;
+        }
+        .progress-text { font-size: 16px; color: #232529; margin-bottom: 4px; }
+        .progress-step { font-size: 13px; color: #909090; }
+
+        /* ========== 步骤日志 ========== */
+        .step-log {
+            background: #FFF;
+            border-radius: var(--radius);
+            padding: 16px;
+            margin-top: 20px;
+        }
+        .step-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            padding: 8px 0;
+            border-bottom: 1px solid #F5F6F7;
+        }
+        .step-item:last-child { border-bottom: none; }
+        .step-icon { width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; flex-shrink: 0; }
+        .step-icon.pending { background: #F5F6F7; color: #909090; }
+        .step-icon.running { background: #E6F7FF; color: var(--bili-blue); animation: pulse 1s infinite; }
+        .step-icon.success { background: #F6FFED; color: #52C41A; }
+        .step-icon.error { background: #FFF1F0; color: #FF4D4F; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        .step-info { flex: 1; }
+        .step-name { font-size: 13px; font-weight: 500; color: #232529; }
+        .step-msg { font-size: 12px; color: #909090; margin-top: 2px; }
+
+        /* ========== 日志 ========== */
+        .log-box {
+            background: #1A1A2E;
+            color: #00FF00;
+            padding: 16px;
+            border-radius: var(--radius);
+            font-family: Consolas, monospace;
+            font-size: 12px;
+            max-height: 200px;
             overflow-y: auto;
             line-height: 1.8;
+            margin-top: 20px;
         }
-        .log-line { margin-bottom: 5px; }
-        .log-success { color: #0f0; }
-        .log-error { color: #f66; }
-        .log-info { color: #0ff; }
+        .log-line { margin-bottom: 2px; }
+        .log-suc { color: #52C41A; }
+        .log-err { color: #FF4D4F; }
+        .log-info { color: #23ADE5; }
 
-        /* 模态框 */
+        /* ========== 模态框 ========== */
         .modal {
             display: none;
             position: fixed;
@@ -270,537 +829,1167 @@
             left: 0;
             width: 100%;
             height: 100%;
-            background: rgba(0,0,0,0.8);
+            background: rgba(0,0,0,0.6);
             z-index: 1000;
             align-items: center;
             justify-content: center;
         }
         .modal.show { display: flex; }
         .modal-content {
-            background: white;
-            border-radius: 16px;
+            background: #FFF;
+            border-radius: var(--radius);
             max-width: 90%;
             max-height: 90%;
-            overflow: auto;
+            overflow: hidden;
         }
-        .modal-header { padding: 20px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
-        .modal-close { font-size: 24px; cursor: pointer; }
+        .modal-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid #E3E5E7;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .modal-close { font-size: 20px; cursor: pointer; color: #909090; }
         .modal-body { padding: 20px; }
 
-        /* 空状态 */
+        /* ========== 空状态 ========== */
         .empty-state {
             text-align: center;
-            padding: 60px 20px;
-            color: #999;
+            padding: 48px 20px;
+            color: #909090;
         }
-        .empty-icon { font-size: 64px; margin-bottom: 20px; }
+        .empty-icon { font-size: 48px; margin-bottom: 12px; opacity: 0.5; }
 
-        /* 响应式 */
+        /* ========== 输入框 ========== */
+        .bili-input {
+            padding: 8px 12px;
+            border: 1px solid #E3E5E7;
+            border-radius: var(--radius);
+            font-size: 13px;
+            outline: none;
+            font-family: inherit;
+            transition: all 0.2s;
+        }
+        .bili-input:focus { border-color: var(--bili-pink); }
+
+        /* ========== 响应式 ========== */
         @media (max-width: 768px) {
-            .navbar { flex-direction: column; gap: 15px; }
-            .nav-links { justify-content: center; }
-            .hero h1 { font-size: 28px; }
             .stats-grid { grid-template-columns: repeat(2, 1fr); }
+            .skeleton-stats-grid { grid-template-columns: repeat(2, 1fr); }
+            .platform-row { flex-direction: column; }
+            .category-grid { grid-template-columns: repeat(2, 1fr); }
+            .header-title { display: none; }
+            .bili-header { padding: 0 12px; }
+            .nav-item { padding: 0 12px; font-size: 13px; }
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <!-- 导航栏 -->
-        <nav class="navbar">
-            <div class="nav-brand">Offline-ShortVideo-Agent</div>
-            <div class="nav-links">
-                <button class="nav-btn active" onclick="showPage('home')">首页</button>
-                <button class="nav-btn" onclick="showPage('materials')">素材管理</button>
-                <button class="nav-btn" onclick="showPage('topics')">选题中心</button>
-                <button class="nav-btn" onclick="showPage('generate')">一键生成</button>
-                <button class="nav-btn" onclick="showPage('works')">作品管理</button>
-                <button class="nav-btn" onclick="showPage('stats')">数据统计</button>
-            </div>
+    <!-- 顶部粉色进度条 -->
+    <div class="top-progress" id="top-progress"></div>
+
+    <!-- B站风格顶部导航 -->
+    <header class="bili-header">
+        <div class="header-logo">
+            <div class="logo-tv">📺</div>
+            <span class="header-title">ShortVideo Agent</span>
+        </div>
+        <nav class="header-nav">
+            <a class="nav-item active" data-page="home" onclick="showPage('home')">首页</a>
+            <a class="nav-item" data-page="materials" onclick="showPage('materials')">素材管理</a>
+            <a class="nav-item" data-page="topics" onclick="showPage('topics')">选题中心</a>
+            <a class="nav-item" data-page="works" onclick="showPage('works')">我的投稿</a>
+            <a class="nav-item" data-page="stats" onclick="showPage('stats')">数据中心</a>
         </nav>
+    </header>
 
-        <!-- 首页 -->
+    <div class="container">
+        <!-- ========== 首页 ========== -->
         <div id="page-home" class="page active">
-            <div class="card">
-                <div class="hero">
-                    <h1>短视频AI生产系统</h1>
-                    <p>100%本地运行 · 零API费用 · 零封号风险</p>
+            <div class="bili-card">
+                <div class="home-hero">
+                    <div class="hero-logo">📺</div>
+                    <h1 class="hero-title">短视频AI生产系统</h1>
+                    <p class="hero-sub">100%本地运行 · 零API费用 · 零封号风险</p>
                     <div class="hero-tags">
-                        <span class="tag">爆款选题库</span>
-                        <span class="tag">AI脚本生成</span>
-                        <span class="tag">自动剪辑</span>
-                        <span class="tag">多平台适配</span>
-                    </div>
-                    <div class="quick-actions">
-                        <button class="btn btn-primary" onclick="showPage('generate')">开始创作</button>
-                        <button class="btn btn-secondary" onclick="showPage('topics')">浏览选题</button>
+                        <span class="hero-tag">🔥 爆款选题库</span>
+                        <span class="hero-tag">🤖 AI脚本生成</span>
+                        <span class="hero-tag">🎬 自动剪辑</span>
+                        <span class="hero-tag">📤 多平台适配</span>
                     </div>
                 </div>
             </div>
 
-            <div class="card">
-                <div class="card-title">系统状态</div>
-                <div class="stats-grid" id="home-stats">
-                    <div class="stat-card">
-                        <div class="stat-num" id="stat-topics">-</div>
-                        <div class="stat-label">选题数量</div>
+            <!-- 赛道选择 -->
+            <div class="bili-card">
+                <div class="card-header">
+                    <span class="card-title">第一步：选择赛道</span>
+                </div>
+                <div class="card-body">
+                    <!-- 骨架屏 -->
+                    <div id="home-cat-skeleton" class="skeleton-category-grid">
+                        <div class="skeleton-category"><div class="skeleton skeleton-cat-icon"></div><div class="skeleton skeleton-cat-name"></div></div>
+                        <div class="skeleton-category"><div class="skeleton skeleton-cat-icon"></div><div class="skeleton skeleton-cat-name"></div></div>
+                        <div class="skeleton-category"><div class="skeleton skeleton-cat-icon"></div><div class="skeleton skeleton-cat-name"></div></div>
                     </div>
-                    <div class="stat-card">
-                        <div class="stat-num" id="stat-cache">-</div>
-                        <div class="stat-label">缓存命中率</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-num" id="stat-works">-</div>
-                        <div class="stat-label">已生成作品</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-num">100%</div>
-                        <div class="stat-label">离线运行</div>
+                    <!-- 真实内容 -->
+                    <div class="category-grid" id="home-category" style="display:none;"></div>
+                    <div style="text-align: center; margin-top: 24px;">
+                        <button class="bili-btn bili-btn-primary" id="go-materials-btn" onclick="goToMaterials()" style="padding: 12px 32px; font-size: 14px;" disabled>
+                            🚀 开始肝视频！
+                        </button>
                     </div>
                 </div>
             </div>
 
-            <div class="card">
-                <div class="card-title">支持平台</div>
-                <div style="display: flex; gap: 20px; flex-wrap: wrap;">
-                    <div style="flex: 1; min-width: 200px; padding: 20px; background: linear-gradient(135deg, rgba(102,126,234,0.1), rgba(118,75,162,0.1)); border-radius: 12px; text-align: center;">
-                        <div style="font-size: 32px; margin-bottom: 10px;">🎵</div>
-                        <div style="font-weight: 600;">抖音</div>
-                        <div style="font-size: 12px; color: #666;">悬念型爆款风格</div>
+            <!-- 系统状态 -->
+            <div class="bili-card">
+                <div class="card-header">
+                    <span class="card-title">系统状态</span>
+                </div>
+                <div class="card-body">
+                    <!-- 骨架屏 -->
+                    <div id="home-stats-skeleton" class="skeleton-stats-grid">
+                        <div class="skeleton-stat"><div class="skeleton skeleton-icon"></div><div class="skeleton-text"><div class="skeleton skeleton-num"></div><div class="skeleton skeleton-label"></div></div></div>
+                        <div class="skeleton-stat"><div class="skeleton skeleton-icon"></div><div class="skeleton-text"><div class="skeleton skeleton-num"></div><div class="skeleton skeleton-label"></div></div></div>
+                        <div class="skeleton-stat"><div class="skeleton skeleton-icon"></div><div class="skeleton-text"><div class="skeleton skeleton-num"></div><div class="skeleton skeleton-label"></div></div></div>
+                        <div class="skeleton-stat"><div class="skeleton skeleton-icon"></div><div class="skeleton-text"><div class="skeleton skeleton-num"></div><div class="skeleton skeleton-label"></div></div></div>
                     </div>
-                    <div style="flex: 1; min-width: 200px; padding: 20px; background: linear-gradient(135deg, rgba(255,120,120,0.1), rgba(255,80,80,0.1)); border-radius: 12px; text-align: center;">
-                        <div style="font-size: 32px; margin-bottom: 10px;">📕</div>
-                        <div style="font-weight: 600;">小红书</div>
-                        <div style="font-size: 12px; color: #666;">种草分享风格</div>
+                    <!-- 真实内容 -->
+                    <div class="stats-grid" id="home-stats" style="display:none;">
+                        <div class="stat-item">
+                            <div class="stat-icon">📝</div>
+                            <div>
+                                <div class="stat-num" id="stat-topics">-</div>
+                                <div class="stat-label">选题数量</div>
+                            </div>
+                        </div>
+                        <div class="stat-item blue">
+                            <div class="stat-icon">⚡</div>
+                            <div>
+                                <div class="stat-num" id="stat-cache">-</div>
+                                <div class="stat-label">缓存命中率</div>
+                            </div>
+                        </div>
+                        <div class="stat-item green">
+                            <div class="stat-icon">🎬</div>
+                            <div>
+                                <div class="stat-num" id="stat-works">-</div>
+                                <div class="stat-label">已生成作品</div>
+                            </div>
+                        </div>
+                        <div class="stat-item orange">
+                            <div class="stat-icon">💤</div>
+                            <div>
+                                <div class="stat-num">100%</div>
+                                <div class="stat-label">离线运行</div>
+                            </div>
+                        </div>
                     </div>
-                    <div style="flex: 1; min-width: 200px; padding: 20px; background: linear-gradient(135deg, rgba(255,180,0,0.1), rgba(255,150,0,0.1)); border-radius: 12px; text-align: center;">
-                        <div style="font-size: 32px; margin-bottom: 10px;">📺</div>
-                        <div style="font-weight: 600;">B站</div>
-                        <div style="font-size: 12px; color: #666;">UP主干货风格</div>
+                </div>
+            </div>
+
+            <!-- 支持平台 -->
+            <div class="bili-card">
+                <div class="card-header">
+                    <span class="card-title">支持平台</span>
+                </div>
+                <div class="card-body">
+                    <div class="platform-row">
+                        <div class="platform-card douyin">
+                            <div class="platform-logo">🎵</div>
+                            <div class="platform-info">
+                                <h4>抖音</h4>
+                                <p>悬念型爆款风格</p>
+                            </div>
+                        </div>
+                        <div class="platform-card xiaohongshu">
+                            <div class="platform-logo">📕</div>
+                            <div class="platform-info">
+                                <h4>小红书</h4>
+                                <p>种草分享风格</p>
+                            </div>
+                        </div>
+                        <div class="platform-card bilibili">
+                            <div class="platform-logo">📺</div>
+                            <div class="platform-info">
+                                <h4>B站</h4>
+                                <p>UP主干货风格</p>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- 素材管理 -->
+        <!-- ========== 素材管理 ========== -->
         <div id="page-materials" class="page">
-            <div class="card">
-                <div class="card-title">素材池管理</div>
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-                    <div class="platform-tabs">
-                        <span class="platform-tab active" onclick="filterMaterials('all')">全部</span>
-                        <span class="platform-tab" onclick="filterMaterials('images')">图片</span>
-                        <span class="platform-tab" onclick="filterMaterials('videos')">视频</span>
-                    </div>
-                    <div style="display: flex; gap: 10px;">
-                        <button class="btn btn-secondary" onclick="openFolder('materials')">打开素材池</button>
-                        <button class="btn btn-secondary" onclick="refreshMaterials()">刷新</button>
+            <div class="bili-card">
+                <div class="card-header">
+                    <span class="card-title">素材上传</span>
+                    <div style="display: flex; gap: 8px;">
+                        <button class="bili-btn bili-btn-secondary" onclick="openMaterialFolder()">📂 打开文件夹</button>
+                        <button class="bili-btn bili-btn-secondary" onclick="refreshMaterials()">🔄 刷新</button>
                     </div>
                 </div>
-                <div class="material-grid" id="material-grid">
-                    <!-- 素材列表由JS填充 -->
+                <div class="card-body">
+                    <!-- 拖拽上传区 -->
+                    <div class="upload-zone" id="upload-zone" onclick="document.getElementById('file-input').click()">
+                        <div class="upload-zone-icon">📤</div>
+                        <div class="upload-zone-text">拖拽文件到此处，或点击选择文件</div>
+                        <div class="upload-zone-hint">支持：图片(jpg/png)、视频(mp4)、音频(mp3/wav)</div>
+                    </div>
+                    <input type="file" class="upload-input" id="file-input" multiple accept=".jpg,.jpeg,.png,.webp,.mp4,.avi,.mov,.mkv,.mp3,.wav,.aac,.m4a" onchange="handleFileSelect(this.files)">
+
+                    <!-- 已选赛道提示 -->
+                    <div id="selected-cat-tip" style="margin-top: 16px; padding: 12px 16px; background: #FFF5F7; border-radius: 4px; display: none;">
+                        <span style="color: var(--bili-pink);">📍 当前赛道：</span>
+                        <span id="tip-cat-name" style="font-weight: 600; color: #232529;"></span>
+                    </div>
+
+                    <!-- 素材分类 -->
+                    <div class="material-tabs">
+                        <button class="material-tab active" onclick="filterMaterials('all')">全部<span class="count" id="count-all">0</span></button>
+                        <button class="material-tab" onclick="filterMaterials('image')">图片<span class="count" id="count-image">0</span></button>
+                        <button class="material-tab" onclick="filterMaterials('video')">视频<span class="count" id="count-video">0</span></button>
+                        <button class="material-tab" onclick="filterMaterials('audio')">音频<span class="count" id="count-audio">0</span></button>
+                    </div>
+
+                    <!-- 骨架屏 -->
+                    <div id="materials-skeleton" class="skeleton-material-grid">
+                        <div class="skeleton-material"><div class="skeleton skeleton-thumb"></div><div class="skeleton skeleton-name"></div></div>
+                        <div class="skeleton-material"><div class="skeleton skeleton-thumb"></div><div class="skeleton skeleton-name"></div></div>
+                        <div class="skeleton-material"><div class="skeleton skeleton-thumb"></div><div class="skeleton skeleton-name"></div></div>
+                        <div class="skeleton-material"><div class="skeleton skeleton-thumb"></div><div class="skeleton skeleton-name"></div></div>
+                        <div class="skeleton-material"><div class="skeleton skeleton-thumb"></div><div class="skeleton skeleton-name"></div></div>
+                        <div class="skeleton-material"><div class="skeleton skeleton-thumb"></div><div class="skeleton skeleton-name"></div></div>
+                    </div>
+                    <!-- 真实内容 -->
+                    <div class="material-grid" id="material-grid" style="display:none;"></div>
+
+                    <!-- 操作栏 -->
+                    <div class="material-actions" id="material-actions" style="display: none;">
+                        <div class="material-info">
+                            已选择 <span id="selected-count">0</span> 个素材
+                        </div>
+                        <div style="display: flex; gap: 8px;">
+                            <button class="bili-btn bili-btn-danger" onclick="clearAllMaterials()">🗑️ 清空全部</button>
+                        </div>
+                    </div>
+
+                    <!-- 生成按钮 -->
+                    <div style="text-align: center; margin-top: 24px; padding-top: 16px; border-top: 1px solid #E3E5E7;">
+                        <div style="margin-bottom: 12px; font-size: 14px; color: #909090;">选择目标平台</div>
+                        <div class="tab-row" style="border: none; padding: 0; margin: 0 0 16px 0; justify-content: center;">
+                            <span class="tab-item active" data-platform="all" onclick="selectGenPlatform('all')">全部</span>
+                            <span class="tab-item" data-platform="抖音" onclick="selectGenPlatform('抖音')">🎵 抖音</span>
+                            <span class="tab-item" data-platform="小红书" onclick="selectGenPlatform('小红书')">📕 小红书</span>
+                            <span class="tab-item" data-platform="B站" onclick="selectGenPlatform('B站')">📺 B站</span>
+                        </div>
+                        <button class="bili-btn bili-btn-primary" id="generate-btn" onclick="startGenerateWithMaterials()" style="padding: 12px 40px; font-size: 15px;">
+                            🎬 确认素材并开始生成视频
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
 
-        <!-- 选题中心 -->
+        <!-- ========== 选题中心 ========== -->
         <div id="page-topics" class="page">
-            <div class="card">
-                <div class="card-title">爆款选题中心</div>
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-                    <div class="category-grid" id="category-grid" style="display: flex; gap: 10px; flex-wrap: wrap;">
-                        <div class="category-item selected" data-category="all" onclick="selectCategory('all')">
-                            <div class="category-icon">📋</div>
-                            <div class="category-name">全部分类</div>
-                        </div>
-                    </div>
-                    <div style="display: flex; gap: 10px;">
-                        <input type="text" id="topic-search" placeholder="搜索选题..."
-                               style="padding: 10px 15px; border: 1px solid #ddd; border-radius: 25px; outline: none;"
-                               onkeyup="if(event.key==='Enter')searchTopics()">
-                        <button class="btn btn-secondary" onclick="searchTopics()">搜索</button>
+            <div class="bili-card">
+                <div class="card-header">
+                    <span class="card-title">爆款选题中心</span>
+                    <div style="display: flex; gap: 8px; align-items: center;">
+                        <input type="text" id="topic-search" class="bili-input" placeholder="搜索选题..." style="width: 180px;" onkeyup="if(event.key==='Enter')searchTopics()">
+                        <button class="bili-btn bili-btn-secondary" onclick="searchTopics()">🔍 搜索</button>
                     </div>
                 </div>
-                <div id="topic-list" class="topic-list">
-                    <!-- 选题列表由JS填充 -->
-                </div>
-                <div style="text-align: center; margin-top: 20px;">
-                    <button class="btn btn-secondary" id="load-more-topics" onclick="loadMoreTopics()">加载更多</button>
+                <div class="card-body">
+                    <!-- 骨架屏-赛道 -->
+                    <div id="topics-cat-skeleton" class="skeleton-category-grid" style="grid-template-columns: repeat(6, 1fr); margin-bottom: 20px;">
+                        <div class="skeleton-category"><div class="skeleton skeleton-cat-icon"></div><div class="skeleton skeleton-cat-name"></div></div>
+                        <div class="skeleton-category"><div class="skeleton skeleton-cat-icon"></div><div class="skeleton skeleton-cat-name"></div></div>
+                        <div class="skeleton-category"><div class="skeleton skeleton-cat-icon"></div><div class="skeleton skeleton-cat-name"></div></div>
+                        <div class="skeleton-category"><div class="skeleton skeleton-cat-icon"></div><div class="skeleton skeleton-cat-name"></div></div>
+                        <div class="skeleton-category"><div class="skeleton skeleton-cat-icon"></div><div class="skeleton skeleton-cat-name"></div></div>
+                        <div class="skeleton-category"><div class="skeleton skeleton-cat-icon"></div><div class="skeleton skeleton-cat-name"></div></div>
+                    </div>
+                    <!-- 真实赛道 -->
+                    <div class="category-grid" id="topic-category-grid" style="grid-template-columns: repeat(6, 1fr); margin-bottom: 20px; display:none;"></div>
+
+                    <!-- 骨架屏-选题列表 -->
+                    <div id="topics-list-skeleton" class="skeleton-topic-list">
+                        <div class="skeleton-topic"><div class="skeleton skeleton-rank"></div><div class="skeleton-topic-main"><div class="skeleton skeleton-title"></div><div class="skeleton skeleton-meta"></div></div></div>
+                        <div class="skeleton-topic"><div class="skeleton skeleton-rank"></div><div class="skeleton-topic-main"><div class="skeleton skeleton-title"></div><div class="skeleton skeleton-meta"></div></div></div>
+                        <div class="skeleton-topic"><div class="skeleton skeleton-rank"></div><div class="skeleton-topic-main"><div class="skeleton skeleton-title"></div><div class="skeleton skeleton-meta"></div></div></div>
+                        <div class="skeleton-topic"><div class="skeleton skeleton-rank"></div><div class="skeleton-topic-main"><div class="skeleton skeleton-title"></div><div class="skeleton skeleton-meta"></div></div></div>
+                        <div class="skeleton-topic"><div class="skeleton skeleton-rank"></div><div class="skeleton-topic-main"><div class="skeleton skeleton-title"></div><div class="skeleton skeleton-meta"></div></div></div>
+                    </div>
+                    <!-- 真实选题 -->
+                    <div id="topic-list" class="topic-list" style="display:none;"></div>
+                    <div style="text-align: center; margin-top: 20px;">
+                        <button class="bili-btn bili-btn-secondary" id="load-more-btn" onclick="loadMoreTopics()" style="display:none;">加载更多</button>
+                    </div>
                 </div>
             </div>
         </div>
 
-        <!-- 一键生成 -->
-        <div id="page-generate" class="page">
-            <div class="card">
-                <div class="card-title">一键生成视频</div>
-
-                <!-- 步骤1: 选择赛道 -->
-                <div style="margin-bottom: 30px;">
-                    <h4 style="margin-bottom: 15px; color: #666;">第一步：选择赛道</h4>
-                    <div class="category-grid" id="generate-category" style="grid-template-columns: repeat(3, 1fr);">
-                        <!-- 赛道由JS填充 -->
-                    </div>
+        <!-- ========== 生成中 ========== -->
+        <div id="page-generating" class="page">
+            <div class="bili-card">
+                <div class="card-header">
+                    <span class="card-title">视频生成中</span>
                 </div>
-
-                <!-- 步骤2: 选择平台 -->
-                <div style="margin-bottom: 30px;">
-                    <h4 style="margin-bottom: 15px; color: #666;">第二步：选择目标平台</h4>
-                    <div class="platform-tabs" id="platform-tabs">
-                        <span class="platform-tab active" data-platform="all" onclick="selectPlatform('all')">全部平台</span>
-                        <span class="platform-tab" data-platform="抖音" onclick="selectPlatform('抖音')">🎵 抖音</span>
-                        <span class="platform-tab" data-platform="小红书" onclick="selectPlatform('小红书')">📕 小红书</span>
-                        <span class="platform-tab" data-platform="B站" onclick="selectPlatform('B站')">📺 B站</span>
-                    </div>
-                </div>
-
-                <!-- 步骤3: 生成 -->
-                <div style="text-align: center; margin-bottom: 30px;">
-                    <button class="btn btn-primary" id="btn-start-generate" onclick="startGenerate()" style="padding: 15px 40px; font-size: 16px;">
-                        🚀 开始生成
-                    </button>
-                </div>
-
-                <!-- 生成进度 -->
-                <div id="generate-progress" style="display: none;">
-                    <div class="progress-container">
-                        <div class="progress-circle" style="--progress: 0%;">
-                            <div class="progress-inner" id="progress-percent">0%</div>
-                        </div>
+                <div class="card-body">
+                    <div class="progress-wrap">
+                        <div class="progress-tv"></div>
                         <div class="progress-text" id="progress-text">准备中...</div>
-                        <div class="progress-step" id="progress-step">步骤 1/5</div>
+                        <div class="progress-step" id="progress-step">步骤 0/6</div>
                     </div>
+
+                    <!-- 步骤日志 -->
+                    <div class="step-log" id="step-log">
+                        <div class="step-item" id="step-topic">
+                            <div class="step-icon pending" id="step-topic-icon">1</div>
+                            <div class="step-info">
+                                <div class="step-name">选择选题</div>
+                                <div class="step-msg" id="step-topic-msg">正在从爆款库中选择...</div>
+                            </div>
+                        </div>
+                        <div class="step-item" id="step-script">
+                            <div class="step-icon pending" id="step-script-icon">2</div>
+                            <div class="step-info">
+                                <div class="step-name">生成脚本</div>
+                                <div class="step-msg" id="step-script-msg">正在调用AI生成口播脚本...</div>
+                            </div>
+                        </div>
+                        <div class="step-item" id="step-material">
+                            <div class="step-icon pending" id="step-material-icon">3</div>
+                            <div class="step-info">
+                                <div class="step-name">处理素材</div>
+                                <div class="step-msg" id="step-material-msg">正在整理素材...</div>
+                            </div>
+                        </div>
+                        <div class="step-item" id="step-video">
+                            <div class="step-icon pending" id="step-video-icon">4</div>
+                            <div class="step-info">
+                                <div class="step-name">FFmpeg剪辑</div>
+                                <div class="step-msg" id="step-video-msg">正在合成视频片段...</div>
+                            </div>
+                        </div>
+                        <div class="step-item" id="step-subtitle">
+                            <div class="step-icon pending" id="step-subtitle-icon">5</div>
+                            <div class="step-info">
+                                <div class="step-name">字幕烧录</div>
+                                <div class="step-msg" id="step-subtitle-msg">正在生成并烧录字幕...</div>
+                            </div>
+                        </div>
+                        <div class="step-item" id="step-export">
+                            <div class="step-icon pending" id="step-export-icon">6</div>
+                            <div class="step-info">
+                                <div class="step-name">多平台导出</div>
+                                <div class="step-msg" id="step-export-msg">正在适配各平台格式...</div>
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="log-box" id="log-box"></div>
                 </div>
             </div>
+        </div>
 
-            <!-- 生成结果 -->
-            <div class="card" id="generate-result" style="display: none;">
-                <div class="card-title">生成完成!</div>
-                <div id="result-content"></div>
-                <div style="text-align: center; margin-top: 20px;">
-                    <button class="btn btn-secondary" onclick="showPage('works')">查看作品</button>
-                    <button class="btn btn-primary" onclick="resetGenerate()">继续创作</button>
+        <!-- ========== 生成结果 ========== -->
+        <div id="page-result" class="page">
+            <div class="bili-card">
+                <div class="card-header">
+                    <span class="card-title">生成完成</span>
+                </div>
+                <div class="card-body">
+                    <div style="text-align: center; padding: 32px;">
+                        <div style="font-size: 64px; margin-bottom: 16px;">🎉</div>
+                        <div style="font-size: 20px; color: #232529; margin-bottom: 8px;">视频生成成功！</div>
+                        <div style="font-size: 14px; color: #909090; margin-bottom: 24px;" id="result-summary"></div>
+
+                        <div id="result-works" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 24px;"></div>
+
+                        <div style="display: flex; justify-content: center; gap: 12px;">
+                            <button class="bili-btn bili-btn-primary" onclick="showPage('works')">📺 查看我的投稿</button>
+                            <button class="bili-btn bili-btn-secondary" onclick="goHome()">继续肝下一条</button>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
 
-        <!-- 作品管理 -->
+        <!-- ========== 我的投稿 ========== -->
         <div id="page-works" class="page">
-            <div class="card">
-                <div class="card-title">已生成作品</div>
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-                    <div class="platform-tabs" id="works-platform-tabs">
-                        <span class="platform-tab active" data-platform="all" onclick="filterWorks('all')">全部</span>
-                        <span class="platform-tab" data-platform="抖音" onclick="filterWorks('抖音')">🎵 抖音</span>
-                        <span class="platform-tab" data-platform="小红书" onclick="filterWorks('小红书')">📕 小红书</span>
-                        <span class="platform-tab" data-platform="B站" onclick="filterWorks('B站')">📺 B站</span>
+            <div class="bili-card">
+                <div class="card-header">
+                    <span class="card-title">我的投稿</span>
+                    <div style="display: flex; gap: 8px;">
+                        <button class="bili-btn bili-btn-secondary" onclick="openOutputFolder()">📂 打开文件夹</button>
+                        <button class="bili-btn bili-btn-secondary" onclick="loadWorks()">🔄 刷新</button>
                     </div>
-                    <button class="btn btn-secondary" onclick="openFolder('output')">打开输出目录</button>
                 </div>
-                <div class="video-grid" id="video-grid">
-                    <!-- 作品列表由JS填充 -->
-                </div>
-                <div id="works-empty" class="empty-state" style="display: none;">
-                    <div class="empty-icon">📁</div>
-                    <div>暂无作品</div>
-                    <div style="margin-top: 10px;">
-                        <button class="btn btn-primary" onclick="showPage('generate')">开始创作</button>
+                <div class="card-body">
+                    <div class="tab-row">
+                        <span class="tab-item active" data-wplatform="all" onclick="filterWorks('all')">全部</span>
+                        <span class="tab-item" data-wplatform="抖音" onclick="filterWorks('抖音')">🎵 抖音</span>
+                        <span class="tab-item" data-wplatform="小红书" onclick="filterWorks('小红书')">📕 小红书</span>
+                        <span class="tab-item" data-wplatform="B站" onclick="filterWorks('B站')">📺 B站</span>
+                    </div>
+
+                    <!-- 骨架屏 -->
+                    <div id="works-skeleton" class="skeleton-video-grid">
+                        <div class="skeleton-video"><div class="skeleton skeleton-video-thumb"></div><div class="skeleton-video-info"><div class="skeleton skeleton-video-title"></div><div class="skeleton skeleton-video-meta"></div></div></div>
+                        <div class="skeleton-video"><div class="skeleton skeleton-video-thumb"></div><div class="skeleton-video-info"><div class="skeleton skeleton-video-title"></div><div class="skeleton skeleton-video-meta"></div></div></div>
+                        <div class="skeleton-video"><div class="skeleton skeleton-video-thumb"></div><div class="skeleton-video-info"><div class="skeleton skeleton-video-title"></div><div class="skeleton skeleton-video-meta"></div></div></div>
+                        <div class="skeleton-video"><div class="skeleton skeleton-video-thumb"></div><div class="skeleton-video-info"><div class="skeleton skeleton-video-title"></div><div class="skeleton skeleton-video-meta"></div></div></div>
+                    </div>
+                    <!-- 真实内容 -->
+                    <div class="video-grid" id="video-grid" style="display:none;"></div>
+                    <div id="works-empty" class="empty-state" style="display: none;">
+                        <div class="empty-icon">📁</div>
+                        <div>还没有投稿作品</div>
+                        <button class="bili-btn bili-btn-primary" onclick="showPage('home')" style="margin-top: 16px;">开始肝视频</button>
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- 数据统计 -->
+        <!-- ========== 数据中心 ========== -->
         <div id="page-stats" class="page">
-            <div class="card">
-                <div class="card-title">系统数据统计</div>
-                <div class="stats-grid" id="stats-grid">
-                    <!-- 统计由JS填充 -->
+            <div class="bili-card">
+                <div class="card-header">
+                    <span class="card-title">数据中心</span>
+                </div>
+                <div class="card-body">
+                    <!-- 骨架屏 -->
+                    <div id="stats-main-skeleton" class="skeleton-stats-grid" style="grid-template-columns: repeat(2, 1fr);">
+                        <div class="skeleton-stat"><div class="skeleton skeleton-icon"></div><div class="skeleton-text"><div class="skeleton skeleton-num"></div><div class="skeleton skeleton-label"></div></div></div>
+                        <div class="skeleton-stat"><div class="skeleton skeleton-icon"></div><div class="skeleton-text"><div class="skeleton skeleton-num"></div><div class="skeleton skeleton-label"></div></div></div>
+                    </div>
+                    <!-- 真实内容 -->
+                    <div class="stats-grid" id="stats-grid" style="grid-template-columns: repeat(2, 1fr); display:none;"></div>
                 </div>
             </div>
 
-            <div class="card">
-                <div class="card-title">选题库详情</div>
-                <div id="category-stats" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
-                    <!-- 赛道统计由JS填充 -->
+            <div class="bili-card">
+                <div class="card-header">
+                    <span class="card-title">选题分布</span>
+                </div>
+                <div class="card-body">
+                    <!-- 骨架屏 -->
+                    <div id="stats-cat-skeleton" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;">
+                        <div class="skeleton" style="padding: 12px; border-radius: 4px; height: 60px;"></div>
+                        <div class="skeleton" style="padding: 12px; border-radius: 4px; height: 60px;"></div>
+                        <div class="skeleton" style="padding: 12px; border-radius: 4px; height: 60px;"></div>
+                    </div>
+                    <!-- 真实内容 -->
+                    <div id="cat-stats" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; display:none;"></div>
                 </div>
             </div>
 
-            <div class="card">
-                <div class="card-title">缓存状态</div>
-                <div id="cache-status">
-                    <!-- 缓存状态由JS填充 -->
+            <div class="bili-card">
+                <div class="card-header">
+                    <span class="card-title">缓存状态</span>
+                </div>
+                <div class="card-body" id="cache-info">
+                    <!-- 骨架屏 -->
+                    <div id="cache-skeleton" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px;">
+                        <div class="skeleton" style="padding: 12px; border-radius: 4px; height: 60px;"></div>
+                        <div class="skeleton" style="padding: 12px; border-radius: 4px; height: 60px;"></div>
+                        <div class="skeleton" style="padding: 12px; border-radius: 4px; height: 60px;"></div>
+                        <div class="skeleton" style="padding: 12px; border-radius: 4px; height: 60px;"></div>
+                    </div>
+                    <!-- 真实内容 -->
+                    <div id="cache-info-real" style="display: none;"></div>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- 图片预览模态框 -->
-    <div class="modal" id="image-modal" onclick="closeModal('image-modal')">
+    <!-- 图片预览 -->
+    <div class="modal" id="img-modal" onclick="closeModal('img-modal')">
         <div class="modal-content" onclick="event.stopPropagation()">
             <div class="modal-header">
-                <span>素材预览</span>
-                <span class="modal-close" onclick="closeModal('image-modal')">&times;</span>
+                <span style="font-weight: 600;">素材预览</span>
+                <span class="modal-close" onclick="closeModal('img-modal')">&times;</span>
             </div>
             <div class="modal-body" style="text-align: center;">
-                <img id="preview-image" src="" style="max-width: 100%; max-height: 70vh; border-radius: 8px;">
+                <img id="preview-img" style="max-width: 100%; max-height: 70vh; border-radius: 4px;">
             </div>
         </div>
     </div>
 
-    <!-- 视频预览模态框 -->
+    <!-- 视频预览 -->
     <div class="modal" id="video-modal" onclick="closeModal('video-modal')">
         <div class="modal-content" onclick="event.stopPropagation()">
             <div class="modal-header">
-                <span>作品预览</span>
+                <span style="font-weight: 600;">作品预览</span>
                 <span class="modal-close" onclick="closeModal('video-modal')">&times;</span>
             </div>
             <div class="modal-body" style="text-align: center;">
-                <video id="preview-video" controls style="max-width: 100%; max-height: 70vh; border-radius: 8px;"></video>
-                <div id="video-info" style="margin-top: 15px; text-align: left;"></div>
+                <video id="preview-video" controls style="max-width: 100%; max-height: 70vh; border-radius: 4px;"></video>
+            </div>
+        </div>
+    </div>
+
+    <!-- 音频预览 -->
+    <div class="modal" id="audio-modal" onclick="closeModal('audio-modal')">
+        <div class="modal-content" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <span style="font-weight: 600;">音频预览</span>
+                <span class="modal-close" onclick="closeModal('audio-modal')">&times;</span>
+            </div>
+            <div class="modal-body" style="text-align: center;">
+                <audio id="preview-audio" controls style="width: 100%; margin-top: 20px;"></audio>
+                <div id="audio-info" style="margin-top: 12px; text-align: left;"></div>
             </div>
         </div>
     </div>
 
     <script>
-        // 全局状态
-        let currentCategory = 'all';
-        let currentPlatform = 'all';
+        // ========== 全局状态 ==========
+        const API = '/api';
+        let currentPage = 'home';
+        let selectedCat = null;
+        let selectedPlatform = 'all';
         let currentWorkPlatform = 'all';
-        let topicsOffset = 0;
         let topicsData = [];
-        let selectedTopic = null;
-        let selectedCategory = null;
-        let selectedPlatforms = ['all'];
+        let topicsOffset = 0;
         let materialsData = [];
+        let selectedMaterials = new Set();
         let worksData = [];
-        let generateSteps = [];
 
-        // API基础路径
-        const API_BASE = '/api';
-
-        // 初始化
-        document.addEventListener('DOMContentLoaded', () => {
-            loadHomeStats();
-            loadCategories();
-            loadMaterials();
-            loadTopics();
-            loadWorks();
-        });
-
-        // 页面切换
-        function showPage(pageId) {
-            document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-            document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
-            document.getElementById('page-' + pageId).classList.add('active');
-            event.target.classList.add('active');
-
-            if (pageId === 'stats') loadStats();
+        // ========== 顶部进度条控制 ==========
+        let progressTimer = null;
+        function showProgress() {
+            const bar = document.getElementById('top-progress');
+            bar.style.width = '30%';
+            bar.classList.add('show');
+        }
+        function setProgress(pct) {
+            const bar = document.getElementById('top-progress');
+            bar.style.width = pct + '%';
+        }
+        function hideProgress() {
+            const bar = document.getElementById('top-progress');
+            bar.style.width = '100%';
+            setTimeout(() => {
+                bar.classList.remove('show');
+                bar.style.width = '0';
+            }, 200);
         }
 
-        // 首页统计
-        async function loadHomeStats() {
+        // ========== 初始化 ==========
+        document.addEventListener('DOMContentLoaded', () => {
+            // 页面DOM已渲染完成，立即显示骨架屏对应区域
+            // 异步加载数据
+            Promise.all([
+                loadCategoriesPromise(),
+                loadStatsPromise()
+            ]).then(() => {
+                // 数据加载完成，隐藏骨架屏，显示真实内容
+                finishHomeLoading();
+            });
+
+            // 初始化上传区域
+            initUploadZone();
+        });
+
+        // ========== 首页骨架屏切换 ==========
+        function finishHomeLoading() {
+            // 赛道
+            const catSk = document.getElementById('home-cat-skeleton');
+            const catReal = document.getElementById('home-category');
+            if (catSk && catReal) {
+                catSk.style.display = 'none';
+                catReal.style.display = 'grid';
+            }
+
+            // 统计
+            const statsSk = document.getElementById('home-stats-skeleton');
+            const statsReal = document.getElementById('home-stats');
+            if (statsSk && statsReal) {
+                statsSk.style.display = 'none';
+                statsReal.style.display = 'grid';
+            }
+            hideProgress();
+        }
+
+        // ========== Promise化数据加载 ==========
+        function loadCategoriesPromise() {
+            return new Promise((resolve) => {
+                loadCategories();
+                // 等待DOM更新后resolve
+                setTimeout(resolve, 100);
+            });
+        }
+
+        function loadStatsPromise() {
+            return new Promise((resolve) => {
+                loadHome();
+                setTimeout(resolve, 100);
+            });
+        }
+
+        function loadTopicsPromise(cat) {
+            return new Promise((resolve) => {
+                loadTopics(cat);
+                setTimeout(resolve, 100);
+            });
+        }
+
+        function loadMaterialsPromise() {
+            return new Promise((resolve) => {
+                loadMaterials();
+                setTimeout(resolve, 100);
+            });
+        }
+
+        function loadWorksPromise() {
+            return new Promise((resolve) => {
+                loadWorks();
+                setTimeout(resolve, 100);
+            });
+        }
+
+        function loadStatsPagePromise() {
+            return new Promise((resolve) => {
+                loadStatsPage();
+                setTimeout(resolve, 100);
+            });
+        }
+
+        // ========== 页面切换 ==========
+        function showPage(page) {
+            currentPage = page;
+            document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+            document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+            document.getElementById('page-' + page).classList.add('active');
+            document.querySelector(`.nav-item[data-page="${page}"]`)?.classList.add('active');
+
+            if (page === 'stats') {
+                showStatsPage();
+            }
+            if (page === 'works') {
+                showWorksPage();
+            }
+            if (page === 'materials') {
+                showMaterialsPage();
+            }
+            if (page === 'topics') {
+                showTopicsPage();
+            }
+        }
+
+        // ========== 各页面骨架屏切换 ==========
+        function showStatsPage() {
+            showProgress();
+            const skeletonIds = ['stats-main-skeleton', 'stats-cat-skeleton', 'cache-skeleton'];
+            const realIds = ['stats-grid', 'cat-stats', 'cache-info-real'];
+
+            loadStatsPagePromise().then(() => {
+                skeletonIds.forEach((id, i) => {
+                    const sk = document.getElementById(id);
+                    const real = document.getElementById(realIds[i]);
+                    if (sk) sk.style.display = 'none';
+                    if (real) real.style.display = 'grid';
+                });
+                document.getElementById('cache-info').querySelector('#cache-skeleton').style.display = 'none';
+                hideProgress();
+            });
+        }
+
+        function showWorksPage() {
+            showProgress();
+            const sk = document.getElementById('works-skeleton');
+            const real = document.getElementById('video-grid');
+            const empty = document.getElementById('works-empty');
+
+            loadWorksPromise().then(() => {
+                if (sk) sk.style.display = 'none';
+                if (real) {
+                    real.style.display = 'grid';
+                    renderWorks();
+                }
+                hideProgress();
+            });
+        }
+
+        function showMaterialsPage() {
+            showProgress();
+            const sk = document.getElementById('materials-skeleton');
+            const real = document.getElementById('material-grid');
+
+            loadMaterialsPromise().then(() => {
+                if (sk) sk.style.display = 'none';
+                if (real) real.style.display = 'grid';
+                hideProgress();
+            });
+        }
+
+        function showTopicsPage() {
+            showProgress();
+            const catSk = document.getElementById('topics-cat-skeleton');
+            const catReal = document.getElementById('topic-category-grid');
+            const listSk = document.getElementById('topics-list-skeleton');
+            const listReal = document.getElementById('topic-list');
+            const loadMore = document.getElementById('load-more-btn');
+
+            // 先加载赛道分类
+            loadCategoriesPromise().then(() => {
+                if (catSk) catSk.style.display = 'none';
+                if (catReal) catReal.style.display = 'grid';
+
+                // 再加载选题
+                return loadTopicsPromise('');
+            }).then(() => {
+                if (listSk) listSk.style.display = 'none';
+                if (listReal) listReal.style.display = 'flex';
+                if (loadMore) loadMore.style.display = 'inline-block';
+                hideProgress();
+            });
+        }
+
+        // ========== 首页加载 ==========
+        async function loadHome() {
             try {
-                const res = await fetch(API_BASE + '/stats');
+                const res = await fetch(API + '/stats');
                 const data = await res.json();
                 document.getElementById('stat-topics').textContent = data.topics_count || 0;
                 document.getElementById('stat-cache').textContent = data.cache_hit_rate || '0%';
                 document.getElementById('stat-works').textContent = data.works_count || 0;
             } catch (e) {
-                console.error('加载统计失败', e);
+                console.error(e);
             }
         }
 
-        // 加载赛道分类
+        // ========== 分类加载 ==========
         async function loadCategories() {
             try {
-                const res = await fetch(API_BASE + '/categories');
-                const categories = await res.json();
+                const res = await fetch(API + '/categories');
+                const cats = await res.json();
+                const icons = {'知识付费':'💡','美食探店':'🍜','生活方式':'🌿','情感心理':'💝','科技数码':'💻','娱乐搞笑':'🎮'};
 
-                const grid = document.getElementById('category-grid');
-                grid.innerHTML = `
-                    <div class="category-item selected" data-category="all" onclick="selectCategory('all')">
-                        <div class="category-icon">📋</div>
-                        <div class="category-name">全部分类</div>
-                    </div>
-                ` + categories.map(cat => `
-                    <div class="category-item" data-category="${cat.name}" onclick="selectCategory('${cat.name}')">
-                        <div class="category-icon">${cat.icon}</div>
-                        <div class="category-name">${cat.name}</div>
+                const homeGrid = document.getElementById('home-category');
+                homeGrid.innerHTML = cats.map(c => `
+                    <div class="category-item" onclick="selectHomeCat('${c.name}')">
+                        <div class="category-icon">${icons[c.name] || '📁'}</div>
+                        <div class="category-name">${c.name}</div>
                     </div>
                 `).join('');
 
-                // 生成页面赛道选择
-                const genCat = document.getElementById('generate-category');
-                if (genCat) {
-                    genCat.innerHTML = categories.map(cat => `
-                        <div class="category-item" data-category="${cat.name}" onclick="selectGenCategory('${cat.name}')">
-                            <div class="category-icon">${cat.icon}</div>
-                            <div class="category-name">${cat.name}</div>
+                const topicGrid = document.getElementById('topic-category-grid');
+                topicGrid.innerHTML = `<div class="category-item" onclick="selectTopicCat('')"><div class="category-icon">📁</div><div class="category-name">全部</div></div>` +
+                    cats.map(c => `
+                        <div class="category-item" onclick="selectTopicCat('${c.name}')">
+                            <div class="category-icon">${icons[c.name] || '📁'}</div>
+                            <div class="category-name">${c.name}</div>
                         </div>
                     `).join('');
-                }
+
             } catch (e) {
-                console.error('加载分类失败', e);
+                console.error(e);
             }
         }
 
-        // 选择分类
-        function selectCategory(cat) {
-            currentCategory = cat;
+        function selectHomeCat(cat) {
+            selectedCat = selectedCat === cat ? null : cat;
+            document.querySelectorAll('#home-category .category-item').forEach(item => {
+                item.classList.toggle('selected', item.querySelector('.category-name').textContent === cat);
+            });
+            document.getElementById('go-materials-btn').disabled = !selectedCat;
+        }
+
+        function selectTopicCat(cat) {
+            document.querySelectorAll('#topic-category-grid .category-item').forEach(item => {
+                const name = item.querySelector('.category-name').textContent;
+                item.classList.toggle('selected', cat === '' ? name === '全部' : name === cat);
+            });
             topicsOffset = 0;
             topicsData = [];
-            document.querySelectorAll('#category-grid .category-item').forEach(item => {
-                item.classList.toggle('selected', item.dataset.category === cat);
-            });
-            loadTopics();
-        }
 
-        // 选题中心选择分类
-        function selectGenCategory(cat) {
-            selectedCategory = selectedCategory === cat ? null : cat;
-            document.querySelectorAll('#generate-category .category-item').forEach(item => {
-                item.classList.toggle('selected', item.dataset.category === selectedCategory);
+            const listSk = document.getElementById('topics-list-skeleton');
+            const listReal = document.getElementById('topic-list');
+
+            showProgress();
+            loadTopicsPromise(cat === '全部' ? '' : cat).then(() => {
+                if (listSk) listSk.style.display = 'none';
+                if (listReal) listReal.style.display = 'flex';
+                hideProgress();
             });
         }
 
-        // 搜索选题
-        function searchTopics() {
-            const keyword = document.getElementById('topic-search').value.trim();
-            topicsOffset = 0;
-            topicsData = [];
-            loadTopics(keyword);
+        function goToMaterials() {
+            if (!selectedCat) {
+                alert('请先选择赛道！');
+                return;
+            }
+            document.getElementById('selected-cat-tip').style.display = 'block';
+            document.getElementById('tip-cat-name').textContent = selectedCat;
+            showPage('materials');
         }
 
-        // 加载选题
-        async function loadTopics(keyword = '') {
+        // ========== 选题加载 ==========
+        async function loadTopics(cat = '') {
             try {
-                let url = API_BASE + '/topics?limit=20&offset=' + topicsOffset;
-                if (currentCategory !== 'all') url += '&category=' + encodeURIComponent(currentCategory);
-                if (keyword) url += '&keyword=' + encodeURIComponent(keyword);
-
+                let url = API + '/topics?limit=20&offset=' + topicsOffset;
+                if (cat) url += '&category=' + encodeURIComponent(cat);
                 const res = await fetch(url);
                 const data = await res.json();
-
-                if (topicsOffset === 0) {
-                    topicsData = data.topics || [];
-                } else {
-                    topicsData = topicsData.concat(data.topics || []);
-                }
-
+                if (topicsOffset === 0) topicsData = data.topics || [];
+                else topicsData = topicsData.concat(data.topics || []);
                 renderTopics();
-                document.getElementById('load-more-topics').style.display =
-                    (data.topics || []).length === 20 ? 'inline-block' : 'none';
+                document.getElementById('load-more-btn').style.display = (data.topics || []).length === 20 ? 'inline-block' : 'none';
             } catch (e) {
-                console.error('加载选题失败', e);
+                console.error(e);
             }
         }
 
         function loadMoreTopics() {
             topicsOffset += 20;
-            loadTopics(document.getElementById('topic-search').value.trim());
+            loadTopics(currentCat);
         }
 
-        // 渲染选题列表
+        function searchTopics() {
+            const kw = document.getElementById('topic-search').value.trim();
+            topicsOffset = 0;
+            topicsData = [];
+            if (kw) {
+                showProgress();
+                fetch(API + '/topics?keyword=' + encodeURIComponent(kw) + '&limit=100')
+                    .then(r => r.json())
+                    .then(data => {
+                        topicsData = data.topics || [];
+                        renderTopics();
+                        hideProgress();
+                    });
+            } else {
+                loadTopics();
+            }
+        }
+
         function renderTopics() {
             const list = document.getElementById('topic-list');
-            if (topicsData.length === 0) {
+            if (!topicsData.length) {
                 list.innerHTML = '<div class="empty-state"><div class="empty-icon">📝</div><div>暂无选题</div></div>';
                 return;
             }
-
-            list.innerHTML = topicsData.map((topic, idx) => `
-                <div class="topic-item ${selectedTopic && selectedTopic.id === topic.id ? 'selected' : ''}"
-                     onclick="selectTopic(${idx})">
-                    <div class="topic-title">${topic.title}</div>
-                    <div style="margin-bottom: 8px;">
-                        <span class="topic-tag">${topic.category}</span>
-                        <span class="topic-tag" style="background: rgba(255,120,120,0.1); color: #ff7878;">${topic.sub_category || ''}</span>
-                    </div>
-                    <div class="topic-meta">
-                        <span>🔥 热度 ${topic.heat_score}</span>
-                        <span>📈 转化 ${Math.round(topic.transform_rate * 100)}%</span>
-                        <span>⏱️ ${topic.duration}</span>
+            list.innerHTML = topicsData.map((t, i) => `
+                <div class="topic-item">
+                    <div class="topic-rank">${i + 1 + topicsOffset}</div>
+                    <div class="topic-main">
+                        <div class="topic-title">${t.title}</div>
+                        <div class="topic-meta">
+                            <span class="topic-tag cat">${t.category}</span>
+                            <span class="topic-tag">${t.sub_category || ''}</span>
+                            <span>🔥 ${t.heat_score}</span>
+                            <span>📈 ${Math.round(t.transform_rate * 100)}%</span>
+                            <span>⏱️ ${t.duration}</span>
+                        </div>
                     </div>
                 </div>
             `).join('');
         }
 
-        // 选择选题
-        function selectTopic(idx) {
-            selectedTopic = topicsData[idx];
-            renderTopics();
+        // ========== 素材上传 ==========
+        function initUploadZone() {
+            const zone = document.getElementById('upload-zone');
+
+            zone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                zone.classList.add('dragover');
+            });
+
+            zone.addEventListener('dragleave', () => {
+                zone.classList.remove('dragover');
+            });
+
+            zone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                zone.classList.remove('dragover');
+                handleFileSelect(e.dataTransfer.files);
+            });
         }
 
-        // 加载素材
+        async function handleFileSelect(files) {
+            if (!files || files.length === 0) return;
+
+            showProgress();
+
+            const formData = new FormData();
+            for (let f of files) {
+                formData.append('file', f);
+            }
+
+            try {
+                const res = await fetch(API + '/materials/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await res.json();
+                if (data.success) {
+                    refreshMaterials();
+                }
+                hideProgress();
+            } catch (e) {
+                console.error(e);
+                hideProgress();
+            }
+        }
+
+        // ========== 素材加载 ==========
         async function loadMaterials() {
             try {
-                const res = await fetch(API_BASE + '/materials');
+                const res = await fetch(API + '/materials');
                 const data = await res.json();
                 materialsData = data.materials || [];
+                updateCounts();
                 renderMaterials();
             } catch (e) {
-                console.error('加载素材失败', e);
+                console.error(e);
             }
-        }
-
-        function filterMaterials(type) {
-            document.querySelectorAll('#page-materials .platform-tab').forEach(tab => {
-                tab.classList.toggle('active', tab.textContent.includes(type === 'all' ? '全部' : type));
-            });
-            renderMaterials(type);
-        }
-
-        function renderMaterials(filter = 'all') {
-            const grid = document.getElementById('material-grid');
-            let filtered = materialsData;
-            if (filter === 'images') filtered = materialsData.filter(m => m.type === 'image');
-            if (filter === 'videos') filtered = filtered.filter(m => m.type === 'video');
-
-            if (filtered.length === 0) {
-                grid.innerHTML = '<div class="empty-state" style="grid-column: 1/-1;"><div class="empty-icon">📂</div><div>暂无素材</div><div style="margin-top:10px;">请将素材放入 assets/素材池_待剪辑/ 目录</div></div>';
-                return;
-            }
-
-            grid.innerHTML = filtered.map(m => `
-                <div class="material-item" onclick="previewMaterial('${m.path.replace(/\\/g, '\\\\')}')">
-                    ${m.type === 'image'
-                        ? `<img src="file:///${m.path}" alt="${m.name}">`
-                        : `<div class="video-thumb">▶</div>`
-                    }
-                    <div class="material-info">${m.name}</div>
-                </div>
-            `).join('');
         }
 
         function refreshMaterials() {
             loadMaterials();
         }
 
-        function previewMaterial(path) {
-            if (path.match(/\.(jpg|jpeg|png|webp)$/i)) {
-                document.getElementById('preview-image').src = 'file:///' + path;
-                document.getElementById('image-modal').classList.add('show');
+        function updateCounts() {
+            const counts = { all: materialsData.length, image: 0, video: 0, audio: 0 };
+            materialsData.forEach(m => {
+                if (m.type === 'image') counts.image++;
+                if (m.type === 'video') counts.video++;
+                if (m.type === 'audio') counts.audio++;
+            });
+            document.getElementById('count-all').textContent = counts.all;
+            document.getElementById('count-image').textContent = counts.image;
+            document.getElementById('count-video').textContent = counts.video;
+            document.getElementById('count-audio').textContent = counts.audio;
+        }
+
+        function filterMaterials(type) {
+            document.querySelectorAll('.material-tab').forEach(t => {
+                t.classList.toggle('active', t.textContent.includes(type === 'all' ? '全部' : type === 'image' ? '图片' : type === 'video' ? '视频' : '音频'));
+            });
+            renderMaterials(type);
+        }
+
+        function renderMaterials(type = 'all') {
+            const grid = document.getElementById('material-grid');
+            const actions = document.getElementById('material-actions');
+            let list = materialsData;
+            if (type === 'image') list = materialsData.filter(m => m.type === 'image');
+            if (type === 'video') list = materialsData.filter(m => m.type === 'video');
+            if (type === 'audio') list = materialsData.filter(m => m.type === 'audio');
+
+            if (!list.length) {
+                grid.innerHTML = '<div class="empty-state" style="grid-column: 1/-1;"><div class="empty-icon">📂</div><div>暂无素材</div><div style="margin-top:8px;font-size:12px;">拖拽或点击上方区域上传素材</div></div>';
+                actions.style.display = 'none';
+                return;
+            }
+
+            actions.style.display = 'flex';
+
+            grid.innerHTML = list.map(m => {
+                const isSelected = selectedMaterials.has(m.path);
+                let thumb = '';
+                if (m.type === 'image') {
+                    thumb = `<img src="file:///${m.path.replace(/\\/g, '/')}" alt="${m.name}">`;
+                } else if (m.type === 'video') {
+                    thumb = '▶';
+                } else {
+                    thumb = '🎵';
+                }
+                return `
+                    <div class="material-item ${isSelected ? 'selected' : ''}" onclick="toggleMaterial('${m.path.replace(/\\/g, '\\\\')}', event)">
+                        <div class="material-thumb">
+                            ${thumb}
+                            <span class="type-badge">${m.type === 'image' ? '图片' : m.type === 'video' ? '视频' : '音频'}</span>
+                            ${isSelected ? '<div class="check-overlay">✓</div>' : ''}
+                        </div>
+                        <div class="material-name" title="${m.name}">${m.name}</div>
+                        <button class="material-del" onclick="deleteMaterial('${m.name.replace(/'/g, "\\'")}', event)">×</button>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function toggleMaterial(path, event) {
+            if (event.target.classList.contains('material-del') || event.target.classList.contains('material-name')) {
+                return;
+            }
+            if (selectedMaterials.has(path)) {
+                selectedMaterials.delete(path);
+            } else {
+                selectedMaterials.add(path);
+            }
+            document.getElementById('selected-count').textContent = selectedMaterials.size;
+            renderMaterials(document.querySelector('.material-tab.active')?.textContent.includes('全部') ? 'all' :
+                           document.querySelector('.material-tab.active')?.textContent.includes('图片') ? 'image' :
+                           document.querySelector('.material-tab.active')?.textContent.includes('视频') ? 'video' : 'audio');
+        }
+
+        async function deleteMaterial(name, event) {
+            event.stopPropagation();
+            if (!confirm(`确定删除素材 "${name}" 吗？`)) return;
+            showProgress();
+            try {
+                await fetch(API + '/materials/' + encodeURIComponent(name), { method: 'DELETE' });
+                selectedMaterials.delete([...materialsData].find(m => m.name === name)?.path || '');
+                refreshMaterials();
+                hideProgress();
+            } catch (e) {
+                console.error(e);
+                hideProgress();
             }
         }
 
-        // 加载作品
+        async function clearAllMaterials() {
+            if (!confirm('确定清空所有素材吗？此操作不可恢复！')) return;
+            showProgress();
+            try {
+                await fetch(API + '/materials/clear', { method: 'POST' });
+                selectedMaterials.clear();
+                refreshMaterials();
+                hideProgress();
+            } catch (e) {
+                console.error(e);
+                hideProgress();
+            }
+        }
+
+        function openMaterialFolder() {
+            window.open('file:///D:/Offline-ShortVideo-Agent/assets/素材池_待剪辑');
+        }
+
+        // ========== 平台选择 ==========
+        function selectGenPlatform(p) {
+            selectedPlatform = p;
+            document.querySelectorAll('.tab-row .tab-item').forEach(t => {
+                t.classList.toggle('active', t.dataset.platform === p);
+            });
+        }
+
+        // ========== 生成视频 ==========
+        async function startGenerateWithMaterials() {
+            if (!selectedCat) {
+                alert('请先选择赛道！');
+                showPage('home');
+                return;
+            }
+
+            showPage('generating');
+            updateStep('topic', 'running', '正在从爆款库中选择...');
+            updateStep('script', 'pending', '等待选题...');
+            updateStep('material', 'pending', '等待脚本...');
+            updateStep('video', 'pending', '等待素材...');
+            updateStep('subtitle', 'pending', '等待剪辑...');
+            updateStep('export', 'pending', '等待字幕...');
+
+            const log = document.getElementById('log-box');
+            log.innerHTML = '';
+            addLog('info', '开始生成视频...');
+
+            const platforms = selectedPlatform === 'all' ? ['抖音', '小红书', 'B站'] : [selectedPlatform];
+
+            try {
+                const res = await fetch(API + '/generate/with-materials', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        category: selectedCat,
+                        platforms: platforms,
+                        materials: [...selectedMaterials]
+                    })
+                });
+
+                const data = await res.json();
+
+                if (data.error) {
+                    addLog('err', '错误: ' + data.error);
+                    alert('生成失败: ' + data.error);
+                    showPage('materials');
+                    return;
+                }
+
+                // 更新所有步骤为成功
+                const steps = ['topic', 'script', 'material', 'video', 'subtitle', 'export'];
+                steps.forEach(s => updateStep(s, 'success', '完成'));
+
+                addLog('suc', '视频生成成功！');
+                document.getElementById('progress-text').textContent = '完成！';
+                document.getElementById('progress-step').textContent = '6/6';
+
+                // 显示结果
+                showResult(data);
+
+            } catch (e) {
+                addLog('err', '请求失败: ' + e.message);
+                alert('生成失败: ' + e.message);
+                showPage('materials');
+            }
+        }
+
+        function updateStep(step, status, msg) {
+            const icon = document.getElementById(`step-${step}-icon`);
+            const msgEl = document.getElementById(`step-${step}-msg`);
+            if (icon) {
+                icon.className = `step-icon ${status}`;
+                icon.textContent = status === 'success' ? '✓' : status === 'error' ? '✗' : status === 'running' ? '...' : '○';
+            }
+            if (msgEl) msgEl.textContent = msg;
+        }
+
+        function addLog(type, msg) {
+            const log = document.getElementById('log-box');
+            log.innerHTML += `<div class="log-line log-${type}">${msg}</div>`;
+            log.scrollTop = log.scrollHeight;
+        }
+
+        function showResult(data) {
+            const works = data.works || [];
+            document.getElementById('result-summary').textContent = `已为 ${works.length} 个平台生成投稿`;
+
+            const worksGrid = document.getElementById('result-works');
+            worksGrid.innerHTML = works.map(w => `
+                <div style="background: #F5F6F7; border-radius: 4px; padding: 16px; text-align: center;">
+                    <div style="font-size: 32px; margin-bottom: 8px;">${w.platform === '抖音' ? '🎵' : w.platform === '小红书' ? '📕' : '📺'}</div>
+                    <div style="font-weight: 600; color: #232529;">${w.platform}</div>
+                    <div style="font-size: 12px; color: #909090; margin-top: 4px;">已导出</div>
+                </div>
+            `).join('');
+
+            showPage('result');
+        }
+
+        function goHome() {
+            selectedCat = null;
+            selectedMaterials.clear();
+            document.querySelectorAll('#home-category .category-item').forEach(item => item.classList.remove('selected'));
+            document.getElementById('go-materials-btn').disabled = true;
+            showPage('home');
+            loadHome();
+        }
+
+        // ========== 作品加载 ==========
         async function loadWorks() {
             try {
-                const res = await fetch(API_BASE + '/works');
+                const res = await fetch(API + '/works');
                 const data = await res.json();
                 worksData = data.works || [];
                 renderWorks();
             } catch (e) {
-                console.error('加载作品失败', e);
+                console.error(e);
             }
         }
 
-        function filterWorks(platform) {
-            currentWorkPlatform = platform;
-            document.querySelectorAll('#works-platform-tabs .platform-tab').forEach(tab => {
-                tab.classList.toggle('active', tab.dataset.platform === platform);
+        function filterWorks(p) {
+            currentWorkPlatform = p;
+            document.querySelectorAll('#page-works .tab-item').forEach(t => {
+                t.classList.toggle('active', t.dataset.wplatform === p);
             });
             renderWorks();
         }
@@ -808,24 +1997,22 @@
         function renderWorks() {
             const grid = document.getElementById('video-grid');
             const empty = document.getElementById('works-empty');
+            let list = worksData;
+            if (currentWorkPlatform !== 'all') list = worksData.filter(w => w.platform === currentWorkPlatform);
 
-            let filtered = worksData;
-            if (currentWorkPlatform !== 'all') {
-                filtered = worksData.filter(w => w.platform === currentWorkPlatform);
-            }
-
-            if (filtered.length === 0) {
+            if (!list.length) {
                 grid.innerHTML = '';
                 empty.style.display = 'block';
+                grid.style.display = 'none';
                 return;
             }
-
             empty.style.display = 'none';
-            grid.innerHTML = filtered.map(w => `
+            grid.style.display = 'grid';
+            grid.innerHTML = list.map(w => `
                 <div class="video-item" onclick="previewWork('${w.path.replace(/\\/g, '\\\\')}')">
                     <div class="video-thumb">${w.platform === '抖音' ? '🎵' : w.platform === '小红书' ? '📕' : '📺'}</div>
                     <div class="video-info">
-                        <div class="video-title">${w.title || '未命名作品'}</div>
+                        <div class="video-title">${w.title || '未命名'}</div>
                         <div class="video-meta">${w.platform} · ${w.date}</div>
                     </div>
                 </div>
@@ -833,171 +2020,76 @@
         }
 
         function previewWork(path) {
-            if (path.match(/\.(mp4|avi|mov)$/i)) {
+            if (/\.(mp4|avi|mov)$/i.test(path)) {
                 document.getElementById('preview-video').src = 'file:///' + path;
                 document.getElementById('video-modal').classList.add('show');
             }
         }
 
-        // 选择平台
-        function selectPlatform(platform) {
-            if (platform === 'all') {
-                selectedPlatforms = ['all'];
-            } else {
-                selectedPlatforms = selectedPlatforms.filter(p => p !== 'all');
-                if (selectedPlatforms.includes(platform)) {
-                    selectedPlatforms = selectedPlatforms.filter(p => p !== platform);
-                } else {
-                    selectedPlatforms.push(platform);
-                }
-                if (selectedPlatforms.length === 0) selectedPlatforms = ['all'];
-            }
-
-            document.querySelectorAll('#platform-tabs .platform-tab').forEach(tab => {
-                const p = tab.dataset.platform;
-                tab.classList.toggle('active', selectedPlatforms.includes(p));
-            });
+        function openOutputFolder() {
+            window.open('file:///D:/Offline-ShortVideo-Agent/output');
         }
 
-        // 开始生成
-        async function startGenerate() {
-            if (!selectedCategory) {
-                alert('请先选择赛道！');
-                return;
-            }
-
-            const progressDiv = document.getElementById('generate-progress');
-            const resultDiv = document.getElementById('generate-result');
-            const btn = document.getElementById('btn-start-generate');
-
-            progressDiv.style.display = 'block';
-            resultDiv.style.display = 'none';
-            btn.disabled = true;
-
-            const logBox = document.getElementById('log-box');
-            logBox.innerHTML = '';
-
-            const platforms = selectedPlatforms.includes('all')
-                ? ['抖音', '小红书', 'B站']
-                : selectedPlatforms;
-
+        // ========== 统计页加载 ==========
+        async function loadStatsPage() {
             try {
-                // 调用生成API
-                const res = await fetch(API_BASE + '/generate', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        category: selectedCategory,
-                        platforms: platforms
-                    })
-                });
-
+                const res = await fetch(API + '/stats');
                 const data = await res.json();
 
-                if (data.error) {
-                    logBox.innerHTML += `<div class="log-error">错误: ${data.error}</div>`;
-                } else {
-                    logBox.innerHTML += `<div class="log-success">✓ 生成完成！</div>`;
-
-                    resultDiv.style.display = 'block';
-                    document.getElementById('result-content').innerHTML = `
-                        <div style="text-align: center; padding: 20px;">
-                            <div style="font-size: 48px; margin-bottom: 15px;">🎉</div>
-                            <div style="font-size: 18px; margin-bottom: 10px;">作品已生成!</div>
-                            <div style="color: #666;">共生成 ${data.works?.length || 0} 个平台的发布包</div>
-                        </div>
-                    `;
-                }
-            } catch (e) {
-                logBox.innerHTML += `<div class="log-error">请求失败: ${e.message}</div>`;
-            }
-
-            btn.disabled = false;
-            loadWorks();
-            loadHomeStats();
-        }
-
-        function resetGenerate() {
-            document.getElementById('generate-progress').style.display = 'none';
-            document.getElementById('generate-result').style.display = 'none';
-            selectedCategory = null;
-            selectedTopic = null;
-            document.querySelectorAll('#generate-category .category-item').forEach(item => {
-                item.classList.remove('selected');
-            });
-        }
-
-        // 加载统计
-        async function loadStats() {
-            try {
-                const res = await fetch(API_BASE + '/stats');
-                const data = await res.json();
-
-                // 概览统计
                 document.getElementById('stats-grid').innerHTML = `
-                    <div class="stat-card">
-                        <div class="stat-num">${data.topics_count || 0}</div>
-                        <div class="stat-label">选题总数</div>
+                    <div class="stat-item">
+                        <div class="stat-icon">📝</div>
+                        <div><div class="stat-num">${data.topics_count || 0}</div><div class="stat-label">选题总数</div></div>
                     </div>
-                    <div class="stat-card">
-                        <div class="stat-num">${data.works_count || 0}</div>
-                        <div class="stat-label">已生成作品</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-num">${data.cache_hit_rate || '0%'}</div>
-                        <div class="stat-label">缓存命中率</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-num">${data.cache_size || 0}</div>
-                        <div class="stat-label">缓存条目</div>
+                    <div class="stat-item blue">
+                        <div class="stat-icon">🎬</div>
+                        <div><div class="stat-num">${data.works_count || 0}</div><div class="stat-label">作品总数</div></div>
                     </div>
                 `;
 
-                // 赛道分布
                 const catStats = data.category_stats || {};
-                document.getElementById('category-stats').innerHTML = Object.entries(catStats).map(([cat, count]) => `
-                    <div style="padding: 15px; background: rgba(102,126,234,0.1); border-radius: 8px;">
-                        <div style="font-weight: 600;">${cat}</div>
-                        <div style="color: #667eea; font-size: 24px; margin-top: 5px;">${count}</div>
-                        <div style="font-size: 12px; color: #666;">条选题</div>
+                document.getElementById('cat-stats').innerHTML = Object.entries(catStats).map(([k, v]) => `
+                    <div style="background:#F5F6F7;border-radius:4px;padding:12px;text-align:center;">
+                        <div style="font-size:12px;color:#909090;">${k}</div>
+                        <div style="font-size:20px;font-weight:700;color:#FB7299;margin-top:4px;">${v}</div>
                     </div>
                 `).join('');
 
-                // 缓存状态
-                const cacheStats = data.cache_stats || {};
-                document.getElementById('cache-status').innerHTML = `
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px;">
-                        <div style="padding: 15px; background: #f5f5f5; border-radius: 8px; text-align: center;">
-                            <div style="font-size: 20px; font-weight: 600; color: #667eea;">${cacheStats.hits || 0}</div>
-                            <div style="font-size: 12px; color: #666;">缓存命中</div>
+                const cs = data.cache_stats || {};
+                document.getElementById('cache-info-real').innerHTML = `
+                    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;">
+                        <div style="background:#F5F6F7;padding:12px;border-radius:4px;text-align:center;">
+                            <div style="font-size:18px;font-weight:700;color:#23ADE5;">${cs.hits || 0}</div>
+                            <div style="font-size:12px;color:#909090;">命中</div>
                         </div>
-                        <div style="padding: 15px; background: #f5f5f5; border-radius: 8px; text-align: center;">
-                            <div style="font-size: 20px; font-weight: 600; color: #667eea;">${cacheStats.misses || 0}</div>
-                            <div style="font-size: 12px; color: #666;">缓存未命中</div>
+                        <div style="background:#F5F6F7;padding:12px;border-radius:4px;text-align:center;">
+                            <div style="font-size:18px;font-weight:700;color:#909090;">${cs.misses || 0}</div>
+                            <div style="font-size:12px;color:#909090;">未命中</div>
                         </div>
-                        <div style="padding: 15px; background: #f5f5f5; border-radius: 8px; text-align: center;">
-                            <div style="font-size: 20px; font-weight: 600; color: #667eea;">${cacheStats.size || 0}</div>
-                            <div style="font-size: 12px; color: #666;">缓存条目</div>
+                        <div style="background:#F5F6F7;padding:12px;border-radius:4px;text-align:center;">
+                            <div style="font-size:18px;font-weight:700;color:#FB7299;">${cs.size || 0}</div>
+                            <div style="font-size:12px;color:#909090;">缓存条目</div>
+                        </div>
+                        <div style="background:#F5F6F7;padding:12px;border-radius:4px;text-align:center;">
+                            <div style="font-size:18px;font-weight:700;color:#52C41A;">${data.cache_hit_rate || '0%'}</div>
+                            <div style="font-size:12px;color:#909090;">命中率</div>
                         </div>
                     </div>
                 `;
             } catch (e) {
-                console.error('加载统计失败', e);
+                console.error(e);
             }
         }
 
-        // 打开文件夹
-        function openFolder(type) {
-            const paths = {
-                materials: 'assets/素材池_待剪辑',
-                output: 'output'
-            };
-            window.open('file:///' + window.location.pathname.replace('/index.html', '').replace(/\//g, '\\') + '\\' + paths[type]);
-        }
-
-        // 模态框
+        // ========== 模态框 ==========
         function closeModal(id) {
             document.getElementById(id).classList.remove('show');
+            if (id === 'video-modal') {
+                document.getElementById('preview-video').pause();
+            }
+            if (id === 'audio-modal') {
+                document.getElementById('preview-audio').pause();
+            }
         }
     </script>
 </body>
