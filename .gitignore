@@ -17,12 +17,7 @@ build/
 *.swp
 *.swo
 *~
-
-# 数据文件
-*.db
-*.db-journal
-*.db-wal
-*.db-shm
+.claude/
 
 # 输出文件
 output/
@@ -31,22 +26,3 @@ assets/素材池_待剪辑/*
 !assets/bgm/.gitkeep
 !assets/素材池_待剪辑/.gitkeep
 
-# 临时文件
-*.tmp
-*.temp
-temp_*
-temp/
-
-# 日志
-*.log
-
-# macOS
-.DS_Store
-.AppleDouble
-.LSOverride
-
-# Windows
-Thumbs.db
-ehthumbs.db
-Desktop.ini
-$RECYCLE.BIN/
