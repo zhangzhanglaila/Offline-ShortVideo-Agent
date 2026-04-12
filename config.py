@@ -22,8 +22,19 @@ OUTPUT_BILIBILI = OUTPUT_DIR / "B站"
 TOPICS_DB = DATA_DIR / "topics.db"
 
 OLLAMA_BASE_URL = "http://localhost:11434"
-OLLAMA_MODEL = "qwen2:7b"
+OLLAMA_MODEL = "qwen2.5-14b"  # 支持原生Function Calling
 OLLAMA_TIMEOUT = 120
+
+# Agent企业级配置
+AGENT_CONFIG = {
+    "max_retries": 3,              # 最大重试次数
+    "retry_backoff": 2,            # 指数退避因子
+    "stream_output": True,          # 启用流式输出
+    "enable_mcp": True,            # 启用MCP协议
+    "enable_multi_user": False,    # 默认关闭多用户
+    "log_to_ui": True,             # 日志推送到前端
+    "persist_memory": True,         # 记忆持久化
+}
 
 WHISPER_MODEL = "base"
 WHISPER_LANGUAGE = "zh"

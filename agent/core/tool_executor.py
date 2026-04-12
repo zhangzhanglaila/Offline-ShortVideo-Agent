@@ -195,3 +195,107 @@ class ToolExecutor:
                 "export": platform_result.result if platform_result.success else None
             }
         }
+
+    def execute_full_workflow_with_progress(self, context: Dict = None,
+                                          progress_callback: callable = None) -> Dict:
+        """执行完整工作流（带进度回调）"""
+        context = context or {}
+
+        def update_progress(progress: float, msg: str):
+            if progress_callback:
+                progress_callback(progress, msg)
+
+        # 1. 推荐选题 (0-15%)
+        update_progress(0.05, "推荐选题...")
+        topics_result = self.execute_tool("get_hot_topics", {"count": 1})
+        if not topics_result.success:
+            return {"success": False, "error": f"选题推荐失败: {topics_result.error}"}
+
+        topic = topics_result.result.get("topics", [{}])[0]
+        if not topic:
+            return {"success": False, "error": "未找到可用选题"}
+        context["topic"] = topic
+        update_progress(0.15, "选题推荐完成")
+
+        # 2. 生成脚本 (15-30%)
+        update_progress(0.20, "生成脚本...")
+        script_result = self.execute_tool("generate_script", {
+            "topic": topic,
+            "platform": "抖音",
+            "duration": 30
+        })
+        if not script_result.success:
+            return {"success": False, "error": f"脚本生成失败: {script_result.error}"}
+
+        script_data = script_result.result
+        context["script"] = script_data
+        update_progress(0.30, "脚本生成完成")
+
+        # 3. 读取素材 (30-40%)
+        update_progress(0.35, "读取素材...")
+        materials_result = self.execute_tool("get_local_materials", {
+            "material_type": "image",
+            "limit": 5
+        })
+
+        image_paths = []
+        if materials_result.success:
+            items = materials_result.result.get("materials", [])
+            image_paths = [m["path"] for m in items if m.get("type") == "image"]
+
+        if not image_paths:
+            return {"success": False, "error": "素材池为空，请先上传素材"}
+
+        context["materials"] = image_paths
+        update_progress(0.40, f"已加载{len(image_paths)}个素材")
+
+        # 4. 生成视频 (40-70%)
+        update_progress(0.45, "开始生成视频...")
+        video_result = self.execute_tool("render_video", {
+            "image_paths": image_paths,
+            "duration_per_image": 5,
+            "transition": "fade"
+        })
+        if not video_result.success:
+            return {"success": False, "error": f"视频生成失败: {video_result.error}"}
+
+        video_path = video_result.result.get("output_path")
+        context["video_path"] = video_path
+        update_progress(0.70, "视频生成完成")
+
+        # 5. 生成字幕 (70-85%)
+        update_progress(0.75, "生成字幕...")
+        subtitle_result = self.execute_tool("generate_subtitle", {
+            "video_path": video_path,
+            "script": script_data.get("full_script", ""),
+            "output_path": video_path.replace(".mp4", "_subtitled.mp4")
+        })
+
+        final_video = video_path
+        if subtitle_result.success:
+            final_video = subtitle_result.result.get("video_path", final_video)
+            update_progress(0.85, "字幕生成完成")
+        else:
+            update_progress(0.85, "字幕生成跳过（可能无字幕）")
+
+        context["final_video"] = final_video
+
+        # 6. 平台适配 (85-100%)
+        update_progress(0.90, "适配平台...")
+        platform_result = self.execute_tool("adapt_platform_content", {
+            "video_path": final_video,
+            "script_result": script_data,
+            "platform": "抖音"
+        })
+        update_progress(1.0, "全部完成")
+
+        return {
+            "success": True,
+            "context": context,
+            "result": {
+                "topic": topic.get("title"),
+                "script": script_data.get("full_script", "")[:200] + "..." if script_data.get("full_script") else "",
+                "video": final_video,
+                "export": platform_result.result if platform_result.success else None
+            }
+        }

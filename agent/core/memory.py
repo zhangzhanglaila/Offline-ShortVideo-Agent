@@ -225,6 +225,7 @@ class AgentMemory:
         self.short_term = ShortTermMemory()
         self.long_term = LongTermMemory(db_path)
         self._current_working: Optional[WorkingMemory] = None
+        self._db_path = db_path or "data/agent_memory.db"
 
     def start_task(self, task_id: str, description: str) -> WorkingMemory:
         """开始新任务"""
@@ -254,3 +255,41 @@ class AgentMemory:
                 parts.append(f"- {role_label}: {m.content[:200]}")
 
         return "\n".join(parts)
+
+    def save_conversation(self, session_id: str):
+        """保存当前对话到持久化"""
+        messages = self.short_term.get_conversation_format()
+        if messages:
+            self.long_term.store(
+                f"conversation_{session_id}",
+                json.dumps(messages, ensure_ascii=False),
+                category="conversation"
+            )
+
+    def load_conversation(self, session_id: str, limit: int = 50):
+        """加载对话历史"""
+        stored = self.long_term.retrieve(f"conversation_{session_id}")
+        if stored:
+            try:
+                messages = json.loads(stored)
+                # 恢复到短期记忆
+                for msg in messages[-limit:]:
+                    self.short_term.add_message(msg.get("role", "user"), msg.get("content", ""))
+            except json.JSONDecodeError:
+                pass
+
+    def save_task_result(self, session_id: str, task_id: str, result: Any):
+        """保存任务结果"""
+        self.long_term.store(
+            f"task_{session_id}_{task_id}",
+            result,
+            category="task_result"
+        )
+
+    def clear_session(self, session_id: str):
+        """清除会话相关数据"""
+        # 从长期记忆删除
+        keys_to_delete = [
+            f"conversation_{session_id}",
+        ]
+        # 注意：实际删除需要扩展LongTermMemory的delete方法

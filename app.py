@@ -41,6 +41,7 @@ app = Flask(__name__, static_folder='web', static_url_path='')
 app.config['JSON_AS_ASCII'] = False
 app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
 app.config['MAX_CONTENT_LENGTH'] = 2 * 1024 * 1024 * 1024  # 2GB max
+app.secret_key = 'offline-shortvideo-agent-secret-key-2026'
 
 # 注册Agent蓝图
 app.register_blueprint(agent_bp)
@@ -64,6 +65,36 @@ config.ensure_dirs()
 _log_queue = queue.Queue()
 _log_clients = []
 _clients_lock = threading.Lock()
+
+# 初始化Agent事件监听器
+def _init_agent_event_listener():
+    """监听Agent事件并推送到前端"""
+    try:
+        from agent.core.event_emitter import get_event_emitter, AgentLogEvent
+
+        def on_agent_log(event: AgentLogEvent):
+            entry = {
+                'type': 'agent_log',
+                'task_id': event.task_id,
+                'time': event.timestamp,
+                'msg': event.message,
+                'level': event.level
+            }
+            _log_queue.put(entry)
+            with _clients_lock:
+                for client_q in _log_clients:
+                    try:
+                        client_q.put_nowait(entry)
+                    except:
+                        pass
+
+        emitter = get_event_emitter()
+        emitter.subscribe('agent_log', on_agent_log)
+    except Exception as e:
+        print(f"Agent事件监听器初始化失败: {e}")
+
+# 启动事件监听器
+_init_agent_event_listener()
 
 
 def push_log(msg, level='info'):

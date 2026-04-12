@@ -48,8 +48,10 @@ class OllamaClient:
             with urllib.request.urlopen(req, timeout=timeout) as response:
                 result = json.loads(response.read().decode("utf-8"))
                 return result.get("message", {}).get("content", "")
+        except urllib.error.URLError as e:
+            raise ConnectionError(f"无法连接到 Ollama 服务 (http://localhost:11434)。请确保已启动 Ollama: 运行 'ollama serve'")
         except Exception as e:
-            return f"Error: {str(e)}"
+            raise ConnectionError(f"Ollama 调用失败: {str(e)}")
 
     def generate(self, prompt: str,
                  temperature: float = 0.7,
@@ -77,8 +79,10 @@ class OllamaClient:
             with urllib.request.urlopen(req, timeout=timeout) as response:
                 result = json.loads(response.read().decode("utf-8"))
                 return result.get("response", "")
+        except urllib.error.URLError as e:
+            raise ConnectionError(f"无法连接到 Ollama 服务 (http://localhost:11434)。请确保已启动 Ollama: 运行 'ollama serve'")
         except Exception as e:
-            return f"Error: {str(e)}"
+            raise ConnectionError(f"Ollama 调用失败: {str(e)}")
 
     def extract_json_from_response(self, text: str) -> Optional[Dict]:
         """从文本响应中提取JSON"""

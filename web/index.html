@@ -902,6 +902,14 @@
             from { transform: translateX(120%); opacity: 0; }
             to { transform: translateX(0); opacity: 1; }
         }
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+        @keyframes fadeOut {
+            from { opacity: 1; }
+            to { opacity: 0; }
+        }
     </style>
 </head>
 <body>
@@ -1606,6 +1614,53 @@
         // ==================== AI助手 ====================
         var agentSessionId = null;
         var agentStepsVisible = false;
+        var agentLogEs = null;
+        var currentTaskId = null;
+
+        // 初始化Agent日志流
+        function initAgentLogStream() {
+            if (agentLogEs) {
+                agentLogEs.close();
+            }
+            agentLogEs = new EventSource(API + '/agent/logs/stream');
+            agentLogEs.onmessage = function(e) {
+                var data = JSON.parse(e.data);
+                if (data.type === 'agent_log') {
+                    // 只显示当前任务的日志
+                    if (!currentTaskId || data.task_id === currentTaskId) {
+                        showAgentToast(data.msg, data.level);
+                    }
+                }
+            };
+            agentLogEs.onerror = function() {
+                agentLogEs.close();
+                setTimeout(initAgentLogStream, 3000);
+            };
+        }
+
+        // Agent专用Toast（右下角弹窗）
+        function showAgentToast(msg, level) {
+            var levelStyles = {
+                'info': 'background: #23ADE5;',
+                'success': 'background: #52C41A;',
+                'error': 'background: #FF4D4F;',
+                'warning': 'background: #FAAD14;'
+            };
+            var style = levelStyles[level] || levelStyles['info'];
+            var toast = document.createElement('div');
+            toast.style.cssText = 'position: fixed; bottom: 80px; right: 20px; padding: 12px 20px; color: white; border-radius: 8px; font-size: 13px; z-index: 9999; max-width: 350px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); animation: slideIn 0.3s ease; ' + style;
+            toast.textContent = msg;
+            document.body.appendChild(toast);
+            setTimeout(function() {
+                toast.style.animation = 'fadeOut 0.3s ease';
+                setTimeout(function() { if (toast.parentNode) toast.parentNode.removeChild(toast); }, 300);
+            }, 5000);
+        }
+
+        // 页面加载时初始化Agent日志流
+        document.addEventListener('DOMContentLoaded', function() {
+            setTimeout(initAgentLogStream, 1000);
+        });
 
         function sendAgentMessage() {
             var input = document.getElementById('agent-input');
@@ -1615,9 +1670,8 @@
             appendAgentMessage('user', message);
             input.value = '';
 
-            showAgentTyping();
-
-            fetch(API + '/agent/chat', {
+            // 使用流式API
+            fetch(API + '/agent/chat/stream', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -1625,24 +1679,65 @@
                     session_id: agentSessionId
                 })
             })
-            .then(function(res) { return res.json(); })
-            .then(function(data) {
-                hideAgentTyping();
+            .then(function(res) {
+                if (!res.ok) throw new Error('请求失败');
+                return res.body;
+            })
+            .then(function(body) {
+                var reader = body.getReader();
+                var decoder = new TextDecoder();
+                var responseText = '';
+                var assistantDiv = null;
+                var assistantContentDiv = null;
 
-                agentSessionId = data.session_id;
+                // 创建助手消息容器
+                assistantDiv = document.createElement('div');
+                assistantDiv.style.cssText = 'margin-bottom: 16px; display: flex; align-items: flex-start; gap: 12px;';
+                assistantDiv.innerHTML = '<div style="width: 32px; height: 32px; background: linear-gradient(135deg, #FB7299, #FFA4C4); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: white; font-size: 14px; flex-shrink: 0;">🤖</div><div id="agent-streaming" style="max-width: 80%; background: #F5F6F7; padding: 12px 16px; border-radius: 4px 12px 12px 12px;"></div>';
+                document.getElementById('agent-messages').appendChild(assistantDiv);
 
-                appendAgentMessage('assistant', data.response);
-
-                if (data.steps && data.steps.length > 0) {
-                    showAgentSteps(data.steps);
+                function read() {
+                    reader.read().then(function(result) {
+                        if (result.done) {
+                            // 流结束
+                            if (agentSessionId === null && responseText.includes('session_id')) {
+                                try {
+                                    var match = responseText.match(/"session_id"\s*:\s*"([^"]+)"/);
+                                    if (match) agentSessionId = match[1];
+                                } catch(e) {}
+                            }
+                            return;
+                        }
+                        var text = decoder.decode(result.value);
+                        try {
+                            var lines = text.split('\n');
+                            for (var i = 0; i < lines.length; i++) {
+                                var line = lines[i];
+                                if (line.startsWith('data: ')) {
+                                    var data = JSON.parse(line.substring(6));
+                                    if (data.type === 'content') {
+                                        responseText += data.content;
+                                        var streamingEl = document.getElementById('agent-streaming');
+                                        if (streamingEl) {
+                                            streamingEl.innerHTML = formatAgentResponse(responseText);
+                                            document.getElementById('agent-messages').scrollTop = document.getElementById('agent-messages').scrollHeight;
+                                        }
+                                    } else if (data.type === 'session') {
+                                        agentSessionId = data.session_id;
+                                    } else if (data.type === 'done') {
+                                        showToast('处理完成', 'success');
+                                    } else if (data.type === 'error') {
+                                        showToast(data.error, 'error');
+                                    }
+                                }
+                            }
+                        } catch(e) {}
+                        read();
+                    });
                 }
-
-                if (data.success) {
-                    showToast('处理完成', 'success');
-                }
+                read();
             })
             .catch(function(e) {
-                hideAgentTyping();
                 appendAgentMessage('error', '请求失败: ' + e.message);
             });
         }
