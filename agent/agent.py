@@ -112,6 +112,11 @@ class Agent:
         """处理用户消息"""
         task_id = str(uuid.uuid4())
 
+        # 前置检查：判断模型可用性，不可用则立即返回错误不重试
+        _, _, immediate_error = self.llm._get_error_info()
+        if immediate_error:
+            return {"success": False, "response": immediate_error}
+
         try:
             # 推送开始日志
             if AGENT_CONFIG.get('log_to_ui'):
@@ -182,6 +187,12 @@ class Agent:
     def chat_stream(self, message: str) -> Generator[str, None, None]:
         """流式处理用户消息"""
         task_id = str(uuid.uuid4())
+
+        # 前置检查：判断模型可用性，不可用则立即返回错误不重试
+        _, _, immediate_error = self.llm._get_error_info()
+        if immediate_error:
+            yield immediate_error
+            return
 
         try:
             # 推送开始日志

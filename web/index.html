@@ -1721,12 +1721,12 @@
             var levelStyles = {
                 'info': 'background: #23ADE5;',
                 'success': 'background: #52C41A;',
-                'error': 'background: #FF4D4F;',
+                'error': 'background: #FFF; color: #FF4D4F; border-left: 4px solid #FF4D4F;',
                 'warning': 'background: #FAAD14;'
             };
             var style = levelStyles[level] || levelStyles['info'];
             var toast = document.createElement('div');
-            toast.style.cssText = 'position: fixed; bottom: 80px; right: 20px; padding: 12px 20px; color: white; border-radius: 8px; font-size: 13px; z-index: 9999; max-width: 350px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); animation: slideIn 0.3s ease; ' + style;
+            toast.style.cssText = 'position: fixed; bottom: 80px; right: 20px; padding: 12px 20px; border-radius: 8px; font-size: 13px; z-index: 9999; max-width: 350px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); animation: slideIn 0.3s ease; ' + style;
             toast.textContent = msg;
             document.body.appendChild(toast);
             setTimeout(function() {
@@ -1816,17 +1816,15 @@
                                     } else if (data.type === 'error') {
                                         clearInterval(loadingTimer);
                                         var errText = data.error || '';
-                                        // 在聊天区域显示错误（普通气泡+红色文字，无背景框）
+                                        // 在聊天区域显示错误信息
                                         var streamingEl = document.getElementById('agent-streaming');
                                         if (streamingEl) {
-                                            streamingEl.innerHTML = '<span style="color: #FF4D4F;">' + errText.replace(/\n/g, '<br>') + '</span>';
+                                            streamingEl.innerHTML = errText.replace(/\n/g, '<br>');
                                         }
                                         // 如果是API密钥未配置，弹出配置框
                                         if (errText.indexOf('API密钥') !== -1 || errText.indexOf('未配置') !== -1) {
                                             showToast('请先配置云端API', 'warning');
                                             showApiConfigModal();
-                                        } else {
-                                            showToast(errText, 'error');
                                         }
                                     }
                                 }
@@ -1839,12 +1837,11 @@
             })
             .catch(function(e) {
                 clearInterval(loadingTimer);
-                var errText = '请求失败: ' + e.message;
                 var streamingEl = document.getElementById('agent-streaming');
                 if (streamingEl) {
-                    streamingEl.innerHTML = '<span style="color: #FF4D4F;">' + errText + '</span>';
+                    streamingEl.innerHTML = '请求失败: ' + e.message;
                 }
-                if (errText.indexOf('API') !== -1) {
+                if (e.message.indexOf('API') !== -1) {
                     showApiConfigModal();
                 }
             });

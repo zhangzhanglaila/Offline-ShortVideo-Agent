@@ -70,10 +70,9 @@ def chat():
             'context': result.get('context', {})
         })
     except ConnectionError as e:
-        error_msg = f"❌ Ollama服务未启动或无法连接\n\n请确保：\n1. 已安装 Ollama: https://ollama.com\n2. 已启动服务: 在终端运行 'ollama serve'\n3. 已下载模型: 'ollama pull qwen2.5-14b'\n\n错误详情: {str(e)}"
         return jsonify({
             'success': False,
-            'response': error_msg,
+            'response': str(e),
             'error': str(e)
         })
     except Exception as e:
@@ -123,14 +122,20 @@ def chat_stream():
             try:
                 for chunk in agent.chat_stream(user_message):
                     try:
-                        yield f"data: {json.dumps({'type': 'content', 'content': chunk}, ensure_ascii=False)}\n\n"
+                        # 检测是否为错误消息（前置检查返回的多行错误提示）
+                        if chunk and (
+                            chunk.startswith("本地模型") or
+                            chunk.startswith("未检测到") or
+                            chunk.startswith("未配置云端") or
+                            chunk.startswith("抱歉")
+                        ):
+                            yield f"data: {json.dumps({'type': 'error', 'error': chunk}, ensure_ascii=False)}\n\n"
+                        else:
+                            yield f"data: {json.dumps({'type': 'content', 'content': chunk}, ensure_ascii=False)}\n\n"
                     except Exception:
                         break
             except Exception as e:
-                error_msg = str(e)
-                if "Connection" in error_msg or "Ollama" in error_msg:
-                    error_msg = f"❌ Ollama服务未启动或无法连接\n\n请确保已启动 Ollama 服务"
-                yield f"data: {json.dumps({'type': 'error', 'error': error_msg}, ensure_ascii=False)}\n\n"
+                yield f"data: {json.dumps({'type': 'error', 'error': str(e)}, ensure_ascii=False)}\n\n"
                 return
 
             # 发送完成
