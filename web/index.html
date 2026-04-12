@@ -930,6 +930,18 @@
         .api-config-modal.active {
             display: flex;
         }
+        @keyframes modalShake {
+            0%, 100% { transform: translateX(0); }
+            15% { transform: translateX(-8px); }
+            30% { transform: translateX(8px); }
+            45% { transform: translateX(-6px); }
+            60% { transform: translateX(6px); }
+            75% { transform: translateX(-3px); }
+            90% { transform: translateX(3px); }
+        }
+        .api-config-box.shake {
+            animation: modalShake 0.5s ease;
+        }
         .api-config-box {
             background: #fff;
             border-radius: 12px;
@@ -2590,7 +2602,16 @@
         // ========== API配置弹窗 ==========
         function showApiConfigModal() {
             var modal = document.getElementById('api-config-modal');
-            if (modal) modal.classList.add('active');
+            if (modal) {
+                modal.classList.add('active');
+                // 打开时抖动
+                var box = modal.querySelector('.api-config-box');
+                if (box) {
+                    box.classList.remove('shake');
+                    void box.offsetWidth;
+                    box.classList.add('shake');
+                }
+            }
         }
 
         function closeApiConfigModal() {
@@ -2629,10 +2650,24 @@
                     document.getElementById('api-model-input').value = '';
                 } else {
                     showToast('保存失败: ' + data.error, 'error');
+                    // 抖动提示
+                    var box = document.querySelector('.api-config-box');
+                    if (box) {
+                        box.classList.remove('shake');
+                        void box.offsetWidth; // 触发重排以重置动画
+                        box.classList.add('shake');
+                    }
                 }
             })
             .catch(function(e) {
                 showToast('保存失败: ' + e.message, 'error');
+                // 抖动提示
+                var box = document.querySelector('.api-config-box');
+                if (box) {
+                    box.classList.remove('shake');
+                    void box.offsetWidth; // 触发重排以重置动画
+                    box.classList.add('shake');
+                }
             });
         }
     </script>
