@@ -429,18 +429,17 @@ def api_materials_upload():
                 # 检查文件是否已存在
                 if save_path.exists():
                     skipped.append(f.filename)
-                    print(f"[上传] 文件已存在: {f.name}")
+                    print(f"[上传] 文件已存在: {f.filename}")
                     continue
 
                 f.save(str(save_path))
-                print(f"[上传] 保存成功: {f.name}")
-                push_log(f"✅ 已上传: {f.name}", 'success')
+                print(f"[上传] 保存成功: {f.filename}")
 
                 ext = Path(f.filename).suffix.lower()
-                # 视频文件：后台处理缩略图和转码
+                # 视频文件：后台处理缩略图和转码，处理完成后才显示"已上传"
                 if ext in ['.mp4', '.avi', '.mov', '.mkv']:
-                    push_log(f"🎬 开始处理: {f.name}", 'info')
-                    fname = f.name
+                    push_log(f"🎬 开始处理: {f.filename}", 'info')
+                    fname = f.filename
                     fpath = str(save_path)
                     def process_video():
                         try:
@@ -458,12 +457,15 @@ def api_materials_upload():
                                 except Exception as e:
                                     print(f"[上传] 移动转码文件失败: {e}")
                                     push_log(f"❌ 转码失败: {e}", 'error')
+                            # 所有处理完成后显示"已上传"
+                            push_log(f"✅ 已上传: {fname}", 'success')
                         except Exception as e:
                             print(f"[上传] 处理异常: {e}")
                             push_log(f"❌ 处理异常: {e}", 'error')
                     threading.Thread(target=process_video, daemon=True).start()
                 else:
-                    print(f"[上传] 保存成功: {f.name}")
+                    # 非视频文件：保存后直接显示"已上传"
+                    push_log(f"✅ 已上传: {f.filename}", 'success')
 
                 uploaded.append(f.filename)
 
