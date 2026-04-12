@@ -57,6 +57,25 @@ class Agent:
         # Agent ID
         self.agent_id = str(uuid.uuid4())[:8]
 
+        # Ollama可用状态
+        self._ollama_available = None
+
+    def check_ollama(self) -> bool:
+        """检查Ollama是否可用（快速检测）"""
+        import urllib.request
+        import urllib.error
+        try:
+            req = urllib.request.Request(
+                f"{self.llm.base_url}/api/tags",
+                method='GET'
+            )
+            with urllib.request.urlopen(req, timeout=1) as response:
+                self._ollama_available = response.status == 200
+        except Exception:
+            self._ollama_available = False
+
+        return self._ollama_available
+
     def start_session(self, session_id: str = None) -> str:
         """开始新会话"""
         if session_id is None:
@@ -74,31 +93,37 @@ class Agent:
         if session_id not in self._sessions:
             self.start_session(session_id)
         # 从持久化加载对话历史
-        self.memory.load_conversation(session_id)
+        try:
+            self.memory.load_conversation(session_id)
+        except Exception:
+            pass
 
     def end_session(self, session_id: str):
         """结束会话"""
         if session_id in self._sessions:
             # 保存对话历史到持久化
-            self.memory.save_conversation(session_id)
+            try:
+                self.memory.save_conversation(session_id)
+            except Exception:
+                pass
             del self._sessions[session_id]
 
     def chat(self, message: str) -> Dict:
         """处理用户消息"""
-        return self._chat_impl(message, stream=False)
-
-    def chat_stream(self, message: str) -> Generator[str, None, None]:
-        """流式处理用户消息"""
-        yield from self._chat_impl(message, stream=True)
-
-    def _chat_impl(self, message: str, stream: bool = False) -> Any:
-        """内部聊天实现"""
         task_id = str(uuid.uuid4())
 
         try:
+            # 检查Ollama可用性
+            if not self.check_ollama():
+                error_msg = "抱歉，Ollama 大模型服务未启动，无法处理您的请求。\n\n请按以下步骤操作：\n1. 打开终端，安装 Ollama：到 https://ollama.com 下载安装\n2. 在终端运行命令启动服务：ollama serve\n3. 下载模型（首次）：ollama pull qwen2.5-14b\n4. 重新发送您的请求"
+                return {"success": False, "response": error_msg}
+
             # 推送开始日志
             if AGENT_CONFIG.get('log_to_ui'):
-                push_agent_log(task_id, f"收到消息: {message[:50]}...", 'info', self.agent_id)
+                try:
+                    push_agent_log(task_id, f"收到消息: {message[:50]}...", 'info', self.agent_id)
+                except Exception:
+                    pass
 
             # 添加用户消息到记忆
             self.memory.short_term.add_message("user", message)
@@ -113,7 +138,102 @@ class Agent:
             )(message)
 
             if AGENT_CONFIG.get('log_to_ui'):
-                push_agent_log(task_id, f"识别意图: {intent}", 'info', self.agent_id)
+                try:
+                    push_agent_log(task_id, f"识别意图: {intent}", 'info', self.agent_id)
+                except Exception:
+                    pass
+
+            # 根据意图执行
+            handler_map = {
+                "full_workflow": self._handle_full_workflow,
+                "topic_request": self._handle_topic_request,
+                "script_request": self._handle_script_request,
+                "video_request": self._handle_video_request,
+                "subtitle_request": self._handle_subtitle_request,
+                "platform_request": self._handle_platform_request,
+            }
+
+            handler = handler_map.get(intent, self._handle_general)
+            result = handler(message, task_id=task_id)
+
+            # 添加助手消息到记忆
+            self.memory.short_term.add_message("assistant", result["response"])
+
+            if AGENT_CONFIG.get('log_to_ui'):
+                try:
+                    push_agent_log(task_id, "处理完成", 'success', self.agent_id)
+                except Exception:
+                    pass
+
+            return result
+
+        except ConnectionError as e:
+            error_msg = "抱歉，Ollama 大模型服务未启动，无法处理您的请求。\n\n" + "请按以下步骤操作：\n" + "1. 打开终端，安装 Ollama：到 https://ollama.com 下载安装\n" + "2. 在终端运行命令启动服务：ollama serve\n" + "3. 下载模型（首次）：ollama pull qwen2.5-14b\n" + "4. 重新发送您的请求\n\n" + "技术信息: " + str(e)
+            try:
+                if AGENT_CONFIG.get('log_to_ui'):
+                    push_agent_log(task_id, "Ollama未启动", 'error', self.agent_id)
+            except Exception:
+                pass
+            return {"success": False, "response": error_msg}
+        except Exception as e:
+            error_msg = "抱歉，发生了错误：" + str(e)
+            try:
+                if AGENT_CONFIG.get('log_to_ui'):
+                    push_agent_log(task_id, error_msg, 'error', self.agent_id)
+            except Exception:
+                pass
+            return {"success": False, "response": error_msg}
+
+    def chat_stream(self, message: str) -> Generator[str, None, None]:
+        """流式处理用户消息"""
+        task_id = str(uuid.uuid4())
+
+        try:
+            # 检查Ollama可用性
+            if not self.check_ollama():
+                error_msg = "抱歉，Ollama 大模型服务未启动，无法处理您的请求。\n\n请按以下步骤操作：\n1. 打开终端，安装 Ollama：到 https://ollama.com 下载安装\n2. 在终端运行命令启动服务：ollama serve\n3. 下载模型（首次）：ollama pull qwen2.5-14b\n4. 重新发送您的请求"
+                try:
+                    if AGENT_CONFIG.get('log_to_ui'):
+                        push_agent_log(task_id, error_msg, 'error', self.agent_id)
+                except Exception:
+                    pass
+                yield error_msg
+                return
+
+            # 推送开始日志
+            try:
+                if AGENT_CONFIG.get('log_to_ui'):
+                    push_agent_log(task_id, f"收到消息: {message[:50]}...", 'info', self.agent_id)
+            except Exception:
+                pass
+
+            # 添加用户消息到记忆
+            self.memory.short_term.add_message("user", message)
+
+            # 更新会话计数
+            for session in self._sessions.values():
+                session["message_count"] = session.get("message_count", 0) + 1
+
+            # 意图分类
+            try:
+                intent = self.retry.with_retry(
+                    self.executor.classify_intent
+                )(message)
+            except Exception as e:
+                error_msg = f"意图识别失败: {str(e)}"
+                try:
+                    if AGENT_CONFIG.get('log_to_ui'):
+                        push_agent_log(task_id, error_msg, 'error', self.agent_id)
+                except Exception:
+                    pass
+                yield error_msg
+                return
+
+            try:
+                if AGENT_CONFIG.get('log_to_ui'):
+                    push_agent_log(task_id, f"识别意图: {intent}", 'info', self.agent_id)
+            except Exception:
+                pass
 
             # 根据意图执行
             handler_map = {
@@ -127,41 +247,52 @@ class Agent:
 
             handler = handler_map.get(intent, self._handle_general)
 
-            if stream:
-                # 流式执行
-                result = handler(message, task_id=task_id, stream=True)
-                # 流式返回
-                if isinstance(result, dict):
-                    yield result.get('response', '')
+            # 流式执行handler
+            try:
+                for chunk in handler(message, task_id=task_id, stream=True):
+                    yield chunk
+            except Exception as e:
+                error_msg = f"执行失败: {str(e)}"
+                try:
+                    if AGENT_CONFIG.get('log_to_ui'):
+                        push_agent_log(task_id, error_msg, 'error', self.agent_id)
+                except Exception:
+                    pass
+                yield error_msg
                 return
-            else:
-                result = handler(message, task_id=task_id)
 
-            # 添加助手消息到记忆
-            self.memory.short_term.add_message("assistant", result["response"])
-
-            if AGENT_CONFIG.get('log_to_ui'):
-                push_agent_log(task_id, "处理完成", 'success', self.agent_id)
-
-            return result
+            try:
+                if AGENT_CONFIG.get('log_to_ui'):
+                    push_agent_log(task_id, "处理完成", 'success', self.agent_id)
+            except Exception:
+                pass
 
         except ConnectionError as e:
-            error_msg = f"❌ Ollama服务未启动或无法连接\n\n请确保：\n1. 已安装 Ollama: https://ollama.com\n2. 已启动服务: 在终端运行 `ollama serve`\n3. 已下载模型: `ollama pull qwen2.5-14b`\n\n错误详情: {str(e)}"
-            if AGENT_CONFIG.get('log_to_ui'):
-                push_agent_log(task_id, error_msg, 'error', self.agent_id)
-            return {"success": False, "response": error_msg}
+            error_msg = "抱歉，Ollama 大模型服务未启动，无法处理您的请求。\n\n" + "请按以下步骤操作：\n" + "1. 打开终端，安装 Ollama：到 https://ollama.com 下载安装\n" + "2. 在终端运行命令启动服务：ollama serve\n" + "3. 下载模型（首次）：ollama pull qwen2.5-14b\n" + "4. 重新发送您的请求\n\n" + "技术信息: " + str(e)
+            try:
+                if AGENT_CONFIG.get('log_to_ui'):
+                    push_agent_log(task_id, "Ollama未启动", 'error', self.agent_id)
+            except Exception:
+                pass
+            yield error_msg
         except Exception as e:
-            error_msg = f"处理失败: {str(e)}"
-            if AGENT_CONFIG.get('log_to_ui'):
-                push_agent_log(task_id, error_msg, 'error', self.agent_id)
-            return {"success": False, "response": error_msg}
+            error_msg = "抱歉，发生了错误：" + str(e)
+            try:
+                if AGENT_CONFIG.get('log_to_ui'):
+                    push_agent_log(task_id, error_msg, 'error', self.agent_id)
+            except Exception:
+                pass
+            yield error_msg
 
     def submit_task(self, task_type: str, params: Dict) -> str:
         """提交异步任务"""
         task_id = str(uuid.uuid4())
 
-        if AGENT_CONFIG.get('log_to_ui'):
-            push_agent_log(task_id, f"提交任务: {task_type}", 'info', self.agent_id)
+        try:
+            if AGENT_CONFIG.get('log_to_ui'):
+                push_agent_log(task_id, f"提交任务: {task_type}", 'info', self.agent_id)
+        except Exception:
+            pass
 
         def task_fn(_progress_callback=None):
             if task_type == 'video':
@@ -175,47 +306,50 @@ class Agent:
 
     def _execute_video_task(self, params: Dict, task_id: str, progress_callback=None):
         """执行视频任务"""
-        if progress_callback:
-            progress_callback(0.1, "读取素材...")
+        try:
+            if progress_callback:
+                progress_callback(0.1, "读取素材...")
 
-        images = params.get('images', [])
-        if not images:
-            # 自动获取素材
-            result = self.executor.execute_tool("get_local_materials", {
-                "material_type": "image",
-                "limit": 5
+            images = params.get('images', [])
+            if not images:
+                result = self.executor.execute_tool("get_local_materials", {
+                    "material_type": "image",
+                    "limit": 5
+                })
+                if result.success:
+                    images = [m["path"] for m in result.result.get("materials", [])]
+
+            if progress_callback:
+                progress_callback(0.3, "生成视频...")
+
+            result = self.executor.execute_tool("render_video", {
+                "image_paths": images,
+                "duration_per_image": params.get('duration_per_image', 5),
+                "transition": params.get('transition', 'fade')
             })
-            if result.success:
-                images = [m["path"] for m in result.result.get("materials", [])]
 
-        if progress_callback:
-            progress_callback(0.3, "生成视频...")
+            if progress_callback:
+                progress_callback(1.0, "完成")
 
-        result = self.executor.execute_tool("render_video", {
-            "image_paths": images,
-            "duration_per_image": params.get('duration_per_image', 5),
-            "transition": params.get('transition', 'fade')
-        })
-
-        if progress_callback:
-            progress_callback(1.0, "完成")
-
-        return result
+            return result
+        except Exception as e:
+            return {"success": False, "error": str(e)}
 
     def _execute_full_workflow_async(self, params: Dict, task_id: str, progress_callback=None):
         """异步执行完整工作流"""
-        if progress_callback:
-            progress_callback(0.05, "推荐选题...")
+        try:
+            if progress_callback:
+                progress_callback(0.05, "推荐选题...")
 
-        # 带进度的工作流执行
-        result = self.executor.execute_full_workflow_with_progress(
-            self.memory.current_task.collected_data if self.memory.current_task else {},
-            progress_callback=progress_callback
-        )
+            result = self.executor.execute_full_workflow_with_progress(
+                self.memory.current_task.collected_data if self.memory.current_task else {},
+                progress_callback=progress_callback
+            )
+            return result
+        except Exception as e:
+            return {"success": False, "error": str(e)}
 
-        return result
-
-    def _handle_topic_request(self, message: str, task_id: str = None, stream: bool = False) -> Dict:
+    def _handle_topic_request(self, message: str, task_id: str = None, stream: bool = False) -> Any:
         """处理选题请求"""
         category = None
         for cat in ["知识付费", "美食探店", "生活方式", "情感心理", "科技数码", "娱乐搞笑"]:
@@ -226,12 +360,18 @@ class Agent:
         count_match = re.search(r"(\d+)[个条]", message)
         count = int(count_match.group(1)) if count_match else 3
 
-        if AGENT_CONFIG.get('log_to_ui'):
-            push_agent_log(task_id, f"推荐{count}个选题 (分类:{category or '全部'})", 'info', self.agent_id)
+        try:
+            if AGENT_CONFIG.get('log_to_ui'):
+                push_agent_log(task_id, f"推荐{count}个选题 (分类:{category or '全部'})", 'info', self.agent_id)
+        except Exception:
+            pass
 
-        result = self.retry.with_retry(
-            self.executor.execute_tool
-        )("get_hot_topics", {"category": category, "count": count})
+        try:
+            result = self.retry.with_retry(
+                self.executor.execute_tool
+            )("get_hot_topics", {"category": category, "count": count})
+        except Exception as e:
+            return self._stream_or_return(f"选题推荐失败: {str(e)}", stream)
 
         if result.success:
             topics = result.result.get("topics", [])
@@ -243,9 +383,9 @@ class Agent:
         else:
             response = f"选题推荐失败: {result.error}"
 
-        return {"success": result.success, "response": response}
+        return self._stream_or_return(response, stream)
 
-    def _handle_script_request(self, message: str, task_id: str = None, stream: bool = False) -> Dict:
+    def _handle_script_request(self, message: str, task_id: str = None, stream: bool = False) -> Any:
         """处理脚本生成请求"""
         platform = "抖音"
         for p in ["抖音", "小红书", "B站"]:
@@ -256,27 +396,36 @@ class Agent:
         duration_match = re.search(r"(\d+)[秒]", message)
         duration = int(duration_match.group(1)) if duration_match else 30
 
-        if AGENT_CONFIG.get('log_to_ui'):
-            push_agent_log(task_id, f"生成{platform}脚本 ({duration}秒)", 'info', self.agent_id)
+        try:
+            if AGENT_CONFIG.get('log_to_ui'):
+                push_agent_log(task_id, f"生成{platform}脚本 ({duration}秒)", 'info', self.agent_id)
+        except Exception:
+            pass
 
         # 先获取选题
-        topic_result = self.retry.with_retry(
-            self.executor.execute_tool
-        )("get_hot_topics", {"count": 1})
+        try:
+            topic_result = self.retry.with_retry(
+                self.executor.execute_tool
+            )("get_hot_topics", {"count": 1})
+        except Exception as e:
+            return self._stream_or_return(f"选题获取失败: {str(e)}", stream)
 
         if not topic_result.success or not topic_result.result.get("topics"):
-            return {"success": False, "response": "选题推荐失败，请先添加选题"}
+            return self._stream_or_return("选题推荐失败，请先添加选题", stream)
 
         topic = topic_result.result["topics"][0]
 
         # 生成脚本
-        result = self.retry.with_retry(
-            self.executor.execute_tool
-        )("generate_script", {
-            "topic": topic,
-            "platform": platform,
-            "duration": duration
-        })
+        try:
+            result = self.retry.with_retry(
+                self.executor.execute_tool
+            )("generate_script", {
+                "topic": topic,
+                "platform": platform,
+                "duration": duration
+            })
+        except Exception as e:
+            return self._stream_or_return(f"脚本生成失败: {str(e)}", stream)
 
         if result.success:
             script = result.result
@@ -288,46 +437,57 @@ class Agent:
         else:
             response = f"脚本生成失败: {result.error}"
 
-        return {"success": result.success, "response": response}
+        return self._stream_or_return(response, stream)
 
-    def _handle_video_request(self, message: str, task_id: str = None, stream: bool = False) -> Dict:
+    def _handle_video_request(self, message: str, task_id: str = None, stream: bool = False) -> Any:
         """处理视频生成请求"""
-        if AGENT_CONFIG.get('log_to_ui'):
-            push_agent_log(task_id, "读取素材...", 'info', self.agent_id)
+        try:
+            if AGENT_CONFIG.get('log_to_ui'):
+                push_agent_log(task_id, "读取素材...", 'info', self.agent_id)
+        except Exception:
+            pass
 
-        materials_result = self.retry.with_retry(
-            self.executor.execute_tool
-        )("get_local_materials", {"material_type": "image", "limit": 10})
+        try:
+            materials_result = self.retry.with_retry(
+                self.executor.execute_tool
+            )("get_local_materials", {"material_type": "image", "limit": 10})
+        except Exception as e:
+            return self._stream_or_return(f"素材读取失败: {str(e)}", stream)
 
         if not materials_result.success or not materials_result.result.get("materials"):
-            return {"success": False, "response": "素材池为空，请先上传素材"}
+            return self._stream_or_return("素材池为空，请先上传素材", stream)
 
         images = [m["path"] for m in materials_result.result["materials"][:5]]
 
-        if AGENT_CONFIG.get('log_to_ui'):
-            push_agent_log(task_id, f"生成视频 ({len(images)}张图片)", 'info', self.agent_id)
+        try:
+            if AGENT_CONFIG.get('log_to_ui'):
+                push_agent_log(task_id, f"生成视频 ({len(images)}张图片)", 'info', self.agent_id)
+        except Exception:
+            pass
 
-        result = self.retry.with_retry(
-            self.executor.execute_tool
-        )("render_video", {
-            "image_paths": images,
-            "duration_per_image": 5,
-            "transition": "fade"
-        })
+        try:
+            result = self.retry.with_retry(
+                self.executor.execute_tool
+            )("render_video", {
+                "image_paths": images,
+                "duration_per_image": 5,
+                "transition": "fade"
+            })
+        except Exception as e:
+            return self._stream_or_return(f"视频生成失败: {str(e)}", stream)
 
         if result.success:
-            return {
-                "success": True,
-                "response": f"视频生成成功！\n\n输出路径: {result.result.get('output_path')}\n\n可以使用字幕生成工具为视频添加字幕。"
-            }
+            response = f"视频生成成功！\n\n输出路径: {result.result.get('output_path')}\n\n可以使用字幕生成工具为视频添加字幕。"
         else:
-            return {"success": False, "response": f"视频生成失败: {result.error}"}
+            response = f"视频生成失败: {result.error}"
 
-    def _handle_subtitle_request(self, message: str, task_id: str = None, stream: bool = False) -> Dict:
+        return self._stream_or_return(response, stream)
+
+    def _handle_subtitle_request(self, message: str, task_id: str = None, stream: bool = False) -> Any:
         """处理字幕生成请求"""
         video_path_match = re.search(r'视频[：:]\s*([^\s]+)', message)
         if not video_path_match:
-            return {"success": False, "response": "请提供视频路径"}
+            return self._stream_or_return("请提供视频路径", stream)
 
         video_path = video_path_match.group(1)
 
@@ -338,26 +498,31 @@ class Agent:
         if not script:
             script = "这是一个测试字幕"
 
-        if AGENT_CONFIG.get('log_to_ui'):
-            push_agent_log(task_id, f"生成字幕: {video_path}", 'info', self.agent_id)
+        try:
+            if AGENT_CONFIG.get('log_to_ui'):
+                push_agent_log(task_id, f"生成字幕: {video_path}", 'info', self.agent_id)
+        except Exception:
+            pass
 
-        result = self.retry.with_retry(
-            self.executor.execute_tool
-        )("generate_subtitle", {
-            "video_path": video_path,
-            "script": script,
-            "output_path": video_path.replace(".mp4", "_subtitled.mp4")
-        })
+        try:
+            result = self.retry.with_retry(
+                self.executor.execute_tool
+            )("generate_subtitle", {
+                "video_path": video_path,
+                "script": script,
+                "output_path": video_path.replace(".mp4", "_subtitled.mp4")
+            })
+        except Exception as e:
+            return self._stream_or_return(f"字幕生成失败: {str(e)}", stream)
 
         if result.success:
-            return {
-                "success": True,
-                "response": f"字幕生成成功！\n\n输出路径: {result.result.get('video_path')}"
-            }
+            response = f"字幕生成成功！\n\n输出路径: {result.result.get('video_path')}"
         else:
-            return {"success": False, "response": f"字幕生成失败: {result.error}"}
+            response = f"字幕生成失败: {result.error}"
 
-    def _handle_platform_request(self, message: str, task_id: str = None, stream: bool = False) -> Dict:
+        return self._stream_or_return(response, stream)
+
+    def _handle_platform_request(self, message: str, task_id: str = None, stream: bool = False) -> Any:
         """处理平台适配请求"""
         platform = "抖音"
         for p in ["抖音", "小红书", "B站"]:
@@ -378,21 +543,27 @@ class Agent:
                 video_path = video_path_match.group(1)
 
         if not video_path:
-            return {"success": False, "response": "请提供视频路径"}
+            return self._stream_or_return("请提供视频路径", stream)
 
         if not script_result:
-            return {"success": False, "response": "请先生成脚本"}
+            return self._stream_or_return("请先生成脚本", stream)
 
-        if AGENT_CONFIG.get('log_to_ui'):
-            push_agent_log(task_id, f"适配{platform}平台", 'info', self.agent_id)
+        try:
+            if AGENT_CONFIG.get('log_to_ui'):
+                push_agent_log(task_id, f"适配{platform}平台", 'info', self.agent_id)
+        except Exception:
+            pass
 
-        result = self.retry.with_retry(
-            self.executor.execute_tool
-        )("adapt_platform_content", {
-            "video_path": video_path,
-            "script_result": script_result,
-            "platform": platform
-        })
+        try:
+            result = self.retry.with_retry(
+                self.executor.execute_tool
+            )("adapt_platform_content", {
+                "video_path": video_path,
+                "script_result": script_result,
+                "platform": platform
+            })
+        except Exception as e:
+            return self._stream_or_return(f"平台适配失败: {str(e)}", stream)
 
         if result.success:
             adapted = result.result.get("adapted_content", {})
@@ -404,17 +575,23 @@ class Agent:
         else:
             response = f"平台适配失败: {result.error}"
 
-        return {"success": result.success, "response": response}
+        return self._stream_or_return(response, stream)
 
-    def _handle_full_workflow(self, message: str, task_id: str = None, stream: bool = False) -> Dict:
+    def _handle_full_workflow(self, message: str, task_id: str = None, stream: bool = False) -> Any:
         """处理完整工作流"""
-        if AGENT_CONFIG.get('log_to_ui'):
-            push_agent_log(task_id, "开始完整生产流程", 'info', self.agent_id)
+        try:
+            if AGENT_CONFIG.get('log_to_ui'):
+                push_agent_log(task_id, "开始完整生产流程", 'info', self.agent_id)
+        except Exception:
+            pass
 
         tid = task_id or str(uuid.uuid4())
         self.memory.start_task(tid, message)
 
-        result = self.executor.execute_full_workflow(self.memory.current_task.collected_data)
+        try:
+            result = self.executor.execute_full_workflow(self.memory.current_task.collected_data)
+        except Exception as e:
+            return self._stream_or_return(f"生产流程失败: {str(e)}", stream)
 
         if result.get("success"):
             ctx = result.get("context", {})
@@ -425,33 +602,39 @@ class Agent:
         else:
             response = f"生产失败: {result.get('error', '未知错误')}"
 
-        return {
-            "success": result.get("success", False),
-            "response": response,
-            "context": result.get("context", {})
-        }
+        return self._stream_or_return(response, stream)
 
-    def _handle_general(self, message: str, task_id: str = None, stream: bool = False) -> Dict:
-        """处理通用请求 - 使用ReAct循环"""
-        if AGENT_CONFIG.get('log_to_ui'):
-            push_agent_log(task_id, "通用推理中...", 'info', self.agent_id)
+    def _handle_general(self, message: str, task_id: str = None, stream: bool = False) -> Any:
+        """处理通用请求"""
+        try:
+            if AGENT_CONFIG.get('log_to_ui'):
+                push_agent_log(task_id, "通用推理中...", 'info', self.agent_id)
+        except Exception:
+            pass
 
-        react_result = self.react.run(
-            message,
-            self.memory.short_term.get_conversation_format()
-        )
+        try:
+            react_result = self.react.run(
+                message,
+                self.memory.short_term.get_conversation_format()
+            )
+        except Exception as e:
+            return self._stream_or_return(f"推理失败: {str(e)}", stream)
 
         if react_result.get("success"):
-            return {
-                "success": True,
-                "response": react_result.get("final", ""),
-                "steps": react_result.get("steps", [])
-            }
+            response = react_result.get("final", "")
+            steps = react_result.get("steps", [])
+            return {"success": True, "response": response, "steps": steps}
         else:
-            return {
-                "success": False,
-                "response": f"处理失败: {react_result.get('error', '未知错误')}"
-            }
+            response = f"处理失败: {react_result.get('error', '未知错误')}"
+            return {"success": False, "response": response}
+
+    def _stream_or_return(self, response: str, stream: bool):
+        """根据stream参数返回或生成"""
+        if stream:
+            # 流式返回
+            yield response
+        else:
+            return {"success": True, "response": response}
 
     def get_session_info(self, session_id: str) -> Optional[Dict]:
         """获取会话信息"""

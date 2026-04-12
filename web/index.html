@@ -1728,6 +1728,11 @@
                                         showToast('处理完成', 'success');
                                     } else if (data.type === 'error') {
                                         showToast(data.error, 'error');
+                                        // 在聊天区域显示错误（普通气泡+红色文字）
+                                        var streamingEl = document.getElementById('agent-streaming');
+                                        if (streamingEl) {
+                                            streamingEl.innerHTML = '<span style="color: #FF4D4F;">' + data.error.replace(/\n/g, '<br>') + '</span>';
+                                        }
                                     }
                                 }
                             }
