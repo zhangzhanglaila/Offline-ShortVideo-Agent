@@ -1770,7 +1770,10 @@
                 filenames.push(files[i].name);
             }
 
-            // 立即在列表显示占位项
+            // 生成唯一的上传批次ID，用于追踪这个批次的占位项
+            var uploadBatchId = Date.now();
+
+            // 立即在列表显示占位项（带上传状态）
             for (var i = 0; i < filenames.length; i++) {
                 var fakeItem = {
                     name: filenames[i],
@@ -1778,40 +1781,46 @@
                     type: filenames[i].match(/\.(mp4|avi|mov|mkv)$/i) ? 'video' :
                           filenames[i].match(/\.(mp3|wav|aac|m4a)$/i) ? 'audio' : 'image',
                     has_thumb: false,
-                    thumb_name: null
+                    thumb_name: null,
+                    is_uploading: true,
+                    upload_batch: uploadBatchId,
+                    upload_pct: 0
                 };
                 materialsData.unshift(fakeItem);
             }
             renderMaterials();
             updateCounts();
 
-            // 显示进度条
-            var progressWrap = document.getElementById('upload-progress-wrap');
-            var progressFill = document.getElementById('upload-progress-fill');
-            var progressPct = document.getElementById('upload-progress-pct');
-            if (progressWrap) progressWrap.style.display = 'block';
-            if (progressFill) progressFill.style.width = '0%';
-            if (progressPct) progressPct.textContent = '0%';
-
             // 用XMLHttpRequest追踪上传进度
             var xhr = new XMLHttpRequest();
             xhr.open('POST', API + '/materials/upload', true);
             xhr.upload.onprogress = function(e) {
-                if (e.lengthComputable && progressFill) {
+                if (e.lengthComputable) {
                     var pct = Math.round((e.loaded / e.total) * 100);
-                    progressFill.style.width = pct + '%';
-                    if (progressPct) progressPct.textContent = pct + '%';
+                    // 更新对应占位项的进度
+                    for (var j = 0; j < materialsData.length; j++) {
+                        if (materialsData[j].upload_batch === uploadBatchId) {
+                            materialsData[j].upload_pct = pct;
+                        }
+                    }
+                    renderMaterials();
                 }
             };
             xhr.onload = function() {
-                if (progressWrap) progressWrap.style.display = 'none';
+                // HTTP响应到达后，等待服务器处理完成再刷新
+                // 视频需要生成缩略图和转码，需要等待一段时间
                 if (xhr.status === 200) {
-                    refreshMaterials();
+                    // 2秒后刷新，获取服务器处理后的最新数据（包括缩略图）
+                    setTimeout(function() {
+                        refreshMaterials();
+                    }, 2000);
                 }
             };
             xhr.onerror = function() {
-                if (progressWrap) progressWrap.style.display = 'none';
-                refreshMaterials();
+                // 出错了也要等一下再刷新
+                setTimeout(function() {
+                    refreshMaterials();
+                }, 1500);
             };
             xhr.send(formData);
         }
@@ -1898,12 +1907,25 @@
                     thumb = '<div style="display:flex;align-items:center;justify-content:center;width:100%;height:100%;color:#909090;font-size:28px;">🎵</div>';
                 }
                 var badge = m.type === 'image' ? '图片' : (m.type === 'video' ? '视频' : '音频');
+
+                // 上传中的进度条
+                var uploadProgressHtml = '';
+                if (m.is_uploading) {
+                    uploadProgressHtml = '<div style="padding:6px 8px 4px;font-size:11px;color:#909090;">上传中 ' + (m.upload_pct || 0) + '%</div>' +
+                        '<div style="height:4px;background:#E3E5E7;margin:0 8px 8px;border-radius:2px;overflow:hidden;">' +
+                        '<div style="height:100%;background:var(--bili-pink);border-radius:2px;transition:width 0.2s ease;width:' + (m.upload_pct || 0) + '%;"></div></div>';
+                }
+
+                // 上传中不显示删除按钮
+                var delBtn = m.is_uploading ? '' : '<button class="material-del" onclick="deleteMaterial(\'' + m.name.replace(/'/g, "\\'") + '\', event)">×</button>';
+
                 html += '<div class="material-item ' + (isSelected ? 'selected' : '') + '" data-path="' + m.path.replace(/\\/g, '\\\\') + '" data-type="' + m.type + '">' +
                     '<div class="material-thumb" onclick="previewMaterial(\'' + m.name.replace(/\\/g, '\\\\').replace(/'/g, "\\'") + '\', \'' + m.type + '\')" style="' + (m.type === 'video' && m.has_thumb ? 'position:relative;' : '') + '">' + thumb +
                     '<span class="type-badge">' + badge + '</span>' +
                     (isSelected ? '<div class="check-overlay">✓</div>' : '') + '</div>' +
+                    uploadProgressHtml +
                     '<div class="material-name" title="' + m.name + '">' + m.name + '</div>' +
-                    '<button class="material-del" onclick="deleteMaterial(\'' + m.name.replace(/'/g, "\\'") + '\', event)">×</button></div>';
+                    delBtn + '</div>';
             }
             grid.innerHTML = html;
         }
