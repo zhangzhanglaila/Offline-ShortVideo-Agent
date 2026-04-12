@@ -1364,6 +1364,7 @@
     <script>
         // ========== 全局状态 ==========
         var API = '/api';
+        var materialDir = '';  // 素材目录路径，动态获取
         var currentPage = 'home';
         var selectedCat = null;
         var selectedPlatform = 'all';
@@ -1429,12 +1430,21 @@
 
             Promise.all([
                 fetchCategories().catch(function() {}),
-                fetchHomeData().catch(function() {})
+                fetchHomeData().catch(function() {}),
+                fetchConfig().catch(function() {})
             ]).finally(function() {
                 clearTimeout(timeout);
                 finishHomeLoading();
                 finishHomeProgress();
             });
+        }
+
+        function fetchConfig() {
+            return fetch(API + '/config')
+                .then(function(res) { return res.json(); })
+                .then(function(data) {
+                    materialDir = data.material_dir || '';
+                });
         }
 
         // ========== 实时日志通知 ==========
@@ -2010,7 +2020,11 @@
         }
 
         function openMaterialFolder() {
-            window.open('file:///D:/Offline-ShortVideo-Agent/assets/素材池_待剪辑');
+            if (materialDir) {
+                window.open(materialDir);
+            } else {
+                window.open('file:///D:/Offline-ShortVideo-Agent/assets/素材池_待剪辑');
+            }
         }
 
         function selectGenPlatform(p) {

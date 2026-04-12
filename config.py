@@ -13,6 +13,7 @@ ASSETS_DIR = PROJECT_ROOT / "assets"
 OUTPUT_DIR = PROJECT_ROOT / "output"
 BGM_DIR = ASSETS_DIR / "bgm"
 MATERIAL_DIR = ASSETS_DIR / "素材池_待剪辑"
+THUMBNAILS_DIR = ASSETS_DIR / "thumbnails"
 
 OUTPUT_DY = OUTPUT_DIR / "抖音"
 OUTPUT_XHS = OUTPUT_DIR / "小红书"
@@ -112,6 +113,6 @@ LIBRARY_EXPAND_CONFIG = {
 
 def ensure_dirs():
     """确保所有必要目录存在"""
-    for dir_path in [DATA_DIR, ASSETS_DIR, OUTPUT_DIR, BGM_DIR, MATERIAL_DIR,
+    for dir_path in [DATA_DIR, ASSETS_DIR, OUTPUT_DIR, BGM_DIR, MATERIAL_DIR, THUMBNAILS_DIR,
                      OUTPUT_DY, OUTPUT_XHS, OUTPUT_BILIBILI]:
         dir_path.mkdir(parents=True, exist_ok=True)

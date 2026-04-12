@@ -51,10 +51,10 @@ _analytics_module = None
 
 # 素材暂存目录
 UPLOAD_TEMP_DIR = config.MATERIAL_DIR
-THUMBNAILS_DIR = config.ASSETS_DIR / "thumbnails"
+THUMBNAILS_DIR = config.THUMBNAILS_DIR
 
-# 确保缩略图目录存在
-THUMBNAILS_DIR.mkdir(parents=True, exist_ok=True)
+# 确保所有目录存在（包括assets及其子目录）
+config.ensure_dirs()
 
 # 日志推送队列
 _log_queue = queue.Queue()
@@ -95,6 +95,24 @@ def log_stream():
     return Response(gen(), mimetype='text/event-stream', headers={
         'Cache-Control': 'no-cache',
         'X-Accel-Buffering': 'no'
+    })
+
+
+@app.route('/api/config')
+def api_config():
+    """返回前端需要的配置信息"""
+    import platform
+    system = platform.system()
+    # 转换路径为 file:// URL
+    material_path = str(UPLOAD_TEMP_DIR).replace('\\', '/')
+    if system == 'Windows':
+        material_url = 'file:///' + material_path
+    else:
+        material_url = 'file://' + material_path
+
+    return jsonify({
+        'material_dir': material_url,
+        'material_path': str(UPLOAD_TEMP_DIR)
     })
 
 
@@ -416,9 +434,10 @@ def api_materials_upload():
 
                 f.save(str(save_path))
                 print(f"[上传] 保存成功: {f.name}")
+                push_log(f"✅ 已上传: {f.name}", 'success')
 
                 ext = Path(f.filename).suffix.lower()
-                # 视频文件：立即提示，后台处理
+                # 视频文件：后台处理缩略图和转码
                 if ext in ['.mp4', '.avi', '.mov', '.mkv']:
                     push_log(f"🎬 开始处理: {f.name}", 'info')
                     fname = f.name
@@ -429,7 +448,7 @@ def api_materials_upload():
                             thumb = generate_video_thumbnail(fpath)
                             print(f"[上传] 缩略图: {thumb if thumb else '失败'}")
                             if thumb:
-                                push_log(f"🖼️ 缩略图完成", 'success')
+                                push_log(f"🖼️ 缩略图完成: {fname}", 'success')
                             web_path = transcode_video_for_web(fpath)
                             if web_path != fpath:
                                 try:
@@ -445,7 +464,6 @@ def api_materials_upload():
                     threading.Thread(target=process_video, daemon=True).start()
                 else:
                     print(f"[上传] 保存成功: {f.name}")
-                    push_log(f"✅ 已上传: {f.name}", 'success')
 
                 uploaded.append(f.filename)
 
