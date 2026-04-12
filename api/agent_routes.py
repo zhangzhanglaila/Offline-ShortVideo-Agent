@@ -361,3 +361,54 @@ def logs_stream():
         'Cache-Control': 'no-cache',
         'X-Accel-Buffering': 'no'
     })
+
+
+@agent_bp.route('/config/update', methods=['POST'])
+def update_config():
+    """更新配置文件（运行时修改）"""
+    try:
+        data = request.get_json() or {}
+
+        # 读取现有config.py内容
+        config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'config.py')
+        with open(config_path, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+
+        # 要更新的配置项
+        updates = {}
+        if 'OPENAI_API_KEY' in data:
+            updates['OPENAI_API_KEY'] = data['OPENAI_API_KEY']
+        if 'OPENAI_API_BASE' in data:
+            updates['OPENAI_API_BASE'] = data['OPENAI_API_BASE']
+        if 'OPENAI_MODEL' in data:
+            updates['OPENAI_MODEL'] = data['OPENAI_MODEL']
+
+        # 逐行处理，更新对应配置项
+        new_lines = []
+        for line in lines:
+            updated = False
+            for key, val in updates.items():
+                import re
+                pattern = rf'^(\s*{key}\s*=\s*)([\'"])([^\'"]*)\2(\s*#.*)?$'
+                m = re.match(pattern, line)
+                if m:
+                    if "'" in val and '"' not in val:
+                        new_val = f'"{val}"'
+                    else:
+                        new_val = f"'{val}'"
+                    new_lines.append(m.group(1) + new_val + (m.group(4) or '') + '\n')
+                    updated = True
+                    break
+            if not updated:
+                new_lines.append(line)
+
+        with open(config_path, 'w', encoding='utf-8') as f:
+            f.writelines(new_lines)
+
+        # 重置LLM客户端单例
+        from agent.llm.ollama_client import reset_llm_client
+        reset_llm_client()
+
+        return jsonify({'success': True, 'message': '配置已更新'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500

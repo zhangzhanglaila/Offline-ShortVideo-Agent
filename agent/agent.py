@@ -113,11 +113,6 @@ class Agent:
         task_id = str(uuid.uuid4())
 
         try:
-            # 检查Ollama可用性
-            if not self.check_ollama():
-                error_msg = "抱歉，Ollama 大模型服务未启动，无法处理您的请求。\n\n请按以下步骤操作：\n1. 打开终端，安装 Ollama：到 https://ollama.com 下载安装\n2. 在终端运行命令启动服务：ollama serve\n3. 下载模型（首次）：ollama pull qwen2.5-14b\n4. 重新发送您的请求"
-                return {"success": False, "response": error_msg}
-
             # 推送开始日志
             if AGENT_CONFIG.get('log_to_ui'):
                 try:
@@ -168,10 +163,10 @@ class Agent:
             return result
 
         except ConnectionError as e:
-            error_msg = "抱歉，Ollama 大模型服务未启动，无法处理您的请求。\n\n" + "请按以下步骤操作：\n" + "1. 打开终端，安装 Ollama：到 https://ollama.com 下载安装\n" + "2. 在终端运行命令启动服务：ollama serve\n" + "3. 下载模型（首次）：ollama pull qwen2.5-14b\n" + "4. 重新发送您的请求\n\n" + "技术信息: " + str(e)
+            error_msg = str(e)
             try:
                 if AGENT_CONFIG.get('log_to_ui'):
-                    push_agent_log(task_id, "Ollama未启动", 'error', self.agent_id)
+                    push_agent_log(task_id, "模型服务异常", 'error', self.agent_id)
             except Exception:
                 pass
             return {"success": False, "response": error_msg}
@@ -189,17 +184,6 @@ class Agent:
         task_id = str(uuid.uuid4())
 
         try:
-            # 检查Ollama可用性
-            if not self.check_ollama():
-                error_msg = "抱歉，Ollama 大模型服务未启动，无法处理您的请求。\n\n请按以下步骤操作：\n1. 打开终端，安装 Ollama：到 https://ollama.com 下载安装\n2. 在终端运行命令启动服务：ollama serve\n3. 下载模型（首次）：ollama pull qwen2.5-14b\n4. 重新发送您的请求"
-                try:
-                    if AGENT_CONFIG.get('log_to_ui'):
-                        push_agent_log(task_id, error_msg, 'error', self.agent_id)
-                except Exception:
-                    pass
-                yield error_msg
-                return
-
             # 推送开始日志
             try:
                 if AGENT_CONFIG.get('log_to_ui'):
@@ -268,10 +252,10 @@ class Agent:
                 pass
 
         except ConnectionError as e:
-            error_msg = "抱歉，Ollama 大模型服务未启动，无法处理您的请求。\n\n" + "请按以下步骤操作：\n" + "1. 打开终端，安装 Ollama：到 https://ollama.com 下载安装\n" + "2. 在终端运行命令启动服务：ollama serve\n" + "3. 下载模型（首次）：ollama pull qwen2.5-14b\n" + "4. 重新发送您的请求\n\n" + "技术信息: " + str(e)
+            error_msg = str(e)
             try:
                 if AGENT_CONFIG.get('log_to_ui'):
-                    push_agent_log(task_id, "Ollama未启动", 'error', self.agent_id)
+                    push_agent_log(task_id, "模型服务异常", 'error', self.agent_id)
             except Exception:
                 pass
             yield error_msg

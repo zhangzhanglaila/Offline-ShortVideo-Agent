@@ -914,6 +914,80 @@
             0%, 80%, 100% { transform: translateY(0); }
             40% { transform: translateY(-6px); }
         }
+        /* API配置弹窗 */
+        .api-config-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 10000;
+            justify-content: center;
+            align-items: center;
+        }
+        .api-config-modal.active {
+            display: flex;
+        }
+        .api-config-box {
+            background: #fff;
+            border-radius: 12px;
+            padding: 28px 32px;
+            width: 420px;
+            max-width: 90vw;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.15);
+        }
+        .api-config-box h3 {
+            margin: 0 0 6px 0;
+            font-size: 16px;
+            color: #333;
+        }
+        .api-config-box .sub-title {
+            margin: 0 0 20px 0;
+            font-size: 13px;
+            color: #999;
+        }
+        .api-config-box label {
+            display: block;
+            font-size: 13px;
+            color: #666;
+            margin-bottom: 4px;
+        }
+        .api-config-box input {
+            width: 100%;
+            padding: 9px 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 13px;
+            box-sizing: border-box;
+            margin-bottom: 14px;
+            outline: none;
+        }
+        .api-config-box input:focus {
+            border-color: #FB7299;
+        }
+        .api-config-box .btn-row {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+            margin-top: 6px;
+        }
+        .api-config-box .btn {
+            padding: 8px 20px;
+            border-radius: 6px;
+            font-size: 13px;
+            cursor: pointer;
+            border: none;
+        }
+        .api-config-box .btn-cancel {
+            background: #f0f0f0;
+            color: #666;
+        }
+        .api-config-box .btn-save {
+            background: linear-gradient(135deg, #FB7299, #FFA4C4);
+            color: #fff;
+        }
     </style>
 </head>
 <body>
@@ -1697,8 +1771,16 @@
                 // 创建助手消息容器（带加载动画）
                 assistantDiv = document.createElement('div');
                 assistantDiv.style.cssText = 'margin-bottom: 16px; display: flex; align-items: flex-start; gap: 12px;';
-                assistantDiv.innerHTML = '<div style="width: 32px; height: 32px; background: linear-gradient(135deg, #FB7299, #FFA4C4); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: white; font-size: 14px; flex-shrink: 0;">🤖</div><div id="agent-streaming" style="max-width: 80%; background: #F5F6F7; padding: 12px 16px; border-radius: 4px 12px 12px 12px; min-height: 40px;"><span style="display: inline-flex; align-items: center; gap: 4px;"><span style="width: 6px; height: 6px; background: #999; border-radius: 50%; animation: agentDotBounce 1.4s ease-in-out infinite;">&nbsp;</span><span style="width: 6px; height: 6px; background: #999; border-radius: 50%; animation: agentDotBounce 1.4s ease-in-out 0.2s infinite;">&nbsp;</span><span style="width: 6px; height: 6px; background: #999; border-radius: 50%; animation: agentDotBounce 1.4s ease-in-out 0.4s infinite;">&nbsp;</span></span></div>';
+                assistantDiv.innerHTML = '<div style="width: 32px; height: 32px; background: linear-gradient(135deg, #FB7299, #FFA4C4); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: white; font-size: 14px; flex-shrink: 0;">🤖</div><div id="agent-streaming" style="max-width: 80%; background: #F5F6F7; padding: 12px 16px; border-radius: 4px 12px 12px 12px; min-height: 40px; display: flex; align-items: center;"><span id="agent-loading-text" style="color: #888; font-size: 13px;">正在思考</span><span id="agent-loading-dots" style="color: #888; font-size: 13px;"></span></div>';
                 document.getElementById('agent-messages').appendChild(assistantDiv);
+
+                // 加载动画 - 文字 + 省略号
+                var dots = 0;
+                var loadingDots = document.getElementById('agent-loading-dots');
+                var loadingTimer = setInterval(function() {
+                    dots = (dots + 1) % 4;
+                    if (loadingDots) loadingDots.textContent = '.'.repeat(dots);
+                }, 400);
 
                 function read() {
                     reader.read().then(function(result) {
@@ -1723,6 +1805,7 @@
                                         responseText += data.content;
                                         var streamingEl = document.getElementById('agent-streaming');
                                         if (streamingEl) {
+                                            clearInterval(loadingTimer);
                                             streamingEl.innerHTML = formatAgentResponse(responseText);
                                             document.getElementById('agent-messages').scrollTop = document.getElementById('agent-messages').scrollHeight;
                                         }
@@ -1731,11 +1814,19 @@
                                     } else if (data.type === 'done') {
                                         showToast('处理完成', 'success');
                                     } else if (data.type === 'error') {
-                                        showToast(data.error, 'error');
-                                        // 在聊天区域显示错误（普通气泡+红色文字）
+                                        clearInterval(loadingTimer);
+                                        var errText = data.error || '';
+                                        // 在聊天区域显示错误（普通气泡+红色文字，无背景框）
                                         var streamingEl = document.getElementById('agent-streaming');
                                         if (streamingEl) {
-                                            streamingEl.innerHTML = '<span style="color: #FF4D4F;">' + data.error.replace(/\n/g, '<br>') + '</span>';
+                                            streamingEl.innerHTML = '<span style="color: #FF4D4F;">' + errText.replace(/\n/g, '<br>') + '</span>';
+                                        }
+                                        // 如果是API密钥未配置，弹出配置框
+                                        if (errText.indexOf('API密钥') !== -1 || errText.indexOf('未配置') !== -1) {
+                                            showToast('请先配置云端API', 'warning');
+                                            showApiConfigModal();
+                                        } else {
+                                            showToast(errText, 'error');
                                         }
                                     }
                                 }
@@ -1747,7 +1838,15 @@
                 read();
             })
             .catch(function(e) {
-                appendAgentMessage('error', '请求失败: ' + e.message);
+                clearInterval(loadingTimer);
+                var errText = '请求失败: ' + e.message;
+                var streamingEl = document.getElementById('agent-streaming');
+                if (streamingEl) {
+                    streamingEl.innerHTML = '<span style="color: #FF4D4F;">' + errText + '</span>';
+                }
+                if (errText.indexOf('API') !== -1) {
+                    showApiConfigModal();
+                }
             });
         }
 
@@ -2490,6 +2589,73 @@
         } else {
             init();
         }
+
+        // ========== API配置弹窗 ==========
+        function showApiConfigModal() {
+            var modal = document.getElementById('api-config-modal');
+            if (modal) modal.classList.add('active');
+        }
+
+        function closeApiConfigModal() {
+            var modal = document.getElementById('api-config-modal');
+            if (modal) modal.classList.remove('active');
+        }
+
+        function saveApiConfig() {
+            var apiKey = document.getElementById('api-key-input').value.trim();
+            var apiBase = document.getElementById('api-base-input').value.trim();
+            var apiModel = document.getElementById('api-model-input').value.trim();
+
+            if (!apiKey) {
+                showToast('请填写API密钥', 'warning');
+                return;
+            }
+
+            // 保存到后端
+            fetch(API + '/config/update', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    OPENAI_API_KEY: apiKey,
+                    OPENAI_API_BASE: apiBase || 'https://api.openai.com/v1',
+                    OPENAI_MODEL: apiModel || 'gpt-4o'
+                })
+            })
+            .then(function(res) { return res.json(); })
+            .then(function(data) {
+                if (data.success) {
+                    showToast('配置已保存', 'success');
+                    closeApiConfigModal();
+                    // 清空输入框
+                    document.getElementById('api-key-input').value = '';
+                    document.getElementById('api-base-input').value = '';
+                    document.getElementById('api-model-input').value = '';
+                } else {
+                    showToast('保存失败: ' + data.error, 'error');
+                }
+            })
+            .catch(function(e) {
+                showToast('保存失败: ' + e.message, 'error');
+            });
+        }
     </script>
+
+    <!-- API配置弹窗 -->
+    <div id="api-config-modal" class="api-config-modal">
+        <div class="api-config-box">
+            <h3>配置云端API</h3>
+            <p class="sub-title">本地模型未启动，请填写云端API信息继续使用</p>
+            <label>API密钥</label>
+            <input type="password" id="api-key-input" placeholder="sk-xxxxxxxxxxxxxxxx">
+            <label>接口地址</label>
+            <input type="text" id="api-base-input" placeholder="https://api.openai.com/v1">
+            <label>模型名称</label>
+            <input type="text" id="api-model-input" placeholder="gpt-4o">
+            <div class="btn-row">
+                <button class="btn btn-cancel" onclick="closeApiConfigModal()">取消</button>
+                <button class="btn btn-save" onclick="saveApiConfig()">保存并重试</button>
+            </div>
+        </div>
+    </div>
 </body>
 </html>

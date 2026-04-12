@@ -21,9 +21,17 @@ OUTPUT_BILIBILI = OUTPUT_DIR / "B站"
 
 TOPICS_DB = DATA_DIR / "topics.db"
 
+# ========== 本地Ollama配置 ==========
 OLLAMA_BASE_URL = "http://localhost:11434"
 OLLAMA_MODEL = "qwen2.5-14b"  # 支持原生Function Calling
 OLLAMA_TIMEOUT = 120
+
+# ========== 云端API配置（可选） ==========
+# 若本地Ollama不可用，将自动使用云端API
+# 支持：OpenAI、通义千问(qwen)、DeepSeek、GLM-4 等OpenAI格式API
+OPENAI_API_KEY = ""                      # API密钥，如 "sk-xxxxx"
+OPENAI_API_BASE = "https://api.openai.com/v1"  # 接口地址
+OPENAI_MODEL = "gpt-4o"                 # 模型名称
 
 # Agent企业级配置
 AGENT_CONFIG = {
