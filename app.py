@@ -403,11 +403,17 @@ def api_materials_upload():
 
         files = request.files.getlist('file')
         uploaded = []
+        skipped = []
 
         for f in files:
             if f.filename:
-                # 保存到素材目录
                 save_path = Path(UPLOAD_TEMP_DIR) / f.filename
+                # 检查文件是否已存在
+                if save_path.exists():
+                    skipped.append(f.filename)
+                    print(f"[上传] 文件已存在: {f.name}")
+                    continue
+
                 f.save(str(save_path))
                 print(f"[上传] 保存成功: {f.name}")
 
@@ -446,6 +452,7 @@ def api_materials_upload():
         return jsonify({
             'success': True,
             'uploaded': uploaded,
+            'skipped': skipped,
             'count': len(uploaded)
         })
     except Exception as e:
@@ -461,6 +468,11 @@ def api_materials_delete(filename):
         file_path = Path(UPLOAD_TEMP_DIR) / filename
         if file_path.exists():
             file_path.unlink()
+            # 同时删除对应的缩略图
+            thumb_name = Path(filename).stem + '_thumb.jpg'
+            thumb_path = THUMBNAILS_DIR / thumb_name
+            if thumb_path.exists():
+                thumb_path.unlink()
             return jsonify({'success': True})
         return jsonify({'error': '文件不存在'}), 404
     except Exception as e:
@@ -480,6 +492,16 @@ def api_materials_clear():
                     if ext in ['.jpg', '.jpeg', '.png', '.webp', '.mp4', '.avi', '.mov', '.mkv', '.mp3', '.wav', '.aac', '.m4a']:
                         f.unlink()
                         count += 1
+                        # 同时删除对应的缩略图
+                        thumb_name = f.stem + '_thumb.jpg'
+                        thumb_path = THUMBNAILS_DIR / thumb_name
+                        if thumb_path.exists():
+                            thumb_path.unlink()
+        # 清空缩略图目录中孤立的缩略图
+        if THUMBNAILS_DIR.exists():
+            for tf in THUMBNAILS_DIR.iterdir():
+                if tf.is_file():
+                    tf.unlink()
         return jsonify({'success': True, 'cleared': count})
     except Exception as e:
         return jsonify({'error': str(e)}), 500

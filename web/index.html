@@ -1765,10 +1765,31 @@
             if (!files || files.length === 0) return;
             var formData = new FormData();
             var filenames = [];
+            var dupNames = [];
+
+            // 先检查是否有重复文件
             for (var i = 0; i < files.length; i++) {
-                formData.append('file', files[i]);
-                filenames.push(files[i].name);
+                var name = files[i].name;
+                var isDup = false;
+                for (var j = 0; j < materialsData.length; j++) {
+                    if (materialsData[j].name === name) {
+                        isDup = true;
+                        break;
+                    }
+                }
+                if (isDup) {
+                    dupNames.push(name);
+                } else {
+                    formData.append('file', files[i]);
+                    filenames.push(name);
+                }
             }
+
+            if (dupNames.length > 0) {
+                showToast('以下文件已存在: ' + dupNames.join(', '), 'info');
+            }
+
+            if (filenames.length === 0) return; // 全部重复，直接返回
 
             // 生成唯一的上传批次ID，用于追踪这个批次的占位项
             var uploadBatchId = Date.now();
@@ -1810,6 +1831,11 @@
                 // HTTP响应到达后，等待服务器处理完成再刷新
                 // 视频需要生成缩略图和转码，需要等待一段时间
                 if (xhr.status === 200) {
+                    var data = JSON.parse(xhr.responseText);
+                    // 提示重复文件
+                    if (data.skipped && data.skipped.length > 0) {
+                        showToast('文件已存在: ' + data.skipped.join(', '), 'info');
+                    }
                     // 2秒后刷新，获取服务器处理后的最新数据（包括缩略图）
                     setTimeout(function() {
                         refreshMaterials();
