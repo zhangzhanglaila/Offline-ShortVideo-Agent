@@ -34,12 +34,16 @@ from core.subtitle_module import SubtitleModule
 from core.platform_module import PlatformModule
 from core.analytics_module import AnalyticsModule
 from core.db_init import init_topics_db, insert_sample_topics
+from api.agent_routes import agent_bp
 
 # 创建Flask应用
 app = Flask(__name__, static_folder='web', static_url_path='')
 app.config['JSON_AS_ASCII'] = False
 app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
 app.config['MAX_CONTENT_LENGTH'] = 2 * 1024 * 1024 * 1024  # 2GB max
+
+# 注册Agent蓝图
+app.register_blueprint(agent_bp)
 
 # 全局模块实例
 _topics_module = None

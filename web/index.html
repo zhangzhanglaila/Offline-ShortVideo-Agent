@@ -917,6 +917,7 @@
             <a class="nav-item" data-page="topics" onclick="showPage('topics')">选题中心</a>
             <a class="nav-item" data-page="works" onclick="showPage('works')">我的投稿</a>
             <a class="nav-item" data-page="stats" onclick="showPage('stats')">数据中心</a>
+            <a class="nav-item" data-page="agent" onclick="showPage('agent')">🤖 AI助手</a>
         </nav>
     </header>
 
@@ -1317,6 +1318,47 @@
                 </div>
             </div>
         </div>
+
+        <!-- ========== AI助手 ========== -->
+        <div id="page-agent" class="page">
+            <div class="bili-card" style="height: calc(100vh - 120px); display: flex; flex-direction: column;">
+                <div class="card-header">
+                    <span class="card-title">🤖 AI视频生产助手</span>
+                    <div style="display: flex; gap: 8px;">
+                        <button class="bili-btn bili-btn-secondary" onclick="clearAgentChat()">🗑️ 清空对话</button>
+                    </div>
+                </div>
+
+                <!-- 快捷指令 -->
+                <div style="padding: 12px 20px; border-bottom: 1px solid #E3E5E7; display: flex; gap: 8px; flex-wrap: wrap;">
+                    <span style="font-size: 12px; color: #909090; line-height: 32px;">快捷指令:</span>
+                    <button class="bili-btn bili-btn-secondary" onclick="sendQuickCommand('帮我找一个美食探店的选题')">🍜 选题推荐</button>
+                    <button class="bili-btn bili-btn-secondary" onclick="sendQuickCommand('生成一个30秒的抖音脚本')">📝 生成脚本</button>
+                    <button class="bili-btn bili-btn-secondary" onclick="sendQuickCommand('用素材池的图片生成视频')">🎬 生成视频</button>
+                    <button class="bili-btn bili-btn-secondary" onclick="sendQuickCommand('一键生成完整视频')">🚀 一键生产</button>
+                </div>
+
+                <!-- 聊天区域 -->
+                <div id="agent-messages" style="flex: 1; overflow-y: auto; padding: 20px;"></div>
+
+                <!-- ReAct步骤展示 -->
+                <div id="agent-steps" class="step-log" style="display: none; margin: 0; border-radius: 0; max-height: 200px;"></div>
+
+                <!-- 输入区域 -->
+                <div style="padding: 16px 20px; border-top: 1px solid #E3E5E7;">
+                    <div style="display: flex; gap: 12px;">
+                        <input type="text" id="agent-input" class="bili-input"
+                               placeholder="输入指令，例如：帮我生成一个美食探店的视频"
+                               style="flex: 1;"
+                               onkeyup="if(event.key==='Enter')sendAgentMessage()">
+                        <button class="bili-btn bili-btn-primary" onclick="sendAgentMessage()">发送</button>
+                    </div>
+                    <div style="margin-top: 8px; font-size: 11px; color: #909090;">
+                        💡 支持自然语言描述需求，AI会自动调用相应工具完成操作
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- 图片预览 -->
@@ -1559,6 +1601,144 @@
             else if (page === 'topics') loadTopicsPage();
 
             isTransitioning = false;
+        }
+
+        // ==================== AI助手 ====================
+        var agentSessionId = null;
+        var agentStepsVisible = false;
+
+        function sendAgentMessage() {
+            var input = document.getElementById('agent-input');
+            var message = input.value.trim();
+            if (!message) return;
+
+            appendAgentMessage('user', message);
+            input.value = '';
+
+            showAgentTyping();
+
+            fetch(API + '/agent/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    message: message,
+                    session_id: agentSessionId
+                })
+            })
+            .then(function(res) { return res.json(); })
+            .then(function(data) {
+                hideAgentTyping();
+
+                agentSessionId = data.session_id;
+
+                appendAgentMessage('assistant', data.response);
+
+                if (data.steps && data.steps.length > 0) {
+                    showAgentSteps(data.steps);
+                }
+
+                if (data.success) {
+                    showToast('处理完成', 'success');
+                }
+            })
+            .catch(function(e) {
+                hideAgentTyping();
+                appendAgentMessage('error', '请求失败: ' + e.message);
+            });
+        }
+
+        function appendAgentMessage(role, content) {
+            var container = document.getElementById('agent-messages');
+            var msgDiv = document.createElement('div');
+            msgDiv.style.cssText = 'margin-bottom: 16px; display: flex; align-items: flex-start; gap: 12px;';
+
+            if (role === 'user') {
+                msgDiv.innerHTML = '<div style="margin-left: auto; max-width: 80%; background: #FFF5F7; padding: 12px 16px; border-radius: 12px 12px 4px 12px;">' + escapeHtml(content) + '</div>';
+            } else if (role === 'assistant') {
+                msgDiv.innerHTML = '<div style="width: 32px; height: 32px; background: linear-gradient(135deg, #FB7299, #FFA4C4); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: white; font-size: 14px; flex-shrink: 0;">🤖</div><div style="max-width: 80%; background: #F5F6F7; padding: 12px 16px; border-radius: 4px 12px 12px 12px;">' + formatAgentResponse(content) + '</div>';
+            } else {
+                msgDiv.innerHTML = '<div style="color: #FF4D4F; font-size: 13px;">' + escapeHtml(content) + '</div>';
+            }
+
+            container.appendChild(msgDiv);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function showAgentTyping() {
+            var container = document.getElementById('agent-messages');
+            var typingDiv = document.createElement('div');
+            typingDiv.id = 'agent-typing';
+            typingDiv.style.cssText = 'margin-bottom: 16px; display: flex; align-items: flex-start; gap: 12px;';
+            typingDiv.innerHTML = '<div style="width: 32px; height: 32px; background: linear-gradient(135deg, #FB7299, #FFA4C4); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: white; font-size: 14px; flex-shrink: 0;">🤖</div><div style="background: #F5F6F7; padding: 12px 16px; border-radius: 4px 12px 12px 12px;"><span style="animation: blink 1s infinite;">思考中...</span></div>';
+            container.appendChild(typingDiv);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function hideAgentTyping() {
+            var typingDiv = document.getElementById('agent-typing');
+            if (typingDiv) typingDiv.remove();
+        }
+
+        function showAgentSteps(steps) {
+            var stepsDiv = document.getElementById('agent-steps');
+            var html = '';
+
+            for (var i = 0; i < steps.length; i++) {
+                var step = steps[i];
+                var icon = '○';
+                var iconClass = 'pending';
+
+                if (step.step_type === 'action') {
+                    icon = '⚡';
+                    iconClass = 'running';
+                } else if (step.step_type === 'observation') {
+                    icon = '✓';
+                    iconClass = 'success';
+                } else if (step.step_type === 'thought') {
+                    icon = '💭';
+                    iconClass = 'pending';
+                }
+
+                html += '<div class="step-item">' +
+                    '<div class="step-icon ' + iconClass + '">' + icon + '</div>' +
+                    '<div class="step-info">' +
+                    '<div class="step-name">' + step.step_type + '</div>' +
+                    '<div class="step-msg">' + escapeHtml(step.content || '') + '</div>' +
+                    '</div></div>';
+            }
+
+            stepsDiv.innerHTML = html;
+            stepsDiv.style.display = 'block';
+            agentStepsVisible = true;
+        }
+
+        function sendQuickCommand(cmd) {
+            document.getElementById('agent-input').value = cmd;
+            sendAgentMessage();
+        }
+
+        function clearAgentChat() {
+            if (!confirm('确定清空当前对话？')) return;
+            document.getElementById('agent-messages').innerHTML = '';
+            document.getElementById('agent-steps').innerHTML = '';
+            document.getElementById('agent-steps').style.display = 'none';
+            agentSessionId = null;
+        }
+
+        function formatAgentResponse(text) {
+            text = escapeHtml(text);
+            text = text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+            text = text.replace(/\n/g, '<br>');
+            text = text.replace(/^- (.*)/gm, '<span style="display: block; margin-left: 0;">• $1</span>');
+            text = text.replace(/^(\d+)\. (.*)/gm, '<span style="display: block;">$1. $2</span>');
+            return text;
+        }
+
+        function escapeHtml(str) {
+            if (!str) return '';
+            var div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
         }
 
         function loadStatsPage() {
