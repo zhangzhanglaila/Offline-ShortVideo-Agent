@@ -1901,6 +1901,7 @@
                 assistantDiv = document.createElement('div');
                 assistantDiv.innerHTML = agentPendingBubble(0);
                 document.getElementById('agent-messages').appendChild(assistantDiv);
+                document.getElementById('agent-messages').scrollTop = document.getElementById('agent-messages').scrollHeight;
                 var streamingEl = document.getElementById('agent-streaming');
 
                 function read() {
@@ -2783,7 +2784,8 @@
                         var msg = window._pendingAgentMessage;
                         window._pendingAgentMessage = null;
                         window._currentAgentMessage = null;
-                        // 重新发送消息
+                        // 先显示用户消息，再发送
+                        appendAgentMessage('user', msg);
                         sendAgentRequest(msg);
                     }
                     // 清空输入框
