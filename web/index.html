@@ -1593,7 +1593,7 @@
                 var es = new EventSource(API + '/logs/stream');
                 es.onmessage = function(e) {
                     var data = JSON.parse(e.data);
-                    if (data.type === 'ping') return;
+                    if (data.type === 'ping' || data.type === 'connected') return;
                     showToast(data.msg, data.level || 'info');
                 };
                 es.onerror = function() {
