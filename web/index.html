@@ -2626,6 +2626,13 @@
 
             if (!apiKey) {
                 showToast('请填写API密钥', 'warning');
+                // 抖动提示
+                var box = document.querySelector('.api-config-box');
+                if (box) {
+                    box.classList.remove('shake');
+                    void box.offsetWidth;
+                    box.classList.add('shake');
+                }
                 return;
             }
 
