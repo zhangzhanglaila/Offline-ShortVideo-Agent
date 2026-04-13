@@ -217,6 +217,43 @@ class LongTermMemory:
         conn.commit()
         conn.close()
 
+    def list_conversation_sessions(self, limit: int = 50) -> List[Dict]:
+        """列出所有对话会话（从memory表查询conversation类别的key）"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT key, value, created_at, accessed_at
+            FROM memory
+            WHERE category = 'conversation' AND key LIKE 'conversation_%'
+            ORDER BY accessed_at DESC
+            LIMIT ?
+        """, (limit,))
+
+        rows = cursor.fetchall()
+        conn.close()
+
+        sessions = []
+        for r in rows:
+            key = r[0]  # conversation_{session_id}
+            session_id = key.replace('conversation_', '')
+            try:
+                messages = json.loads(r[1])
+                first_question = ''
+                for msg in messages:
+                    if msg.get('role') == 'user':
+                        first_question = msg.get('content', '')[:50]
+                        break
+            except:
+                first_question = ''
+            sessions.append({
+                'session_id': session_id,
+                'first_question': first_question,
+                'created_at': r[2],
+                'updated_at': r[3]
+            })
+        return sessions
+
 
 class AgentMemory:
     """Agent统一记忆接口"""

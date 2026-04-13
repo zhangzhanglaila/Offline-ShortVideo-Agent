@@ -1000,6 +1000,128 @@
             background: linear-gradient(135deg, #FB7299, #FFA4C4);
             color: #fff;
         }
+        /* ========== 智能助手思考气泡 ========== */
+        .chat-row { margin-bottom: 16px; display: flex; align-items: flex-start; gap: 12px; }
+        .chat-row--user { flex-direction: row-reverse; }
+        .chat-bubble {
+            max-width: min(92%, 680px);
+            padding: 16px 18px;
+            border-radius: 24px;
+            border: 1px solid rgba(124, 89, 42, 0.08);
+            background: rgba(255, 255, 255, 0.92);
+            box-shadow: 0 12px 24px rgba(80, 54, 26, 0.08);
+        }
+        .chat-bubble--assistant { border-top-left-radius: 10px; }
+        .chat-bubble--user {
+            color: #fff;
+            border-top-right-radius: 10px;
+            background: linear-gradient(135deg, var(--bili-pink), #FFA4C4);
+        }
+        .chat-bubble__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+        .chat-bubble__name { font-size: 13px; font-weight: 600; color: var(--bili-pink); margin: 0; }
+        .chat-bubble--user .chat-bubble__name { color: #fff; }
+        .meta-line {
+            font-size: 12px;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: #999;
+        }
+        .type-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 9px 12px;
+            font-size: 13px;
+            background: rgba(255, 255, 255, 0.78);
+            border: 1px solid rgba(124, 89, 42, 0.12);
+            color: #999;
+        }
+        .progress-percent { min-width: 68px; justify-content: center; font-weight: 800; }
+        .loading-card {
+            padding: 22px;
+            background: rgba(255, 255, 255, 0.72);
+            border: 1px solid rgba(124, 89, 42, 0.08);
+            border-radius: 12px;
+            margin-top: 14px;
+        }
+        .loading-card p { margin-top: 8px; color: #999; line-height: 1.7; }
+        .block-title { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+        .block-title h4 { font-size: 18px; line-height: 1.24; font-weight: 900; margin: 0; }
+        .block-title p { font-size: 14px; line-height: 1.75; margin: 0; }
+        .bili-progress {
+            margin-top: 14px;
+            height: 6px;
+            overflow: hidden;
+            border-radius: 999px;
+            background: rgba(251, 114, 153, 0.12);
+        }
+        .bili-progress__bar {
+            position: relative;
+            width: 48%;
+            height: 100%;
+            border-radius: inherit;
+            overflow: hidden;
+            background: linear-gradient(90deg, #ff9f63 0%, #ffb36f 26%, var(--bili-pink) 55%, #ff8ab0 100%);
+            background-size: 220% 100%;
+            animation: progress-shimmer 2.1s linear infinite;
+            transition: width 180ms ease;
+        }
+        @keyframes progress-shimmer {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+        .bili-progress__steps { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+        .progress-step {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.7);
+            color: #999;
+            font-size: 13px;
+        }
+        .progress-step.is-active { color: var(--bili-pink); background: rgba(251, 114, 153, 0.1); }
+        .progress-step.is-done { color: #18794e; background: rgba(24, 121, 78, 0.08); }
+        .progress-step__dot {
+            width: 10px; height: 10px; flex: none;
+            border-radius: 50%;
+            background: var(--bili-pink);
+        }
+        .progress-step.is-done .progress-step__dot { background: #18794e; }
+        .typing-caret { display: inline-block; width: 9px; height: 1.1em; margin-left: 3px; vertical-align: text-bottom; background: currentColor; opacity: 0.8; animation: blink-caret 0.9s steps(1) infinite; }
+        @keyframes blink-caret { 50% { opacity: 0; } }
+        /* ========== 历史会话弹窗 ========== */
+        .chat-sessions-popup {
+            position: absolute;
+            bottom: calc(100% + 8px);
+            right: 0;
+            width: 66.67%;
+            box-sizing: border-box;
+            background: #fff;
+            border: 1px solid rgba(124, 89, 42, 0.12);
+            border-radius: 12px;
+            box-shadow: 0 8px 32px rgba(80, 54, 26, 0.18);
+            z-index: 100;
+            max-height: 360px;
+            overflow-y: auto;
+            padding: 8px 0;
+        }
+        .chat-sessions-popup__empty { text-align: center; color: #999; font-size: 13px; padding: 20px 16px; }
+        .chat-sessions-popup__item {
+            display: flex; align-items: center; padding: 10px 16px; cursor: pointer;
+            transition: background 150ms ease; border-bottom: 1px solid rgba(124, 89, 42, 0.06);
+        }
+        .chat-sessions-popup__item:hover { background: rgba(251, 114, 153, 0.08); }
+        .chat-sessions-popup__item-main { flex: 1; display: flex; flex-direction: column; gap: 3px; overflow: hidden; }
+        .chat-sessions-popup__time { font-size: 11px; color: #bbb; }
+        .chat-sessions-popup__summary { font-size: 13px; color: #444; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .chat-sessions-popup__delete {
+            flex-shrink: 0; margin-left: 8px; width: 22px; height: 22px; border: none; border-radius: 50%;
+            background: rgba(0, 0, 0, 0.06); color: #999; font-size: 14px; line-height: 1; cursor: pointer;
+            transition: background 150ms ease, color 150ms ease;
+        }
+        .chat-sessions-popup__delete:hover { background: rgba(220, 60, 60, 0.15); color: #dc3c3c; }
     </style>
 </head>
 <body>
@@ -1444,7 +1566,8 @@
 
                 <!-- 输入区域 -->
                 <div style="padding: 16px 20px; border-top: 1px solid #E3E5E7;">
-                    <div style="display: flex; gap: 12px;">
+                    <div style="display: flex; gap: 12px; align-items: center;">
+                        <button id="agentSessionsBtn" onclick="showAgentSessionsPopup()" style="padding: 8px 12px; background: #f0f0f0; border: 1px solid #ddd; border-radius: 6px; cursor: pointer; font-size: 13px; color: #666; white-space: nowrap;">历史会话</button>
                         <input type="text" id="agent-input" class="bili-input"
                                placeholder="输入指令，例如：帮我生成一个美食探店的视频"
                                style="flex: 1;"
@@ -1774,19 +1897,11 @@
                 var assistantDiv = null;
                 var assistantContentDiv = null;
 
-                // 创建助手消息容器（带加载动画）
+                // 创建助手消息容器（带进度步骤的思考气泡）
                 assistantDiv = document.createElement('div');
-                assistantDiv.style.cssText = 'margin-bottom: 16px; display: flex; align-items: flex-start; gap: 12px;';
-                assistantDiv.innerHTML = '<div style="width: 32px; height: 32px; background: linear-gradient(135deg, #FB7299, #FFA4C4); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: white; font-size: 14px; flex-shrink: 0;">🤖</div><div id="agent-streaming" style="max-width: 80%; background: #F5F6F7; padding: 12px 16px; border-radius: 4px 12px 12px 12px; min-height: 40px; display: flex; align-items: center;"><span id="agent-loading-text" style="color: #888; font-size: 13px;">正在思考</span><span id="agent-loading-dots" style="color: #888; font-size: 13px;"></span></div>';
+                assistantDiv.innerHTML = agentPendingBubble(0);
                 document.getElementById('agent-messages').appendChild(assistantDiv);
-
-                // 加载动画 - 文字 + 省略号
-                var dots = 0;
-                var loadingDots = document.getElementById('agent-loading-dots');
-                var loadingTimer = setInterval(function() {
-                    dots = (dots + 1) % 4;
-                    if (loadingDots) loadingDots.textContent = '.'.repeat(dots);
-                }, 400);
+                var streamingEl = document.getElementById('agent-streaming');
 
                 function read() {
                     reader.read().then(function(result) {
@@ -1811,7 +1926,6 @@
                                         responseText += data.content;
                                         var streamingEl = document.getElementById('agent-streaming');
                                         if (streamingEl) {
-                                            clearInterval(loadingTimer);
                                             streamingEl.innerHTML = formatAgentResponse(responseText);
                                             document.getElementById('agent-messages').scrollTop = document.getElementById('agent-messages').scrollHeight;
                                         }
@@ -1820,7 +1934,6 @@
                                     } else if (data.type === 'done') {
                                         showToast('处理完成', 'success');
                                     } else if (data.type === 'error') {
-                                        clearInterval(loadingTimer);
                                         var errText = data.error || '';
                                         // 在聊天区域显示错误信息
                                         var streamingEl = document.getElementById('agent-streaming');
@@ -1843,7 +1956,6 @@
                 read();
             })
             .catch(function(e) {
-                clearInterval(loadingTimer);
                 var streamingEl = document.getElementById('agent-streaming');
                 if (streamingEl) {
                     streamingEl.innerHTML = '请求失败: ' + e.message;
@@ -2699,6 +2811,149 @@
                     box.classList.add('shake');
                 }
             });
+        }
+
+        // ========== 智能助手思考气泡 ==========
+        function loadingCard(title, desc, steps, percent) {
+            percent = Math.max(0, Math.min(100, percent));
+            var activeIndex = steps.length ? Math.min(steps.length - 1, Math.floor((percent / 100) * steps.length)) : -1;
+            var stepsHtml = steps.length ? '<div class="bili-progress__steps">' + steps.map(function(step, i) {
+                var cls = '';
+                if (i < activeIndex) cls = 'is-done';
+                else if (i === activeIndex) cls = 'is-active';
+                return '<div class="progress-step ' + cls + '"><span class="progress-step__dot"></span><span>' + escapeHtml(step) + '</span></div>';
+            }).join('') + '</div>' : '';
+            return '<section class="loading-card"><div class="block-title"><div><h4>' + escapeHtml(title) + '</h4><p>' + escapeHtml(desc) + '</p></div><span class="type-badge progress-percent">' + Math.round(percent) + '%</span></div><div class="bili-progress"><div class="bili-progress__bar" style="width:' + percent + '%"></div></div>' + stepsHtml + '</section>';
+        }
+
+        function agentPendingBubble(percent) {
+            percent = percent || 0;
+            return '<article class="chat-row chat-row--assistant" data-assistant-pending="1"><div class="chat-bubble chat-bubble--assistant chat-bubble--pending"><div class="chat-bubble__head"><strong class="chat-bubble__name">智能助手</strong><span class="meta-line">正在思考</span></div><div id="agent-streaming">' + loadingCard('Agent 正在思考', '正在结合当前页面输入、工具结果和上下文组织回答。', ['理解问题', '调用工具', '组织回答'], percent) + '</div></div></article>';
+        }
+
+        // ========== 历史会话 ==========
+        var _agentHistoryState = {
+            sessions: [],
+            currentSessionId: null
+        };
+
+        function showAgentSessionsPopup() {
+            hideAgentSessionsPopup();
+            var popup = document.createElement('div');
+            popup.className = 'chat-sessions-popup';
+            popup.id = 'agentSessionsPopup';
+            popup.innerHTML = '<div class="chat-sessions-popup__empty">加载中...</div>';
+            var shell = document.querySelector('#page-ai .page-content > div:last-child');
+            if (!shell) shell = document.getElementById('agent-messages').parentElement;
+            if (shell) {
+                shell.style.position = 'relative';
+                shell.appendChild(popup);
+                document.addEventListener('click', hideAgentSessionsPopupOnClickOutside, { once: true });
+            }
+            // 获取会话列表
+            fetch(API + '/agent/sessions')
+                .then(function(res) { return res.json(); })
+                .then(function(json) {
+                    if (json.success && json.data && json.data.sessions) {
+                        renderAgentSessionsPopup(json.data.sessions);
+                    } else {
+                        popup.innerHTML = '<div class="chat-sessions-popup__empty">暂无历史会话</div>';
+                    }
+                })
+                .catch(function() {
+                    popup.innerHTML = '<div class="chat-sessions-popup__empty">加载失败</div>';
+                });
+        }
+
+        function hideAgentSessionsPopup() {
+            var popup = document.getElementById('agentSessionsPopup');
+            if (popup) popup.remove();
+        }
+
+        function hideAgentSessionsPopupOnClickOutside(e) {
+            var popup = document.getElementById('agentSessionsPopup');
+            if (popup && !popup.contains(e.target) && e.target.id !== 'agentSessionsBtn') {
+                hideAgentSessionsPopup();
+            }
+        }
+
+        function renderAgentSessionsPopup(sessions) {
+            var popup = document.getElementById('agentSessionsPopup');
+            if (!popup) return;
+            if (!sessions || sessions.length === 0) {
+                popup.innerHTML = '<div class="chat-sessions-popup__empty">暂无历史会话</div>';
+                return;
+            }
+            var sorted = sessions.slice().reverse();
+            popup.innerHTML = sorted.map(function(s) {
+                return '<div class="chat-sessions-popup__item" data-session-id="' + s.session_id + '">' +
+                    '<div class="chat-sessions-popup__item-main">' +
+                    '<span class="chat-sessions-popup__time">' + (s.updated_at_display || s.session_id) + '</span>' +
+                    '<span class="chat-sessions-popup__summary">' + escapeHtml(s.first_question || '无标题') + '</span>' +
+                    '</div>' +
+                    '<button class="chat-sessions-popup__delete" data-delete-id="' + s.session_id + '" title="删除">×</button>' +
+                    '</div>';
+            }).join('');
+            // 切换会话
+            popup.querySelectorAll('.chat-sessions-popup__item-main').forEach(function(item) {
+                item.addEventListener('click', function(e) {
+                    if (e.target.classList.contains('chat-sessions-popup__delete')) return;
+                    var sid = item.closest('.chat-sessions-popup__item').dataset.sessionId;
+                    switchToAgentSession(sid);
+                });
+            });
+            // 删除会话
+            popup.querySelectorAll('.chat-sessions-popup__delete').forEach(function(btn) {
+                btn.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    var sid = btn.dataset.deleteId;
+                    deleteAgentSession(sid);
+                });
+            });
+        }
+
+        function switchToAgentSession(sessionId) {
+            hideAgentSessionsPopup();
+            fetch(API + '/agent/session/' + sessionId)
+                .then(function(res) { return res.json(); })
+                .then(function(json) {
+                    if (json.success && json.data) {
+                        agentSessionId = sessionId;
+                        // 清空当前消息
+                        document.getElementById('agent-messages').innerHTML = '';
+                        // 恢复对话历史
+                        if (json.data.messages) {
+                            json.data.messages.forEach(function(msg) {
+                                appendAgentMessage(msg.role, msg.content || '');
+                            });
+                        }
+                        showToast('已切换到历史会话', '', 'success');
+                    }
+                })
+                .catch(function() {
+                    showToast('加载会话失败', '', 'error');
+                });
+        }
+
+        function deleteAgentSession(sessionId) {
+            if (!confirm('确定要删除这条历史会话吗？')) return;
+            fetch(API + '/agent/session/' + sessionId, { method: 'DELETE' })
+                .then(function(res) { return res.json(); })
+                .then(function(json) {
+                    var popup = document.getElementById('agentSessionsPopup');
+                    if (popup) {
+                        var item = popup.querySelector('[data-session-id="' + sessionId + '"]');
+                        if (item) item.remove();
+                        var remaining = popup.querySelectorAll('.chat-sessions-popup__item');
+                        if (remaining.length === 0) {
+                            popup.innerHTML = '<div class="chat-sessions-popup__empty">暂无历史会话</div>';
+                        }
+                    }
+                    showToast('已删除', '历史会话已删除', 'success');
+                })
+                .catch(function() {
+                    showToast('删除失败', '', 'error');
+                });
         }
     </script>
 

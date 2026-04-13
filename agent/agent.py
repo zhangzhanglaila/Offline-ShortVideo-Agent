@@ -108,6 +108,16 @@ class Agent:
                 pass
             del self._sessions[session_id]
 
+    def list_sessions(self, limit: int = 50) -> List[Dict]:
+        """列出所有历史会话"""
+        sessions = self.memory.long_term.list_conversation_sessions(limit)
+        # 格式化时间戳
+        for s in sessions:
+            if s.get('created_at'):
+                from datetime import datetime
+                s['updated_at_display'] = datetime.fromtimestamp(s['updated_at']).strftime('%m-%d %H:%M') if s['updated_at'] else ''
+        return sessions
+
     def chat(self, message: str) -> Dict:
         """处理用户消息"""
         task_id = str(uuid.uuid4())

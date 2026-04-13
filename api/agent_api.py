@@ -211,6 +211,17 @@ async def get_task_status(task_id: str):
         return JSONResponse({'error': str(e)}, status_code=500)
 
 
+@router.get("/api/agent/sessions")
+async def list_sessions():
+    """列出所有历史会话"""
+    try:
+        agent = get_agent()
+        sessions = agent.list_sessions()
+        return JSONResponse({'success': True, 'data': {'sessions': sessions}})
+    except Exception as e:
+        return JSONResponse({'success': False, 'error': str(e)}, status_code=500)
+
+
 @router.get("/api/agent/session/{session_id}")
 async def get_session(session_id: str):
     """获取会话信息"""
@@ -219,10 +230,17 @@ async def get_session(session_id: str):
         session_data = agent.get_session_info(session_id)
 
         if session_data:
-            return JSONResponse(session_data)
-        return JSONResponse({'error': 'Session not found'}, status_code=404)
+            # 同时加载对话历史
+            try:
+                agent.restore_session(session_id)
+                messages = agent.memory.short_term.get_conversation_format()
+                session_data['messages'] = messages
+            except:
+                pass
+            return JSONResponse({'success': True, 'data': session_data})
+        return JSONResponse({'success': False, 'error': 'Session not found'}, status_code=404)
     except Exception as e:
-        return JSONResponse({'error': str(e)}, status_code=500)
+        return JSONResponse({'success': False, 'error': str(e)}, status_code=500)
 
 
 @router.delete("/api/agent/session/{session_id}")
