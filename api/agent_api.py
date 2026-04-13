@@ -140,7 +140,10 @@ async def chat_stream(request: Request):
                             chunk.startswith("本地模型") or
                             chunk.startswith("未检测到") or
                             chunk.startswith("未配置云端") or
-                            chunk.startswith("抱歉")
+                            chunk.startswith("抱歉") or
+                            chunk.startswith("API密钥") or
+                            chunk.startswith("API请求失败") or
+                            chunk.startswith("无法连接到")
                         ):
                             yield f"data: {json.dumps({'type': 'error', 'error': chunk}, ensure_ascii=False)}\n\n"
                         else:
@@ -287,42 +290,43 @@ async def agent_logs_stream():
 
 @router.post("/api/agent/config/update")
 async def update_config(request: Request):
-    """更新配置文件"""
+    """更新配置文件（写入.env）"""
     try:
         data = await request.json()
 
-        config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'config.py')
-        with open(config_path, 'r', encoding='utf-8') as f:
-            lines = f.readlines()
+        env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '.env')
 
-        updates = {}
+        # 读取现有.env内容（如果存在）
+        env_vars = {}
+        if os.path.exists(env_path):
+            with open(env_path, 'r', encoding='utf-8') as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith('#') and '=' in line:
+                        k, v = line.split('=', 1)
+                        env_vars[k] = v
+
+        # 更新配置
         if 'OPENAI_API_KEY' in data:
-            updates['OPENAI_API_KEY'] = data['OPENAI_API_KEY']
+            env_vars['OPENAI_API_KEY'] = data['OPENAI_API_KEY']
         if 'OPENAI_API_BASE' in data:
-            updates['OPENAI_API_BASE'] = data['OPENAI_API_BASE']
+            env_vars['OPENAI_API_BASE'] = data['OPENAI_API_BASE']
         if 'OPENAI_MODEL' in data:
-            updates['OPENAI_MODEL'] = data['OPENAI_MODEL']
+            env_vars['OPENAI_API_MODEL'] = data['OPENAI_MODEL']
 
-        new_lines = []
-        for line in lines:
-            updated = False
-            for key, val in updates.items():
-                import re
-                pattern = rf'^(\s*{key}\s*=\s*)([\'"])([^\'"]*)\2(\s*#.*)?$'
-                m = re.match(pattern, line)
-                if m:
-                    if "'" in val and '"' not in val:
-                        new_val = f'"{val}"'
-                    else:
-                        new_val = f"'{val}'"
-                    new_lines.append(m.group(1) + new_val + (m.group(4) or '') + '\n')
-                    updated = True
-                    break
-            if not updated:
-                new_lines.append(line)
+        # 写入.env文件
+        with open(env_path, 'w', encoding='utf-8') as f:
+            f.write('# MiniMax API 配置\n')
+            for k, v in env_vars.items():
+                f.write(f'{k}={v}\n')
 
-        with open(config_path, 'w', encoding='utf-8') as f:
-            f.writelines(new_lines)
+        # 立即更新当前进程环境变量
+        if 'OPENAI_API_KEY' in data:
+            os.environ['OPENAI_API_KEY'] = data['OPENAI_API_KEY']
+        if 'OPENAI_API_BASE' in data:
+            os.environ['OPENAI_API_BASE'] = data['OPENAI_API_BASE']
+        if 'OPENAI_MODEL' in data:
+            os.environ['OPENAI_API_MODEL'] = data['OPENAI_MODEL']
 
         from agent.llm.ollama_client import reset_llm_client
         reset_llm_client()
@@ -330,6 +334,13 @@ async def update_config(request: Request):
         return JSONResponse({'success': True, 'message': '配置已更新'})
     except Exception as e:
         return JSONResponse({'success': False, 'error': str(e)}, status_code=500)
+
+
+# 前端调用路由 /api/config/update（别名）
+@router.post("/api/config/update")
+async def update_config_alias(request: Request):
+    """更新配置文件（别名路由，供前端调用）"""
+    return await update_config(request)
 
 
 # ========== MCP协议端点 ==========

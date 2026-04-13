@@ -1752,14 +1752,8 @@
             setTimeout(initAgentLogStream, 1000);
         });
 
-        function sendAgentMessage() {
-            var input = document.getElementById('agent-input');
-            var message = input.value.trim();
-            if (!message) return;
-
-            appendAgentMessage('user', message);
-            input.value = '';
-
+        function sendAgentRequest(message) {
+            window._currentAgentMessage = message;
             // 使用流式API
             fetch(API + '/agent/chat/stream', {
                 method: 'POST',
@@ -1833,9 +1827,10 @@
                                         if (streamingEl) {
                                             streamingEl.innerHTML = errText.replace(/\n/g, '<br>');
                                         }
-                                        // 如果是API密钥未配置，弹出配置框
-                                        if (errText.indexOf('API密钥') !== -1 || errText.indexOf('未配置') !== -1) {
+                                        // 如果是API相关错误，弹出配置框
+                                        if (errText.indexOf('API密钥') !== -1 || errText.indexOf('API请求失败') !== -1 || errText.indexOf('无法连接到') !== -1 || errText.indexOf('未配置') !== -1 || errText.indexOf('未检测到') !== -1 || errText.indexOf('Ollama') !== -1) {
                                             showToast('请先配置云端API', 'warning');
+                                            window._pendingAgentMessage = window._currentAgentMessage;
                                             showApiConfigModal();
                                         }
                                     }
@@ -1854,9 +1849,20 @@
                     streamingEl.innerHTML = '请求失败: ' + e.message;
                 }
                 if (e.message.indexOf('API') !== -1) {
+                    window._pendingAgentMessage = window._currentAgentMessage;
                     showApiConfigModal();
                 }
             });
+        }
+
+        function sendAgentMessage() {
+            var input = document.getElementById('agent-input');
+            var message = input.value.trim();
+            if (!message) return;
+
+            appendAgentMessage('user', message);
+            input.value = '';
+            sendAgentRequest(message);
         }
 
         function appendAgentMessage(role, content) {
@@ -2611,6 +2617,15 @@
                     void box.offsetWidth;
                     box.classList.add('shake');
                 }
+                // 获取当前配置并填充表单
+                fetch(API + '/config')
+                    .then(function(res) { return res.json(); })
+                    .then(function(data) {
+                        if (data.api_key) document.getElementById('api-key-input').value = data.api_key;
+                        if (data.api_base) document.getElementById('api-base-input').value = data.api_base;
+                        if (data.api_model) document.getElementById('api-model-input').value = data.api_model;
+                    })
+                    .catch(function() {});
             }
         }
 
@@ -2651,6 +2666,14 @@
                 if (data.success) {
                     showToast('配置已保存', 'success');
                     closeApiConfigModal();
+                    // 如果有待发送的失败消息，自动重试
+                    if (window._pendingAgentMessage) {
+                        var msg = window._pendingAgentMessage;
+                        window._pendingAgentMessage = null;
+                        window._currentAgentMessage = null;
+                        // 重新发送消息
+                        sendAgentRequest(msg);
+                    }
                     // 清空输入框
                     document.getElementById('api-key-input').value = '';
                     document.getElementById('api-base-input').value = '';
@@ -2685,7 +2708,7 @@
             <h3>配置云端API</h3>
             <p class="sub-title">本地模型未启动，请填写云端API信息继续使用</p>
             <label>API密钥</label>
-            <input type="password" id="api-key-input" placeholder="sk-xxxxxxxxxxxxxxxx">
+            <input type="text" id="api-key-input" placeholder="sk-xxxxxxxxxxxxxxxx" autocomplete="off">
             <label>接口地址</label>
             <input type="text" id="api-base-input" placeholder="https://api.openai.com/v1">
             <label>模型名称</label>

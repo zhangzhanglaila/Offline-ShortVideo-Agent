@@ -117,7 +117,10 @@ async def api_config():
 
     return JSONResponse({
         'material_dir': material_url,
-        'material_path': str(config.MATERIAL_DIR)
+        'material_path': str(config.MATERIAL_DIR),
+        'api_key': config.OPENAI_API_KEY,
+        'api_base': config.OPENAI_API_BASE,
+        'api_model': config.OPENAI_MODEL
     })
 
 

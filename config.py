@@ -5,6 +5,10 @@
 """
 import os
 from pathlib import Path
+from dotenv import load_dotenv
+
+# 加载.env文件
+load_dotenv()
 
 PROJECT_ROOT = Path(__file__).parent.absolute()
 
@@ -29,9 +33,10 @@ OLLAMA_TIMEOUT = 120
 # ========== 云端API配置（可选） ==========
 # 若本地Ollama不可用，将自动使用云端API
 # 支持：OpenAI、通义千问(qwen)、DeepSeek、GLM-4 等OpenAI格式API
-OPENAI_API_KEY = ""                      # API密钥，如 "sk-xxxxx"
-OPENAI_API_BASE = "https://api.openai.com/v1"  # 接口地址
-OPENAI_MODEL = "gpt-4o"                 # 模型名称
+# 优先从环境变量读取，不存在则用默认值
+OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY', '')
+OPENAI_API_BASE = os.environ.get('OPENAI_API_BASE', 'https://api.openai.com/v1')
+OPENAI_MODEL = os.environ.get('OPENAI_API_MODEL', 'gpt-4o')
 
 # Agent企业级配置
 AGENT_CONFIG = {

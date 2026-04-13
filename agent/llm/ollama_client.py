@@ -215,33 +215,68 @@ class CloudClient:
         api_key: str = None,
         timeout: int = OLLAMA_TIMEOUT
     ):
-        self.base_url = api_base or OPENAI_API_BASE or "https://api.openai.com/v1"
-        self.model = model or OPENAI_MODEL or "gpt-4o"
-        self.api_key = api_key or OPENAI_API_KEY or ""
+        self._api_base = api_base
+        self._model = model
+        self._api_key = api_key
         self.timeout = timeout
-        self.api_url = f"{self.base_url.rstrip('/')}/chat/completions"
+
+    @property
+    def base_url(self) -> str:
+        if self._api_base:
+            return self._api_base
+        # 每次读取最新配置
+        from config import OPENAI_API_BASE
+        return OPENAI_API_BASE or "https://api.openai.com/v1"
+
+    @property
+    def model(self) -> str:
+        if self._model:
+            return self._model
+        from config import OPENAI_MODEL
+        return OPENAI_MODEL or "gpt-4o"
+
+    @property
+    def api_key(self) -> str:
+        if self._api_key:
+            return self._api_key
+        from config import OPENAI_API_KEY
+        return OPENAI_API_KEY or ""
+
+    @property
+    def api_url(self) -> str:
+        return f"{self.base_url.rstrip('/')}/chat/completions"
 
     def check_available(self) -> bool:
-        """检查云端API是否可用"""
-        if not self.api_key:
-            return False
+        """检查云端API是否可用（不抛异常）"""
         try:
-            payload = {
-                "model": self.model,
-                "messages": [{"role": "user", "content": "hi"}],
-                "max_tokens": 5,
-                "stream": False
-            }
-            data = json.dumps(payload).encode("utf-8")
-            headers = {
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {self.api_key}"
-            }
-            req = urllib.request.Request(self.api_url, data=data, headers=headers)
-            with urllib.request.urlopen(req, timeout=10):
-                return True
+            self._check_api_key()
+            return True
         except Exception:
             return False
+
+    def _check_api_key(self):
+        """检查API密钥是否有效（会抛异常）"""
+        if not self.api_key:
+            raise ConnectionError("未配置云端API密钥")
+        payload = {
+            "model": self.model,
+            "messages": [{"role": "user", "content": "hi"}],
+            "max_tokens": 5,
+            "stream": False
+        }
+        data = json.dumps(payload).encode("utf-8")
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.api_key}"
+        }
+        req = urllib.request.Request(self.api_url, data=data, headers=headers)
+        try:
+            with urllib.request.urlopen(req, timeout=10):
+                pass
+        except urllib.error.HTTPError as e:
+            if e.code in (401, 403):
+                raise ConnectionError("API密钥无效或已过期，请检查配置")
+            raise
 
     def _make_request(self, payload: Dict, timeout: int = None) -> Dict:
         """发送API请求"""
@@ -441,11 +476,30 @@ class DualModeLLMClient:
         Returns: (is_ollama_available, is_cloud_available, error_message)
         """
         ollama_ok = self.local.check_available()
-        cloud_ok = self.cloud.check_available()
 
-        if not ollama_ok and not cloud_ok:
+        # 单独检查云端密钥状态（不吞掉401/403异常）
+        cloud_auth_error = None
+        cloud_ok = False
+        try:
+            self.cloud._check_api_key()
+            cloud_ok = True
+        except ConnectionError as e:
+            msg = str(e)
+            if "API密钥无效" in msg or "已过期" in msg or "未配置" in msg:
+                cloud_auth_error = msg
+            # 否则是网络等其他问题，不算auth错误
+        except Exception:
+            pass
+
+        if cloud_auth_error:
+            # 云端密钥无效（401/403）优先处理
+            return False, False, cloud_auth_error
+        elif not ollama_ok and not cloud_ok:
             return False, False, LLMError.ALL_UNAVAILABLE
         elif not ollama_ok and cloud_ok:
+            # 云端可用但ollama不可用时，检查key是否为空
+            if not self.cloud.api_key:
+                return False, False, LLMError.CLOUD_API_NOT_CONFIGURED
             return False, True, LLMError.OLLAMA_NOT_RUNNING
         elif ollama_ok and not cloud_ok:
             return True, False, LLMError.CLOUD_API_NOT_CONFIGURED
@@ -516,7 +570,14 @@ class DualModeLLMClient:
                 yield from self.cloud.chat_stream(messages, tools, temperature, **kwargs)
                 return
             except ConnectionError as e:
-                yield LLMError.CLOUD_CALL_FAILED.format(error=str(e))
+                err_msg = str(e)
+                # 如果是云端API错误，改为返回包含"API密钥"的错误让前端能识别
+                if "API请求失败" in err_msg or "无法连接" in err_msg or "API访问被拒绝" in err_msg:
+                    yield f"API密钥无效或API服务不可用，请检查配置：{err_msg}"
+                elif "API密钥" in err_msg:
+                    yield err_msg
+                else:
+                    yield LLMError.CLOUD_CALL_FAILED.format(error=err_msg)
                 return
 
         # 两种都不可用
@@ -582,6 +643,10 @@ def get_llm_client() -> DualModeLLMClient:
 
 
 def reset_llm_client():
-    """重置LLM客户端"""
+    """重置LLM客户端，重新加载配置"""
     global _llm_client
     _llm_client = None
+    # 强制重新加载config模块以获取最新配置
+    import importlib
+    import config as config_module
+    importlib.reload(config_module)
