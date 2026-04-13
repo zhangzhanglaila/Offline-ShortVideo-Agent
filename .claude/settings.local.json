@@ -8,7 +8,13 @@
       "Bash(sqlite3:*)",
       "Bash(ls -la *.bat)",
       "Bash(python -c ':*)",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "Bash(pkill -f \"main_fastapi.py\")",
+      "Bash(pkill -f \"python.*app.py\")",
+      "Bash(pkill -f \"python\")",
+      "Bash(taskkill //F //PID 22056 taskkill //F //PID 5064 taskkill //F //PID 16620 sleep 2 netstat -ano)",
+      "Bash(pkill -f \"main_fastapi.py.*5001\")",
+      "Bash(taskkill //F //PID 23152 taskkill //F //PID 9564 sleep 2 netstat -ano)"
     ]
   }
 }
