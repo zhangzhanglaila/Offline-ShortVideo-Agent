@@ -650,16 +650,18 @@
         }
         .material-thumb .check-overlay {
             position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(251,114,153,0.3);
+            top: 4px;
+            right: 4px;
+            width: 22px;
+            height: 22px;
+            background: var(--bili-pink);
+            border-radius: 50%;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 32px;
+            font-size: 12px;
             color: #FFF;
+            z-index: 2;
         }
         .material-name {
             padding: 8px;
@@ -2138,7 +2140,14 @@
                 .then(function(res) { return res.json(); })
                 .then(function(data) {
                     materialsData = data.materials || [];
+                    // 素材库里的素材默认全部选中
+                    selectedMaterials.clear();
+                    for (var i = 0; i < materialsData.length; i++) {
+                        selectedMaterials.add(materialsData[i].path);
+                    }
                     updateCounts();
+                    var el = document.getElementById('selected-count');
+                    if (el) el.textContent = selectedMaterials.size;
                     if (sk) sk.style.display = 'none';
                     if (real) real.style.display = 'grid';
                     renderMaterials();
@@ -2378,6 +2387,8 @@
                 .then(function(data) {
                     materialsData = data.materials || [];
                     updateCounts();
+                    var el = document.getElementById('selected-count');
+                    if (el) el.textContent = selectedMaterials.size;
                     renderMaterials();
                 })
                 .catch(function(e) {});
@@ -2550,6 +2561,7 @@
 
         function startGenerateWithMaterials() {
             if (!selectedCat) { alert('请先选择赛道！'); showPage('home'); return; }
+            if (selectedMaterials.size === 0) { alert('素材库为空，请先上传素材！'); showPage('materials'); return; }
             showPage('generating');
             updateStep('topic', 'running', '正在从爆款库中选择...');
             updateStep('script', 'pending', '等待选题...');
