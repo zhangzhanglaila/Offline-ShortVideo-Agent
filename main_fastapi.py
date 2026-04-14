@@ -124,7 +124,7 @@ def main():
     """主函数"""
     parser = argparse.ArgumentParser(description="Offline-ShortVideo-Agent FastAPI 服务")
     parser.add_argument("--port", type=int, default=5001, help="服务端口 (默认: 5001)")
-    parser.add_argument("--no-browser", action="store_true", help="禁止自动打开浏览器")
+    parser.add_argument("--browser", action="store_true", help="启动后自动打开浏览器")
     parser.add_argument("--host", default="127.0.0.1", help="监听地址 (默认: 127.0.0.1)")
     args = parser.parse_args()
 
@@ -160,8 +160,8 @@ def main():
     print(f"   API文档:  http://{args.host}:{port}/docs")
     print("=" * 60)
 
-    # 自动打开浏览器
-    if not args.no_browser:
+    # 自动打开浏览器（默认关闭，如需自动打开请用 --browser 参数）
+    if args.browser:
         open_browser(port)
 
     # 启动服务

@@ -687,24 +687,31 @@
             overflow: hidden;
             text-overflow: ellipsis;
         }
-        .material-del {
-            position: absolute;
-            top: 4px;
-            left: 4px;
-            right: auto;
-            width: 24px;
-            height: 24px;
-            background: rgba(0,0,0,0.6);
-            color: #FFF;
-            border: none;
-            border-radius: 50%;
-            cursor: pointer;
+        /* ========== 右键菜单 ========== */
+        .context-menu {
+            position: fixed;
+            z-index: 10000;
+            background: #FFF;
+            border-radius: 8px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+            padding: 6px 0;
+            min-width: 140px;
             display: none;
-            align-items: center;
-            justify-content: center;
-            font-size: 14px;
         }
-        .material-item:hover .material-del { display: flex; }
+        .context-menu.show {
+            display: block;
+        }
+        .context-menu-item {
+            padding: 10px 16px;
+            cursor: pointer;
+            font-size: 13px;
+            color: #232529;
+            transition: background 0.15s;
+        }
+        .context-menu-item:hover {
+            background: #FFF5F7;
+            color: var(--bili-pink);
+        }
 
         /* ========== 素材操作栏 ========== */
         .material-actions {
@@ -1292,6 +1299,10 @@
 
         <!-- ========== 素材管理 ========== -->
         <div id="page-materials" class="page">
+            <!-- 素材右键菜单 -->
+            <div id="material-context-menu" class="context-menu">
+                <div class="context-menu-item" onclick="deleteMaterialFromMenu()">🗑️ 删除素材</div>
+            </div>
             <div class="bili-card">
                 <div class="card-header">
                     <span class="card-title">素材上传</span>
@@ -2196,8 +2207,6 @@
                             var item = e.target.closest('.material-item');
                             if (!item) return;
                             var path = item.dataset.path.replace(/\\\\/g, '\\');
-                            // 点击删除按钮不切换选中
-                            if (e.target.classList.contains('material-del')) return;
                             // 点击勾选框只切换选中状态，不预览
                             if (e.target.classList.contains('material-check')) {
                                 if (selectedMaterials.has(path)) {
@@ -2557,16 +2566,12 @@
                         '<div style="height:100%;background:var(--bili-pink);border-radius:2px;transition:width 0.2s ease;width:' + (m.upload_pct || 0) + '%;"></div></div>';
                 }
 
-                // 上传中不显示删除按钮
-                var delBtn = m.is_uploading ? '' : '<button class="material-del" onclick="deleteMaterial(\'' + m.name.replace(/'/g, "\\'") + '\', event)">×</button>';
-
-                html += '<div class="material-item ' + (isSelected ? 'selected' : '') + '" data-path="' + m.path.replace(/\\/g, '\\\\') + '" data-type="' + m.type + '">' +
+                html += '<div class="material-item ' + (isSelected ? 'selected' : '') + '" data-path="' + m.path.replace(/\\/g, '\\\\') + '" data-type="' + m.type + '" data-name="' + m.name.replace(/'/g, "\\'") + '" oncontextmenu="showMaterialMenu(event, \'' + m.name.replace(/'/g, "\\'") + '\')">' +
                     '<div class="material-thumb" onclick="previewMaterial(\'' + m.name.replace(/\\/g, '\\\\').replace(/'/g, "\\'") + '\', \'' + m.type + '\')">' + thumb +
                     '<span class="type-badge">' + badge + '</span></div>' +
                     (isSelected ? '<div class="material-check">✓</div>' : '') +
                     uploadProgressHtml +
-                    '<div class="material-name" title="' + m.name + '">' + m.name + '</div>' +
-                    delBtn + '</div>';
+                    '<div class="material-name" title="' + m.name + '">' + m.name + '</div></div>';
             }
             grid.innerHTML = html;
         }
@@ -2586,7 +2591,7 @@
         }
 
         function toggleMaterial(path, event) {
-            if (event.target.classList.contains('material-del') || event.target.classList.contains('material-name') || event.target.closest('.material-thumb')) return;
+            if (event.target.classList.contains('material-name') || event.target.closest('.material-thumb')) return;
             if (selectedMaterials.has(path)) selectedMaterials.delete(path);
             else selectedMaterials.add(path);
             var el = document.getElementById('selected-count');
@@ -2601,6 +2606,51 @@
             }
             renderMaterials(type);
         }
+
+        // ========== 右键菜单 ==========
+        var contextMenuMaterialName = '';
+
+        function showMaterialMenu(event, name) {
+            event.preventDefault();
+            event.stopPropagation();
+            contextMenuMaterialName = name;
+            var menu = document.getElementById('material-context-menu');
+            if (!menu) return;
+            menu.classList.add('show');
+            menu.style.left = event.clientX + 'px';
+            menu.style.top = event.clientY + 'px';
+            // 确保菜单不超出屏幕
+            var rect = menu.getBoundingClientRect();
+            if (rect.right > window.innerWidth) {
+                menu.style.left = (window.innerWidth - rect.width - 10) + 'px';
+            }
+            if (rect.bottom > window.innerHeight) {
+                menu.style.top = (window.innerHeight - rect.height - 10) + 'px';
+            }
+        }
+
+        function hideMaterialMenu() {
+            var menu = document.getElementById('material-context-menu');
+            if (menu) menu.classList.remove('show');
+        }
+
+        function deleteMaterialFromMenu() {
+            hideMaterialMenu();
+            if (!contextMenuMaterialName) return;
+            if (!confirm('确定删除素材 "' + contextMenuMaterialName + '" 吗？')) return;
+            fetch(API + '/materials/' + encodeURIComponent(contextMenuMaterialName), { method: 'DELETE' })
+                .then(function(res) { return res.json(); })
+                .then(function() {
+                    for (var i = 0; i < materialsData.length; i++) {
+                        if (materialsData[i].name === contextMenuMaterialName) selectedMaterials.delete(materialsData[i].path);
+                    }
+                    refreshMaterials();
+                })
+                .catch(function(e) {});
+        }
+
+        // 点击其他地方关闭右键菜单
+        document.addEventListener('click', hideMaterialMenu);
 
         function deleteMaterial(name, event) {
             event.stopPropagation();
