@@ -13,6 +13,7 @@ import webbrowser
 import threading
 import shutil
 import subprocess
+import concurrent.futures
 import base64
 import uuid
 import queue
@@ -63,6 +64,9 @@ config.ensure_dirs()
 
 # 日志推送队列
 _log_queue = queue.Queue()
+
+# 素材扫描专用线程池（避免阻塞主线程）
+_material_executor = concurrent.futures.ThreadPoolExecutor(max_workers=4, thread_name_prefix='material_scan')
 _log_clients = []
 _clients_lock = threading.Lock()
 
@@ -395,52 +399,83 @@ def api_recommend():
 
 @app.route('/api/materials')
 def api_materials():
-    """获取素材列表"""
-    try:
+    """获取素材列表（线程池异步扫描，避免阻塞）"""
+    def _scan_material_file(f):
+        """在线程池中执行的文件扫描任务"""
+        ext = f.suffix.lower()
+        if ext in ['.jpg', '.jpeg', '.png', '.webp']:
+            mtype = 'image'
+        elif ext in ['.mp4', '.avi', '.mov', '.mkv']:
+            mtype = 'video'
+        elif ext in ['.mp3', '.wav', '.aac', '.m4a']:
+            mtype = 'audio'
+        else:
+            return None
+
+        thumb_name = f.stem + '_thumb.jpg'
+        thumb_path = THUMBNAILS_DIR / thumb_name
+        has_thumb = thumb_path.exists()
+
+        # 视频没有缩略图，自动生成
+        if mtype == 'video' and not has_thumb:
+            def gen(fname=f.name, fpath=str(f)):
+                print(f"[缩略图] 后台生成: {fname}")
+                thumb = generate_video_thumbnail(fpath)
+                if thumb:
+                    print(f"[缩略图] 完成: {Path(thumb).name}")
+                else:
+                    print(f"[缩略图] 失败: {fname}")
+            threading.Thread(target=gen, daemon=True).start()
+
+        stat_result = f.stat()
+        return {
+            'name': f.name,
+            'path': str(f),
+            'type': mtype,
+            'size': stat_result.st_size,
+            'size_str': format_size(stat_result.st_size),
+            'date': datetime.fromtimestamp(stat_result.st_mtime).strftime('%Y-%m-%d %H:%M'),
+            'has_thumb': has_thumb,
+            'thumb_name': thumb_name if has_thumb else None
+        }
+
+    def _scan_materials():
+        """在线程池中执行目录扫描"""
         materials = []
         material_dir = Path(UPLOAD_TEMP_DIR)
-
-        if material_dir.exists():
-            for f in material_dir.iterdir():
-                if f.is_file():
-                    ext = f.suffix.lower()
-                    if ext in ['.jpg', '.jpeg', '.png', '.webp']:
-                        mtype = 'image'
-                    elif ext in ['.mp4', '.avi', '.mov', '.mkv']:
-                        mtype = 'video'
-                    elif ext in ['.mp3', '.wav', '.aac', '.m4a']:
-                        mtype = 'audio'
-                    else:
-                        continue
-
-                    thumb_name = f.stem + '_thumb.jpg'
-                    thumb_path = THUMBNAILS_DIR / thumb_name
-                    has_thumb = thumb_path.exists()
-
-                    # 视频没有缩略图，自动生成
-                    if mtype == 'video' and not has_thumb:
-                        def gen(fname=f.name, fpath=str(f)):
-                            print(f"[缩略图] 后台生成: {fname}")
-                            thumb = generate_video_thumbnail(fpath)
-                            if thumb:
-                                print(f"[缩略图] 完成: {Path(thumb).name}")
-                            else:
-                                print(f"[缩略图] 失败: {fname}")
-                        threading.Thread(target=gen, daemon=True).start()
-
-                    materials.append({
-                        'name': f.name,
-                        'path': str(f),
-                        'type': mtype,
-                        'size': f.stat().st_size,
-                        'size_str': format_size(f.stat().st_size),
-                        'date': datetime.fromtimestamp(f.stat().st_mtime).strftime('%Y-%m-%d %H:%M'),
-                        'has_thumb': has_thumb,
-                        'thumb_name': thumb_name if has_thumb else None
-                    })
-
+        if not material_dir.exists():
+            return materials
+        # 用 listdir 替代 iterdir，避免 pathlib 内部的一些开销
+        try:
+            filenames = os.listdir(UPLOAD_TEMP_DIR)
+        except Exception as e:
+            print(f"[素材扫描] 目录读取失败: {e}")
+            return materials
+        # 并行处理每个文件
+        futures = []
+        for fname in filenames:
+            fpath = material_dir / fname
+            if not fpath.is_file():
+                continue
+            futures.append(_material_executor.submit(_scan_material_file, fpath))
+        # 收集结果
+        for future in concurrent.futures.as_completed(futures):
+            try:
+                result = future.result(timeout=10)
+                if result:
+                    materials.append(result)
+            except Exception as e:
+                print(f"[素材扫描] 单文件处理失败: {e}")
         materials.sort(key=lambda x: x['date'], reverse=True)
+        return materials
+
+    try:
+        # 将同步I/O操作提交到线程池执行，避免阻塞主线程
+        materials = _material_executor.submit(_scan_materials).result(timeout=30)
         return jsonify({'materials': materials})
+    except concurrent.futures.TimeoutError:
+        print("[素材扫描] 超时")
+        return jsonify({'materials': [], 'error': '扫描超时'}), 504
     except Exception as e:
         import traceback
         traceback.print_exc()
