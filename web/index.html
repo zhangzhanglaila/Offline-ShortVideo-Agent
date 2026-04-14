@@ -690,7 +690,8 @@
         .material-del {
             position: absolute;
             top: 4px;
-            right: 4px;
+            left: 4px;
+            right: auto;
             width: 24px;
             height: 24px;
             background: rgba(0,0,0,0.6);
@@ -1813,10 +1814,18 @@
         }
 
         // ========== 页面切换 ==========
+        var currentController = null;  // 用于取消进行中的请求
+
         function showPage(page) {
             if (isTransitioning) return;
             if (page === currentPage) return;
             isTransitioning = true;
+
+            // 取消正在进行的数据请求
+            if (currentController) {
+                currentController.abort();
+                currentController = null;
+            }
 
             var pages = document.querySelectorAll('.page');
             for (var i = 0; i < pages.length; i++) {
@@ -1839,7 +1848,8 @@
             else if (page === 'materials') loadMaterialsPage();
             else if (page === 'topics') loadTopicsPage();
 
-            isTransitioning = false;
+            // 页面切换动画完成后才解锁
+            setTimeout(function() { isTransitioning = false; }, 300);
         }
 
         // ==================== AI助手 ====================
@@ -2098,7 +2108,8 @@
             var skCache = document.getElementById('cache-skeleton');
             var realCache = document.getElementById('cache-info-real');
 
-            fetch(API + '/stats')
+            currentController = new AbortController();
+            fetch(API + '/stats', { signal: currentController.signal })
                 .then(function(res) { return res.json(); })
                 .then(function(data) {
                     if (realMain) {
@@ -2130,14 +2141,15 @@
                     }
                     if (skCache) skCache.style.display = 'none';
                 })
-                .catch(function(e) { console.error(e); });
+                .catch(function(e) { if (e.name !== 'AbortError') console.error(e); });
         }
 
         function loadWorksPage() {
             var sk = document.getElementById('works-skeleton');
             var real = document.getElementById('video-grid');
 
-            fetch(API + '/works')
+            currentController = new AbortController();
+            fetch(API + '/works', { signal: currentController.signal })
                 .then(function(res) { return res.json(); })
                 .then(function(data) {
                     worksData = data.works || [];
@@ -2145,16 +2157,26 @@
                     if (real) real.style.display = 'grid';
                     renderWorks();
                 })
-                .catch(function(e) { if (sk) sk.style.display = 'none'; });
+                .catch(function(e) { if (e.name !== 'AbortError' && sk) sk.style.display = 'none'; });
         }
 
         function loadMaterialsPage() {
             var sk = document.getElementById('materials-skeleton');
             var real = document.getElementById('material-grid');
+            var timeoutId = setTimeout(function() {
+                // 5秒超时，强制隐藏骨架屏
+                if (sk) sk.style.display = 'none';
+                showToast('素材加载超时，请检查网络或刷新重试', 'error');
+            }, 5000);
 
-            fetch(API + '/materials')
+            // 创建 AbortController 用于取消请求
+            currentController = new AbortController();
+            var controller = currentController;
+
+            fetch(API + '/materials', { signal: controller.signal })
                 .then(function(res) { return res.json(); })
                 .then(function(data) {
+                    clearTimeout(timeoutId);
                     materialsData = data.materials || [];
                     // 素材库里的素材默认全部选中
                     selectedMaterials.clear();
@@ -2173,29 +2195,40 @@
                         grid.onclick = function(e) {
                             var item = e.target.closest('.material-item');
                             if (!item) return;
+                            var path = item.dataset.path.replace(/\\\\/g, '\\');
                             // 点击删除按钮不切换选中
                             if (e.target.classList.contains('material-del')) return;
-                            var path = item.dataset.path.replace(/\\\\/g, '\\');
-                            if (selectedMaterials.has(path)) {
-                                selectedMaterials.delete(path);
-                            } else {
-                                selectedMaterials.add(path);
+                            // 点击勾选框只切换选中状态，不预览
+                            if (e.target.classList.contains('material-check')) {
+                                if (selectedMaterials.has(path)) {
+                                    selectedMaterials.delete(path);
+                                } else {
+                                    selectedMaterials.add(path);
+                                }
+                                var cnt = document.getElementById('selected-count');
+                                if (cnt) cnt.textContent = selectedMaterials.size;
+                                renderMaterials();
+                                return;
                             }
-                            var cnt = document.getElementById('selected-count');
-                            if (cnt) cnt.textContent = selectedMaterials.size;
-                            var type = 'all';
-                            var activeTab = document.querySelector('.material-tab.active');
-                            if (activeTab) {
-                                var text = activeTab.textContent;
-                                if (text.indexOf('图片') > -1) type = 'image';
-                                else if (text.indexOf('视频') > -1) type = 'video';
-                                else if (text.indexOf('音频') > -1) type = 'audio';
+                            // 点击其他区域（预览区）时才预览
+                            var thumb = e.target.closest('.material-thumb');
+                            if (thumb) {
+                                // 预览视频/图片
+                                var name = item.querySelector('.material-name');
+                                if (name) name = name.textContent;
+                                var type = item.dataset.type;
+                                if (name) previewMaterial(name, type);
                             }
-                            renderMaterials(type);
                         };
                     }
                 })
-                .catch(function(e) { if (sk) sk.style.display = 'none'; });
+                .catch(function(e) {
+                    clearTimeout(timeoutId);
+                    if (e.name === 'AbortError') return;  // 被取消的请求不显示错误
+                    console.error('加载素材失败:', e);
+                    if (sk) sk.style.display = 'none';
+                    showToast('素材加载失败，请刷新重试', 'error');
+                });
         }
 
         function loadTopicsPage() {
