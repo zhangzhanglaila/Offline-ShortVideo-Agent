@@ -663,6 +663,22 @@
             color: #FFF;
             z-index: 2;
         }
+        .material-check {
+            position: absolute;
+            top: 6px;
+            right: 6px;
+            width: 22px;
+            height: 22px;
+            background: var(--bili-pink);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            color: #FFF;
+            z-index: 10;
+            cursor: pointer;
+        }
         .material-name {
             padding: 8px;
             font-size: 11px;
@@ -2151,6 +2167,33 @@
                     if (sk) sk.style.display = 'none';
                     if (real) real.style.display = 'grid';
                     renderMaterials();
+                    // 点击素材卡片切换选中状态
+                    var grid = document.getElementById('material-grid');
+                    if (grid) {
+                        grid.onclick = function(e) {
+                            var item = e.target.closest('.material-item');
+                            if (!item) return;
+                            // 点击删除按钮不切换选中
+                            if (e.target.classList.contains('material-del')) return;
+                            var path = item.dataset.path.replace(/\\\\/g, '\\');
+                            if (selectedMaterials.has(path)) {
+                                selectedMaterials.delete(path);
+                            } else {
+                                selectedMaterials.add(path);
+                            }
+                            var cnt = document.getElementById('selected-count');
+                            if (cnt) cnt.textContent = selectedMaterials.size;
+                            var type = 'all';
+                            var activeTab = document.querySelector('.material-tab.active');
+                            if (activeTab) {
+                                var text = activeTab.textContent;
+                                if (text.indexOf('图片') > -1) type = 'image';
+                                else if (text.indexOf('视频') > -1) type = 'video';
+                                else if (text.indexOf('音频') > -1) type = 'audio';
+                            }
+                            renderMaterials(type);
+                        };
+                    }
                 })
                 .catch(function(e) { if (sk) sk.style.display = 'none'; });
         }
@@ -2386,6 +2429,13 @@
                 .then(function(res) { return res.json(); })
                 .then(function(data) {
                     materialsData = data.materials || [];
+                    // 把新出现的素材自动加入已选择
+                    for (var i = 0; i < materialsData.length; i++) {
+                        var path = materialsData[i].path;
+                        if (!selectedMaterials.has(path)) {
+                            selectedMaterials.add(path);
+                        }
+                    }
                     updateCounts();
                     var el = document.getElementById('selected-count');
                     if (el) el.textContent = selectedMaterials.size;
@@ -2478,9 +2528,9 @@
                 var delBtn = m.is_uploading ? '' : '<button class="material-del" onclick="deleteMaterial(\'' + m.name.replace(/'/g, "\\'") + '\', event)">×</button>';
 
                 html += '<div class="material-item ' + (isSelected ? 'selected' : '') + '" data-path="' + m.path.replace(/\\/g, '\\\\') + '" data-type="' + m.type + '">' +
-                    '<div class="material-thumb" onclick="previewMaterial(\'' + m.name.replace(/\\/g, '\\\\').replace(/'/g, "\\'") + '\', \'' + m.type + '\')" style="' + (m.type === 'video' && m.has_thumb ? 'position:relative;' : '') + '">' + thumb +
-                    '<span class="type-badge">' + badge + '</span>' +
-                    (isSelected ? '<div class="check-overlay">✓</div>' : '') + '</div>' +
+                    '<div class="material-thumb" onclick="previewMaterial(\'' + m.name.replace(/\\/g, '\\\\').replace(/'/g, "\\'") + '\', \'' + m.type + '\')">' + thumb +
+                    '<span class="type-badge">' + badge + '</span></div>' +
+                    (isSelected ? '<div class="material-check">✓</div>' : '') +
                     uploadProgressHtml +
                     '<div class="material-name" title="' + m.name + '">' + m.name + '</div>' +
                     delBtn + '</div>';
