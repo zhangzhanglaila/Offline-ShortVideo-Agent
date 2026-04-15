@@ -875,6 +875,73 @@
         .modal-close { font-size: 20px; cursor: pointer; color: #909090; }
         .modal-body { padding: 20px; }
 
+        /* ========== 确认对话框 ========== */
+        .confirm-dialog {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 2000;
+            align-items: center;
+            justify-content: center;
+        }
+        .confirm-dialog.show { display: flex; }
+        .confirm-dialog-content {
+            background: #FFF;
+            border-radius: 12px;
+            padding: 32px 36px;
+            min-width: 280px;
+            max-width: 360px;
+            text-align: center;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.15);
+            animation: confirmDialogIn 0.2s ease-out;
+        }
+        @keyframes confirmDialogIn {
+            from { opacity: 0; transform: scale(0.9); }
+            to { opacity: 1; transform: scale(1); }
+        }
+        .confirm-dialog-icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+        }
+        .confirm-dialog-message {
+            font-size: 15px;
+            color: #333;
+            margin-bottom: 24px;
+            line-height: 1.5;
+            word-break: break-word;
+        }
+        .confirm-dialog-buttons {
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+        }
+        .confirm-dialog-btn {
+            padding: 10px 28px;
+            border-radius: 8px;
+            font-size: 14px;
+            cursor: pointer;
+            border: none;
+            transition: all 0.2s;
+        }
+        .confirm-dialog-btn-cancel {
+            background: #F4F4F5;
+            color: #333;
+        }
+        .confirm-dialog-btn-cancel:hover {
+            background: #E3E4E8;
+        }
+        .confirm-dialog-btn-confirm {
+            background: #FF5C5C;
+            color: #FFF;
+        }
+        .confirm-dialog-btn-confirm:hover {
+            background: #FF3B3B;
+        }
+
         /* ========== 空状态 ========== */
         .empty-state {
             text-align: center;
@@ -1647,6 +1714,18 @@
             </div>
             <div class="modal-body" style="text-align: center;">
                 <audio id="preview-audio" controls style="width: 100%; margin-top: 20px;"></audio>
+            </div>
+        </div>
+    </div>
+
+    <!-- 确认对话框 -->
+    <div class="confirm-dialog" id="confirm-dialog">
+        <div class="confirm-dialog-content">
+            <div class="confirm-dialog-icon" id="confirm-dialog-icon">🗑️</div>
+            <div class="confirm-dialog-message" id="confirm-dialog-message">确定要删除吗？</div>
+            <div class="confirm-dialog-buttons">
+                <button class="confirm-dialog-btn confirm-dialog-btn-cancel" id="confirm-dialog-cancel">取消</button>
+                <button class="confirm-dialog-btn confirm-dialog-btn-confirm" id="confirm-dialog-confirm">确定</button>
             </div>
         </div>
     </div>
@@ -2607,6 +2686,37 @@
             renderMaterials(type);
         }
 
+        // ========== 确认对话框 ==========
+        function showConfirmDialog(message, icon, onConfirm) {
+            var dialog = document.getElementById('confirm-dialog');
+            var msgEl = document.getElementById('confirm-dialog-message');
+            var iconEl = document.getElementById('confirm-dialog-icon');
+            var confirmBtn = document.getElementById('confirm-dialog-confirm');
+            var cancelBtn = document.getElementById('confirm-dialog-cancel');
+
+            msgEl.textContent = message;
+            iconEl.textContent = icon || '🗑️';
+            dialog.classList.add('show');
+
+            var cleanup = function() {
+                dialog.classList.remove('show');
+                confirmBtn.removeEventListener('click', handleConfirm);
+                cancelBtn.removeEventListener('click', handleCancel);
+            };
+
+            function handleConfirm() {
+                cleanup();
+                if (onConfirm) onConfirm();
+            }
+
+            function handleCancel() {
+                cleanup();
+            }
+
+            confirmBtn.addEventListener('click', handleConfirm);
+            cancelBtn.addEventListener('click', handleCancel);
+        }
+
         // ========== 右键菜单 ==========
         var contextMenuMaterialName = '';
 
@@ -2637,8 +2747,9 @@
         function deleteMaterialFromMenu() {
             hideMaterialMenu();
             if (!contextMenuMaterialName) return;
-            if (!confirm('确定删除素材 "' + contextMenuMaterialName + '" 吗？')) return;
-            fetch(API + '/materials/' + encodeURIComponent(contextMenuMaterialName), { method: 'DELETE' })
+            var materialNameToDelete = contextMenuMaterialName;
+            showConfirmDialog('确定删除素材 "' + materialNameToDelete + '" 吗？', '🗑️', function() {
+                fetch(API + '/materials/' + encodeURIComponent(materialNameToDelete), { method: 'DELETE' })
                 .then(function(res) { return res.json(); })
                 .then(function() {
                     for (var i = 0; i < materialsData.length; i++) {
@@ -2647,6 +2758,7 @@
                     refreshMaterials();
                 })
                 .catch(function(e) {});
+            });
         }
 
         // 点击其他地方关闭右键菜单
@@ -2654,24 +2766,27 @@
 
         function deleteMaterial(name, event) {
             event.stopPropagation();
-            if (!confirm('确定删除素材 "' + name + '" 吗？')) return;
-            fetch(API + '/materials/' + encodeURIComponent(name), { method: 'DELETE' })
-                .then(function(res) { return res.json(); })
-                .then(function() {
-                    for (var i = 0; i < materialsData.length; i++) {
-                        if (materialsData[i].name === name) selectedMaterials.delete(materialsData[i].path);
-                    }
-                    refreshMaterials();
-                })
-                .catch(function(e) {});
+            var materialNameToDelete = name;
+            showConfirmDialog('确定删除素材 "' + materialNameToDelete + '" 吗？', '🗑️', function() {
+                fetch(API + '/materials/' + encodeURIComponent(materialNameToDelete), { method: 'DELETE' })
+                    .then(function(res) { return res.json(); })
+                    .then(function() {
+                        for (var i = 0; i < materialsData.length; i++) {
+                            if (materialsData[i].name === materialNameToDelete) selectedMaterials.delete(materialsData[i].path);
+                        }
+                        refreshMaterials();
+                    })
+                    .catch(function(e) {});
+            });
         }
 
         function clearAllMaterials() {
-            if (!confirm('确定清空所有素材吗？此操作不可恢复！')) return;
-            fetch(API + '/materials/clear', { method: 'POST' })
+            showConfirmDialog('确定清空所有素材吗？此操作不可恢复！', '🗑️', function() {
+                fetch(API + '/materials/clear', { method: 'POST' })
                 .then(function(res) { return res.json(); })
                 .then(function() { selectedMaterials.clear(); refreshMaterials(); })
                 .catch(function(e) {});
+            });
         }
 
         function openMaterialFolder() {
@@ -3083,24 +3198,25 @@
         }
 
         function deleteAgentSession(sessionId) {
-            if (!confirm('确定要删除这条历史会话吗？')) return;
-            fetch(API + '/agent/session/' + sessionId, { method: 'DELETE' })
-                .then(function(res) { return res.json(); })
-                .then(function(json) {
-                    var popup = document.getElementById('agentSessionsPopup');
-                    if (popup) {
-                        var item = popup.querySelector('[data-session-id="' + sessionId + '"]');
-                        if (item) item.remove();
-                        var remaining = popup.querySelectorAll('.chat-sessions-popup__item');
-                        if (remaining.length === 0) {
-                            popup.innerHTML = '<div class="chat-sessions-popup__empty">暂无历史会话</div>';
+            showConfirmDialog('确定要删除这条历史会话吗？', '🗑️', function() {
+                fetch(API + '/agent/session/' + sessionId, { method: 'DELETE' })
+                    .then(function(res) { return res.json(); })
+                    .then(function(json) {
+                        var popup = document.getElementById('agentSessionsPopup');
+                        if (popup) {
+                            var item = popup.querySelector('[data-session-id="' + sessionId + '"]');
+                            if (item) item.remove();
+                            var remaining = popup.querySelectorAll('.chat-sessions-popup__item');
+                            if (remaining.length === 0) {
+                                popup.innerHTML = '<div class="chat-sessions-popup__empty">暂无历史会话</div>';
+                            }
                         }
-                    }
-                    showToast('已删除', '历史会话已删除', 'success');
-                })
-                .catch(function() {
-                    showToast('删除失败', '', 'error');
-                });
+                        showToast('已删除', '历史会话已删除', 'success');
+                    })
+                    .catch(function() {
+                        showToast('删除失败', '', 'error');
+                    });
+            });
         }
     </script>
 
