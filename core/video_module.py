@@ -16,6 +16,22 @@ from config import (
     BGM_VOLUME, BG_MUTE_DURATION
 )
 
+# 日志回调 - 用于实时推送日志到前端
+_video_log_callback = None
+
+def set_video_log_callback(callback):
+    """设置视频模块日志回调"""
+    global _video_log_callback
+    _video_log_callback = callback
+
+def _log(msg: str, level: str = 'info'):
+    """发送日志"""
+    if _video_log_callback:
+        try:
+            _video_log_callback(msg, level)
+        except Exception:
+            pass
+
 class VideoModule:
     """FFmpeg视频剪辑模块"""
 
@@ -47,8 +63,10 @@ class VideoModule:
         """
         if not images:
             print("错误: 没有提供图片素材")
+            _log("错误: 没有提供图片素材", 'error')
             return False
 
+        _log(f"开始生成视频，共 {len(images)} 张图片，每张持续 {duration_per_image} 秒", 'info')
         # 创建临时文件列表
         temp_list = Path(output_path).parent / "temp_file_list.txt"
         total_duration = len(images) * duration_per_image
@@ -56,11 +74,14 @@ class VideoModule:
         # 生成图片序列 (每张图片转为短视频片段)
         video_clips = []
         for i, img in enumerate(images):
+            _log(f"正在处理第 {i+1}/{len(images)} 张图片: {Path(img).name}", 'info')
             clip_path = Path(output_path).parent / f"temp_clip_{i}.mp4"
             if not self._image_to_clip(img, str(clip_path), duration_per_image, transition if i > 0 else "none"):
+                _log(f"图片 {i+1} 转视频片段失败", 'error')
                 return False
             video_clips.append(str(clip_path))
 
+        _log("正在拼接视频片段...", 'info')
         # 拼接所有片段
         concat_list = Path(output_path).parent / "temp_concat_list.txt"
         with open(concat_list, "w", encoding="utf-8") as f:
@@ -334,6 +355,7 @@ class VideoModule:
             # 打印执行的命令（方便调试）
             cmd_str = ' '.join(cmd)
             print(f"执行FFmpeg命令: {cmd_str[:200]}...")
+            _log(f"执行FFmpeg命令: {cmd_str[:100]}...", 'info')
 
             result = subprocess.run(
                 cmd,
@@ -366,15 +388,20 @@ class VideoModule:
                 if error_lines:
                     error_msg = ' | '.join(error_lines[:5])  # 最多显示5行
                     print(f"FFmpeg执行失败: {error_msg}")
+                    _log(f"FFmpeg执行失败: {error_msg}", 'error')
                 else:
                     print(f"FFmpeg执行失败 (返回码: {result.returncode})")
+                    _log(f"FFmpeg执行失败 (返回码: {result.returncode})", 'error')
                 return False
+            _log("FFmpeg执行成功", 'info')
             return True
         except subprocess.TimeoutExpired:
             print("FFmpeg执行超时 (超过5分钟)")
+            _log("FFmpeg执行超时 (超过5分钟)", 'error')
             return False
         except Exception as e:
             print(f"FFmpeg执行异常: {str(e)}")
+            _log(f"FFmpeg执行异常: {str(e)}", 'error')
             return False
 
     def _cleanup_temp_files(self, *paths):

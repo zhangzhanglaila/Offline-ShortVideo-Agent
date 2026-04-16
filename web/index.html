@@ -145,6 +145,33 @@
         }
         .card-body { padding: 20px; }
 
+        /* ========== 双模式选择卡片 ========== */
+        .mode-select-wrap {
+            display: flex;
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+        .mode-card {
+            flex: 1;
+            background: linear-gradient(135deg, #FFF5F7 0%, #FFF 100%);
+            border: 2px solid #F5F6F7;
+            border-radius: 16px;
+            padding: 20px;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-align: center;
+        }
+        .mode-card:hover { border-color: var(--bili-pink); }
+        .mode-card.selected { border-color: var(--bili-pink); background: linear-gradient(135deg, #FFF0F3 0%, #FFF 100%); }
+        .mode-card-icon { font-size: 32px; margin-bottom: 8px; }
+        .mode-card-title { font-size: 16px; font-weight: 700; color: #232529; margin-bottom: 8px; }
+        .mode-card-desc { font-size: 13px; color: #606773; margin-bottom: 12px; line-height: 1.5; }
+        .mode-card-features { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+        .mode-card-features span { font-size: 11px; background: rgba(251,114,153,0.1); color: var(--bili-pink); padding: 4px 8px; border-radius: 4px; }
+        .mode-a-options { margin-top: 16px; padding: 16px; background: #FFF5F7; border-radius: 12px; }
+        .mode-a-options .form-row { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+        .mode-a-options label { font-size: 13px; color: #606773; white-space: nowrap; }
+
         /* ========== 骨架屏基础样式 ========== */
         .skeleton {
             background: linear-gradient(90deg, var(--skeleton-base) 25%, var(--skeleton-light) 50%, var(--skeleton-base) 75%);
@@ -1251,23 +1278,91 @@
                 </div>
             </div>
 
-            <!-- 赛道选择 -->
+            <!-- 模式选择 -->
             <div class="bili-card">
                 <div class="card-header">
-                    <span class="card-title">第一步：选择赛道</span>
+                    <span class="card-title">选择生成模式</span>
                 </div>
                 <div class="card-body">
-                    <!-- 骨架屏 -->
+                    <div class="mode-select-wrap" id="home-mode-select">
+                        <div class="mode-card" id="home-mode-a" onclick="selectHomeMode('mode_a')">
+                            <div class="mode-card-icon">🎬</div>
+                            <div class="mode-card-title">题材全自动生成</div>
+                            <div class="mode-card-desc">输入题材关键词，自动完成选题→脚本→配音→配图→视频</div>
+                            <div class="mode-card-features">
+                                <span>✓ 联网选题</span>
+                                <span>✓ AI脚本</span>
+                                <span>✓ TTS配音</span>
+                                <span>✓ 自动配图</span>
+                            </div>
+                        </div>
+                        <div class="mode-card" id="home-mode-b" onclick="selectHomeMode('mode_b')">
+                            <div class="mode-card-icon">✂️</div>
+                            <div class="mode-card-title">素材智能剪辑</div>
+                            <div class="mode-card-desc">上传图片/视频素材，FFmpeg智能拼接+转场+字幕</div>
+                            <div class="mode-card-features">
+                                <span>✓ 素材拼接</span>
+                                <span>✓ 转场效果</span>
+                                <span>✓ 字幕烧录</span>
+                                <span>✓ BGM叠加</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Mode A 选项 -->
+                    <div id="home-mode-a-options" style="display:none; margin-top: 16px;">
+                        <div class="form-row">
+                            <label>题材关键词：</label>
+                            <input type="text" id="home-topic-keyword" class="bili-input" placeholder="如：AI变现、职场干货、美食教程..." style="flex:1;">
+                        </div>
+                        <div class="form-row">
+                            <label>选择赛道：</label>
+                            <select id="home-mode-a-category" class="bili-input" style="width:160px;">
+                                <option value="">不限</option>
+                                <option value="知识付费">知识付费</option>
+                                <option value="AI与科技">AI与科技</option>
+                                <option value="职场成长">职场成长</option>
+                                <option value="情感心理">情感心理</option>
+                                <option value="美食生活">美食生活</option>
+                                <option value="家居生活">家居生活</option>
+                            </select>
+                            <label style="margin-left:16px;">目标平台：</label>
+                            <select id="home-mode-a-platform" class="bili-input" style="width:120px;">
+                                <option value="抖音">🎵 抖音</option>
+                                <option value="小红书">📕 小红书</option>
+                                <option value="B站">📺 B站</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Mode B 选项 -->
+                    <div id="home-mode-b-options" style="display:none; margin-top: 16px;">
+                        <div style="color:#909090;font-size:13px;margin-bottom:12px;">请上传图片/视频素材到素材库，然后选择赛道进入素材页面开始剪辑</div>
+                    </div>
+
+                    <div id="home-mode-a-btn" style="text-align: center; margin-top: 24px; display:none;">
+                        <button class="bili-btn bili-btn-primary" onclick="startFromHome()" style="padding: 12px 40px; font-size: 15px;">
+                            🚀 开始全自动生成
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 赛道选择 (Mode B时显示) -->
+            <div class="bili-card" id="home-category-card" style="display:none;">
+                <div class="card-header">
+                    <span class="card-title">选择赛道</span>
+                </div>
+                <div class="card-body">
                     <div id="home-cat-skeleton" class="skeleton-category-grid">
                         <div class="skeleton-category"><div class="skeleton skeleton-cat-icon"></div><div class="skeleton skeleton-cat-name"></div></div>
                         <div class="skeleton-category"><div class="skeleton skeleton-cat-icon"></div><div class="skeleton skeleton-cat-name"></div></div>
                         <div class="skeleton-category"><div class="skeleton skeleton-cat-icon"></div><div class="skeleton skeleton-cat-name"></div></div>
                     </div>
-                    <!-- 真实内容 -->
                     <div class="category-grid" id="home-category" style="display:none;"></div>
                     <div style="text-align: center; margin-top: 24px;">
-                        <button class="bili-btn bili-btn-primary" id="go-materials-btn" onclick="goToMaterials()" style="padding: 12px 32px; font-size: 14px;" disabled>
-                            🚀 开始肝视频！
+                        <button class="bili-btn bili-btn-primary" id="home-start-btn" onclick="startFromHome()" style="padding: 12px 40px; font-size: 15px;">
+                            🚀 进入素材库开始剪辑
                         </button>
                     </div>
                 </div>
@@ -1279,7 +1374,6 @@
                     <span class="card-title">系统状态</span>
                 </div>
                 <div class="card-body">
-                    <!-- 卡片内进度条 -->
                     <div class="card-progress-wrap" id="home-progress-wrap">
                         <div class="card-progress-bar">
                             <div class="card-progress-fill" id="home-progress-fill"></div>
@@ -1289,15 +1383,12 @@
                             <span class="card-progress-pct" id="home-progress-pct">0%</span>
                         </div>
                     </div>
-
-                    <!-- 骨架屏 -->
                     <div id="home-stats-skeleton" class="skeleton-stats-grid">
                         <div class="skeleton-stat"><div class="skeleton skeleton-icon"></div><div class="skeleton-text"><div class="skeleton skeleton-num"></div><div class="skeleton skeleton-label"></div></div></div>
                         <div class="skeleton-stat"><div class="skeleton skeleton-icon"></div><div class="skeleton-text"><div class="skeleton skeleton-num"></div><div class="skeleton skeleton-label"></div></div></div>
                         <div class="skeleton-stat"><div class="skeleton skeleton-icon"></div><div class="skeleton-text"><div class="skeleton skeleton-num"></div><div class="skeleton skeleton-label"></div></div></div>
                         <div class="skeleton-stat"><div class="skeleton skeleton-icon"></div><div class="skeleton-text"><div class="skeleton skeleton-num"></div><div class="skeleton skeleton-label"></div></div></div>
                     </div>
-                    <!-- 真实内容 -->
                     <div class="stats-grid" id="home-stats" style="display:none;">
                         <div class="stat-item">
                             <div class="stat-icon">📝</div>
@@ -1379,6 +1470,58 @@
                     </div>
                 </div>
                 <div class="card-body">
+                    <!-- 双模式选择 -->
+                    <div class="mode-select-wrap" id="mode-select-wrap">
+                        <div class="mode-card" id="mode-card-a" onclick="selectMode('mode_a')">
+                            <div class="mode-card-icon">🎬</div>
+                            <div class="mode-card-title">题材全自动生成</div>
+                            <div class="mode-card-desc">输入题材关键词，自动完成选题→脚本→配音→配图→视频</div>
+                            <div class="mode-card-features">
+                                <span>✓ 联网选题</span>
+                                <span>✓ AI脚本</span>
+                                <span>✓ TTS配音</span>
+                                <span>✓ 自动配图</span>
+                            </div>
+                        </div>
+                        <div class="mode-card" id="mode-card-b" onclick="selectMode('mode_b')">
+                            <div class="mode-card-icon">✂️</div>
+                            <div class="mode-card-title">素材智能剪辑</div>
+                            <div class="mode-card-desc">上传图片/视频素材，FFmpeg智能拼接+转场+字幕</div>
+                            <div class="mode-card-features">
+                                <span>✓ 素材拼接</span>
+                                <span>✓ 转场效果</span>
+                                <span>✓ 字幕烧录</span>
+                                <span>✓ BGM叠加</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Mode A 选项 (题材关键词输入) -->
+                    <div id="mode-a-options" class="mode-a-options" style="display:none;">
+                        <div class="form-row">
+                            <label>题材关键词：</label>
+                            <input type="text" id="topic-keyword" class="bili-input" placeholder="如：AI变现、职场干货、美食教程..." style="flex:1;">
+                        </div>
+                        <div class="form-row">
+                            <label>选择赛道：</label>
+                            <select id="mode-a-category" class="bili-input" style="width:160px;">
+                                <option value="">不限</option>
+                                <option value="知识付费">知识付费</option>
+                                <option value="AI与科技">AI与科技</option>
+                                <option value="职场成长">职场成长</option>
+                                <option value="情感心理">情感心理</option>
+                                <option value="美食生活">美食生活</option>
+                                <option value="家居生活">家居生活</option>
+                            </select>
+                            <label style="margin-left:16px;">目标平台：</label>
+                            <select id="mode-a-platform" class="bili-input" style="width:120px;">
+                                <option value="抖音">🎵 抖音</option>
+                                <option value="小红书">📕 小红书</option>
+                                <option value="B站">📺 B站</option>
+                            </select>
+                        </div>
+                    </div>
+
                     <div class="upload-zone" id="upload-zone" onclick="document.getElementById('file-input').click()">
                         <div class="upload-zone-icon">📤</div>
                         <div class="upload-zone-text">拖拽文件到此处，或点击选择文件</div>
@@ -1435,7 +1578,7 @@
                             <span class="tab-item" data-platform="B站" onclick="selectGenPlatform('B站')">📺 B站</span>
                         </div>
                         <button class="bili-btn bili-btn-primary" id="generate-btn" onclick="startGenerateWithMaterials()" style="padding: 12px 40px; font-size: 15px;">
-                            🎬 确认素材并开始生成视频
+                            🎬 请先选择生成模式
                         </button>
                     </div>
                 </div>
@@ -2807,50 +2950,211 @@
             }
         }
 
+        var selectedMode = null; // 'mode_a' or 'mode_b'
+        var homeSelectedCat = null;
+
+        function selectHomeMode(mode) {
+            selectedMode = mode;
+            document.querySelectorAll('#home-mode-select .mode-card').forEach(function(c) { c.classList.remove('selected'); });
+            if (mode === 'mode_a') {
+                document.getElementById('home-mode-a').classList.add('selected');
+                document.getElementById('home-mode-a-options').style.display = 'block';
+                document.getElementById('home-mode-b-options').style.display = 'none';
+                document.getElementById('home-category-card').style.display = 'none';
+                document.getElementById('home-mode-a-btn').style.display = 'block';
+            } else {
+                document.getElementById('home-mode-b').classList.add('selected');
+                document.getElementById('home-mode-a-options').style.display = 'none';
+                document.getElementById('home-mode-b-options').style.display = 'block';
+                document.getElementById('home-category-card').style.display = 'block';
+                document.getElementById('home-mode-a-btn').style.display = 'none';
+            }
+        }
+
+        function startFromHome() {
+            if (!selectedMode) {
+                alert('请先选择生成模式！');
+                return;
+            }
+            if (selectedMode === 'mode_a') {
+                // 直接开始Mode A生成
+                showPage('generating');
+                var steps = ['topic', 'script', 'material', 'video', 'subtitle', 'export'];
+                for (var i = 0; i < steps.length; i++) updateStep(steps[i], 'pending', '等待中...');
+                var log = document.getElementById('log-box');
+                if (log) log.innerHTML = '';
+                callModeAApi();
+            } else {
+                // Mode B: 确认已选赛道
+                if (!homeSelectedCat) {
+                    alert('请先在下方选择赛道！');
+                    return;
+                }
+                // 跳转素材页面，隐藏Mode A相关内容
+                var modeWrap = document.getElementById('mode-select-wrap');
+                var modeAOpts = document.getElementById('mode-a-options');
+                if (modeWrap) modeWrap.style.display = 'none';
+                if (modeAOpts) modeAOpts.style.display = 'none';
+                showPage('materials');
+            }
+        }
+
+        function selectHomeCat(cat) {
+            homeSelectedCat = cat;
+            selectedCat = cat;  // 同步到全局
+            var items = document.querySelectorAll('#home-category .category-item');
+            for (var i = 0; i < items.length; i++) {
+                var name = items[i].querySelector('.category-name').textContent;
+                items[i].classList.toggle('selected', name === cat);
+            }
+        }
+
+        function selectMode(mode) {
+            selectedMode = mode;
+            // Update UI
+            document.querySelectorAll('.mode-card').forEach(function(c) { c.classList.remove('selected'); });
+            if (mode === 'mode_a') {
+                document.getElementById('mode-card-a').classList.add('selected');
+                document.getElementById('mode-a-options').style.display = 'block';
+                document.getElementById('upload-zone').style.display = 'none';
+                document.getElementById('material-grid').style.display = 'none';
+                document.getElementById('material-actions').style.display = 'none';
+                document.getElementById('material-tabs').style.display = 'none';
+                document.getElementById('generate-btn').textContent = '🚀 开始全自动生成';
+            } else {
+                document.getElementById('mode-card-b').classList.add('selected');
+                document.getElementById('mode-a-options').style.display = 'none';
+                document.getElementById('upload-zone').style.display = 'block';
+                document.getElementById('material-tabs').style.display = 'flex';
+                document.getElementById('generate-btn').textContent = '🎬 确认素材并开始剪辑';
+            }
+        }
+
         function startGenerateWithMaterials() {
-            if (!selectedCat) { alert('请先选择赛道！'); showPage('home'); return; }
-            if (selectedMaterials.size === 0) { alert('素材库为空，请先上传素材！'); showPage('materials'); return; }
+            if (!selectedMode) {
+                alert('请先选择生成模式！');
+                return;
+            }
+
             showPage('generating');
-            updateStep('topic', 'running', '正在从爆款库中选择...');
-            updateStep('script', 'pending', '等待选题...');
-            updateStep('material', 'pending', '等待脚本...');
-            updateStep('video', 'pending', '等待素材...');
-            updateStep('subtitle', 'pending', '等待剪辑...');
-            updateStep('export', 'pending', '等待字幕...');
+
+            // Reset step indicators
+            var steps = ['topic', 'script', 'material', 'video', 'subtitle', 'export'];
+            for (var i = 0; i < steps.length; i++) updateStep(steps[i], 'pending', '等待中...');
 
             var log = document.getElementById('log-box');
             if (log) log.innerHTML = '';
-            addLog('info', '开始生成视频...');
 
-            var platforms = selectedPlatform === 'all' ? ['抖音', '小红书', 'B站'] : [selectedPlatform];
-
-            fetch(API + '/generate/with-materials', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ category: selectedCat, platforms: platforms, materials: Array.from(selectedMaterials) })
-            })
-            .then(function(res) { return res.json(); })
-            .then(function(data) {
-                if (data.error) {
-                    addLog('err', '错误: ' + data.error);
-                    alert('生成失败: ' + data.error);
+            if (selectedMode === 'mode_a') {
+                callModeAApi();
+            } else {
+                if (selectedMaterials.size === 0) {
+                    alert('素材库为空，请先上传素材！');
                     showPage('materials');
                     return;
                 }
-                var steps = ['topic', 'script', 'material', 'video', 'subtitle', 'export'];
-                for (var i = 0; i < steps.length; i++) updateStep(steps[i], 'success', '完成');
-                addLog('suc', '视频生成成功！');
-                var pt = document.getElementById('progress-text');
-                if (pt) pt.textContent = '完成！';
-                var ps = document.getElementById('progress-step');
-                if (ps) ps.textContent = '6/6';
-                showResult(data);
+                callModeBApi();
+            }
+        }
+
+        function callModeAApi() {
+            var topicKeyword = document.getElementById('home-topic-keyword') ? document.getElementById('home-topic-keyword').value : '';
+            var category = document.getElementById('home-mode-a-category') ? document.getElementById('home-mode-a-category').value : '';
+            var platform = document.getElementById('home-mode-a-platform') ? document.getElementById('home-mode-a-platform').value : '抖音';
+
+            addLog('info', '🚀 开始题材全自动生成...');
+            updateStep('topic', 'running', '正在推荐选题...');
+
+            fetch(API + '/generate/mode-a', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    topic_keyword: topicKeyword,
+                    category: category,
+                    platform: platform,
+                    duration: 30,
+                    voice: 'zh-CN-XiaoxiaoNeural',
+                    use_whisper_subtitle: true,
+                    add_bgm: true,
+                    fetch_images: true
+                })
             })
+            .then(function(res) { return res.json(); })
+            .then(handleGenerationResult)
             .catch(function(e) {
                 addLog('err', '请求失败: ' + e.message);
                 alert('生成失败: ' + e.message);
                 showPage('materials');
             });
+        }
+
+        function callModeBApi() {
+            var platform = selectedPlatform === 'all' ? '抖音' : selectedPlatform;
+
+            addLog('info', '✂️ 开始素材智能剪辑...');
+            updateStep('material', 'running', '正在处理素材...');
+
+            fetch(API + '/generate/mode-b', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    material_paths: Array.from(selectedMaterials),
+                    platform: platform,
+                    transition: 'fade',
+                    add_bgm: true,
+                    add_subtitles: true,
+                    use_whisper: false,
+                    duration_per_image: 4
+                })
+            })
+            .then(function(res) { return res.json(); })
+            .then(handleGenerationResult)
+            .catch(function(e) {
+                addLog('err', '请求失败: ' + e.message);
+                alert('生成失败: ' + e.message);
+                showPage('materials');
+            });
+        }
+
+        function handleGenerationResult(data) {
+            if (data.error) {
+                addLog('err', '错误: ' + data.error);
+                alert('生成失败: ' + data.error);
+                showPage('materials');
+                return;
+            }
+
+            // Update steps based on result
+            if (data.steps && data.steps.length > 0) {
+                data.steps.forEach(function(s) {
+                    var stepMap = {
+                        'topic': 'topic',
+                        'script': 'script',
+                        '素材': 'material',
+                        'image_fetch': 'material',
+                        'images_to_video': 'video',
+                        'concat_videos': 'video',
+                        'video': 'video',
+                        'tts': 'script',
+                        'animation': 'video',
+                        'subtitle': 'subtitle',
+                        'burn_subtitles': 'subtitle',
+                        'composite': 'export',
+                        'add_bgm': 'export',
+                        'add_audio': 'export'
+                    };
+                    var stepKey = stepMap[s.step] || s.step;
+                    var status = s.status === 'success' ? 'success' : (s.status === 'failed' || s.status === 'error' ? 'error' : 'running');
+                    updateStep(stepKey, status, s.msg || s.status);
+                });
+            }
+
+            addLog('suc', '视频生成成功！');
+            var pt = document.getElementById('progress-text');
+            if (pt) pt.textContent = '完成！';
+            var ps = document.getElementById('progress-step');
+            if (ps) ps.textContent = '6/6';
+            showResult(data);
         }
 
         function updateStep(step, status, msg) {

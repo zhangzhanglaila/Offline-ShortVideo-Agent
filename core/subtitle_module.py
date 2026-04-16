@@ -21,6 +21,22 @@ except ImportError:
 
 from config import WHISPER_MODEL, WHISPER_LANGUAGE, OUTPUT_WIDTH, OUTPUT_HEIGHT
 
+# 日志回调 - 用于实时推送日志到前端
+_subtitle_log_callback = None
+
+def set_subtitle_log_callback(callback):
+    """设置字幕模块日志回调"""
+    global _subtitle_log_callback
+    _subtitle_log_callback = callback
+
+def _log(msg: str, level: str = 'info'):
+    """发送日志"""
+    if _subtitle_log_callback:
+        try:
+            _subtitle_log_callback(msg, level)
+        except Exception:
+            pass
+
 class SubtitleModule:
     """字幕生成模块 - 基于faster-whisper"""
 
@@ -293,6 +309,7 @@ class SubtitleModule:
             output_path
         ]
 
+        _log("正在烧录字幕到视频...", 'info')
         try:
             result = subprocess.run(
                 cmd,
@@ -302,13 +319,17 @@ class SubtitleModule:
             )
             if result.returncode != 0:
                 print(f"字幕烧录失败: {result.stderr[:200]}")
+                _log(f"字幕烧录失败: {result.stderr[:200]}", 'error')
                 return False
+            _log("字幕烧录完成", 'info')
             return True
         except subprocess.TimeoutExpired:
             print("字幕烧录超时")
+            _log("字幕烧录超时", 'error')
             return False
         except Exception as e:
             print(f"字幕烧录异常: {str(e)}")
+            _log(f"字幕烧录异常: {str(e)}", 'error')
             return False
 
     def generate_subtitle_video(self, video_path: str, script: str,

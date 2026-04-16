@@ -112,6 +112,15 @@ def push_log(msg, level='info'):
             except:
                 pass
 
+# 设置视频/字幕模块的日志回调，将日志实时推送到前端
+def _setup_video_log_callback():
+    from core.video_module import set_video_log_callback
+    set_video_log_callback(lambda msg, level='info': push_log(msg, level))
+
+def _setup_subtitle_log_callback():
+    from core.subtitle_module import set_subtitle_log_callback
+    set_subtitle_log_callback(lambda msg, level='info': push_log(msg, level))
+
 
 @app.route('/api/logs/stream')
 def log_stream():
@@ -249,6 +258,7 @@ def get_video_module():
     global _video_module
     if _video_module is None:
         _video_module = VideoModule()
+        _setup_video_log_callback()
     return _video_module
 
 
@@ -257,6 +267,7 @@ def get_subtitle_module():
     global _subtitle_module
     if _subtitle_module is None:
         _subtitle_module = SubtitleModule()
+        _setup_subtitle_log_callback()
     return _subtitle_module
 
 
