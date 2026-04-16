@@ -121,6 +121,12 @@ def _setup_subtitle_log_callback():
     from core.subtitle_module import set_subtitle_log_callback
     set_subtitle_log_callback(lambda msg, level='info': push_log(msg, level))
 
+def _setup_dual_log_callback():
+    from core.dual_mode_module import set_dual_log_callback
+    set_dual_log_callback(lambda msg, level='info': push_log(msg, level))
+
+_setup_dual_log_callback()
+
 
 @app.route('/api/logs/stream')
 def log_stream():

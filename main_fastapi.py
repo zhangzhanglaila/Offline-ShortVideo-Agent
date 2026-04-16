@@ -105,6 +105,17 @@ def create_app() -> "FastAPI":
     app.include_router(tts_api.router, tags=["TTS配音"])
     app.include_router(dual_mode_api.router, tags=["双模式生成"])
 
+    # 设置日志回调，将模块日志实时推送到SSE
+    from core.dual_mode_module import set_dual_log_callback
+    from api.system_api import push_log as fastapi_push_log
+    set_dual_log_callback(lambda msg, level='info': fastapi_push_log(msg, level))
+
+    # 视频/字幕模块回调
+    from core.video_module import set_video_log_callback
+    set_video_log_callback(lambda msg, level='info': fastapi_push_log(msg, level))
+    from core.subtitle_module import set_subtitle_log_callback
+    set_subtitle_log_callback(lambda msg, level='info': fastapi_push_log(msg, level))
+
     # 前端页面
     @app.get("/")
     async def read_index():

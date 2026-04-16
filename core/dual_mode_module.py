@@ -23,6 +23,20 @@ from core.image_fetch_module import get_image_fetch_module
 from core.topics_module import TopicsModule
 from core.script_module import ScriptModule
 
+# 日志回调 - 实时推送进度到前端
+_dual_log_callback = None
+
+def set_dual_log_callback(callback):
+    global _dual_log_callback
+    _dual_log_callback = callback
+
+def _log(msg: str, level: str = 'info'):
+    if _dual_log_callback:
+        try:
+            _dual_log_callback(msg, level)
+        except Exception:
+            pass
+
 
 class DualModeVideoGenerator:
     """双模式视频生成器"""
@@ -89,10 +103,17 @@ class DualModeVideoGenerator:
         output_dir.mkdir(parents=True, exist_ok=True)
 
         # Step 1: 获取选题
+        _log("🔍 正在获取选题...", 'info')
         print("[Mode A] Step 1: 获取选题...")
         if topic_keyword:
-            topic_list = self.topics.search_topics(topic_keyword, limit=10)
-            if not topic_list:
+            # 有关键词 → 直接用LLM生成选题
+            _log(f"📡 正在用AI根据「{topic_keyword}」生成选题...", 'info')
+            generated = self._generate_topic_from_keyword(topic_keyword, category)
+            if generated:
+                topic_list = [generated]
+                _log(f"✅ AI选题生成成功: {generated.get('title', '')}", 'info')
+            else:
+                _log("⚠️ AI连接失败，回退到本地选题库...", 'warn')
                 topic_list = self.topics.recommend_topics(category=category, count=10)
         elif category:
             topic_list = self.topics.get_topics_by_category(category, limit=10)
@@ -101,21 +122,26 @@ class DualModeVideoGenerator:
 
         if not topic_list:
             result["error"] = "未找到合适选题"
+            _log("❌ 未找到合适选题", 'error')
             return result
 
         topic = topic_list[0]
         result["topic"] = topic
         result["steps"].append({"step": "topic", "status": "success", "data": topic.get("title")})
+        _log(f"✅ 选题: {topic.get('title')}", 'info')
         print(f"  选题: {topic.get('title')}")
 
         # Step 2: 生成脚本
+        _log("✍️ 正在生成AI脚本...", 'info')
         print("[Mode A] Step 2: 生成脚本...")
         script_result = self.script_mod.generate_script(topic, platform, duration)
         result["script"] = script_result
         result["steps"].append({"step": "script", "status": "success", "preview": script_result.get("full_script", "")[:100]})
+        _log(f"✅ 脚本生成完成", 'info')
         print(f"  脚本生成完成: {script_result.get('full_script', '')[:50]}...")
 
         # Step 3: 分句TTS配音
+        _log("🎙️ 正在生成配音...", 'info')
         print("[Mode A] Step 3: TTS配音...")
         sentences = self._split_sentences(script_result.get("full_script", ""))
         audio_path = str(output_dir / "narration.wav")
@@ -124,13 +150,16 @@ class DualModeVideoGenerator:
         if not audio_success:
             result["error"] = "TTS生成失败"
             result["steps"].append({"step": "tts", "status": "failed"})
+            _log("❌ TTS生成失败", 'error')
             return result
 
         result["audio"] = audio_path
         result["steps"].append({"step": "tts", "status": "success", "path": audio_path})
+        _log("✅ 配音生成完成", 'info')
         print(f"  配音生成完成: {audio_path}")
 
         # Step 4: 联网抓取配图
+        _log("🖼️ 正在抓取配图...", 'info')
         print("[Mode A] Step 4: 联网抓取配图...")
         if fetch_images:
             script_text = script_result.get("full_script", "")
@@ -143,16 +172,20 @@ class DualModeVideoGenerator:
 
         result["images"] = image_paths
         result["steps"].append({"step": "image_fetch", "status": "success", "count": len(image_paths)})
+        _log(f"✅ 配图获取完成 ({len(image_paths)}张)", 'info')
         print(f"  配图: {len(image_paths)} 张")
 
         # Step 5: 时间轴同步
+        _log("⏱️ 正在进行时间轴同步...", 'info')
         print("[Mode A] Step 5: 时间轴同步...")
         timeline = self._generate_timeline(sentences, image_paths)
         result["timeline"] = timeline
         result["steps"].append({"step": "timeline", "status": "success", "segments": len(timeline)})
+        _log(f"✅ 时间轴同步完成 ({len(timeline)}个片段)", 'info')
         print(f"  时间轴: {len(timeline)} 个片段")
 
         # Step 6: 动画视频生成
+        _log("🎬 正在生成动画视频...", 'info')
         print("[Mode A] Step 6: 动画视频生成...")
         raw_video_path = str(output_dir / "raw_video.mp4")
         animation_success = self.animation.create_animated_video_from_segments(
@@ -166,13 +199,16 @@ class DualModeVideoGenerator:
         if not animation_success:
             result["error"] = "动画视频生成失败"
             result["steps"].append({"step": "animation", "status": "failed"})
+            _log("❌ 动画视频生成失败", 'error')
             return result
 
         result["video"] = raw_video_path
         result["steps"].append({"step": "animation", "status": "success"})
+        _log("✅ 动画视频生成完成", 'info')
         print(f"  动画视频: {raw_video_path}")
 
         # Step 7: 字幕生成
+        _log("📝 正在生成字幕...", 'info')
         print("[Mode A] Step 7: 字幕生成...")
         srt_path = str(output_dir / "subtitle.srt")
 
@@ -186,8 +222,10 @@ class DualModeVideoGenerator:
             self.subtitle.generate_srt(timeline, srt_path)
 
         result["steps"].append({"step": "subtitle", "status": "success", "path": srt_path})
+        _log("✅ 字幕生成完成", 'info')
 
         # Step 8: 多轨道合成
+        _log("🎵 正在进行多轨道合成...", 'info')
         print("[Mode A] Step 8: 多轨道合成...")
         final_video_path = str(output_dir / "final_video.mp4")
 
@@ -208,6 +246,7 @@ class DualModeVideoGenerator:
         if not composite_success:
             result["error"] = "多轨道合成失败"
             result["steps"].append({"step": "composite", "status": "failed"})
+            _log("❌ 多轨道合成失败", 'error')
             return result
 
         result["final_video"] = final_video_path
@@ -378,6 +417,60 @@ class DualModeVideoGenerator:
 
         return result
 
+    def _generate_topic_from_keyword(self, keyword: str, category: str = None) -> Optional[Dict]:
+        """用LLM根据关键词直接生成选题"""
+        import requests
+        import os
+        try:
+            api_key = os.environ.get('DEEPSEEK_API_KEY', '') or os.environ.get('OPENAI_API_KEY', '')
+            api_base = os.environ.get('DEEPSEEK_API_BASE', '') or os.environ.get('OPENAI_API_BASE', 'https://api.deepseek.com/v1')
+            model = os.environ.get('DEEPSEEK_MODEL', 'deepseek-chat')
+
+            if not api_key:
+                return None
+
+            cat_hint = f"赛道：{category}，" if category else ""
+
+            prompt = f"""你是一个短视频选题专家。请根据用户输入的关键词生成一个爆款短视频选题。
+
+关键词：{keyword}
+{cat_hint}要求：
+1. 标题要吸引人、有悬念或痛点
+2. 符合短视频平台传播规律
+3. 输出JSON格式：
+{{"title": "标题", "hook": "3秒钩子", "category": "分类", "tags": ["标签1", "标签2"]}}
+
+只输出JSON，不要其他文字："""
+
+            response = requests.post(
+                f'{api_base}/chat/completions',
+                headers={
+                    'Authorization': f'Bearer {api_key}',
+                    'Content-Type': 'application/json'
+                },
+                json={
+                    'model': model,
+                    'messages': [{'role': 'user', 'content': prompt}],
+                    'max_tokens': 256,
+                    'temperature': 0.8
+                },
+                timeout=30,
+                proxies={'http': None, 'https': None}
+            )
+            result = response.json()
+            content = result['choices'][0]['message']['content']
+
+            # 解析JSON
+            import re
+            json_match = re.search(r'\{[\s\S]*\}', content)
+            if json_match:
+                topic = json.loads(json_match.group())
+                topic['id'] = 0  # 标记为LLM生成
+                return topic
+        except Exception as e:
+            print(f"LLM生成选题失败: {e}")
+        return None
+
     def _split_sentences(self, text: str) -> List[str]:
         """分句（按标点）"""
         if not text:
@@ -432,7 +525,10 @@ class DualModeVideoGenerator:
         # 清理
         for f in temp_dir.glob("*"):
             f.unlink(missing_ok=True)
-        temp_dir.rmdir(missing_ok=True)
+        try:
+            temp_dir.rmdir()
+        except FileNotFoundError:
+            pass
 
         return success
 
@@ -586,6 +682,9 @@ def get_dual_mode_generator() -> DualModeVideoGenerator:
     global _module_instance
     if _module_instance is None:
         _module_instance = DualModeVideoGenerator()
+        # 设置日志回调
+        if _dual_log_callback:
+            _module_instance._log = _dual_log_callback
     return _module_instance
 
 

@@ -377,8 +377,14 @@ class AnimationModule:
         # 清理临时文件
         for clip in video_clips:
             Path(clip[0]).unlink(missing_ok=True)
-        concat_list.unlink(missing_ok=True)
-        temp_dir.rmdir(missing_ok=True)
+        try:
+            concat_list.unlink()
+        except FileNotFoundError:
+            pass
+        try:
+            temp_dir.rmdir()
+        except FileNotFoundError:
+            pass
 
         return success
 

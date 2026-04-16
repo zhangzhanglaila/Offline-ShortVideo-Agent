@@ -1969,11 +1969,12 @@
                 es.onmessage = function(e) {
                     var data = JSON.parse(e.data);
                     if (data.type === 'ping' || data.type === 'connected') return;
+                    // 同时写入log-box（生成页实时显示）
+                    addLog(data.level || 'info', (data.time ? '[' + data.time + '] ' : '') + data.msg);
                     showToast(data.msg, data.level || 'info');
                 };
                 es.onerror = function() {
                     es.close();
-                    // 3秒后重连
                     setTimeout(initLogStream, 3000);
                 };
             } catch(e) {}
@@ -3079,8 +3080,43 @@
                     fetch_images: true
                 })
             })
-            .then(function(res) { return res.json(); })
-            .then(handleGenerationResult)
+            .then(function(res) {
+                var reader = res.body.getReader();
+                var decoder = new TextDecoder();
+                var buffer = '';
+
+                function read() {
+                    reader.read().then(function(result) {
+                        if (result.done) return;
+                        buffer += decoder.decode(result.value, {stream: true});
+                        var lines = buffer.split('\n');
+                        buffer = lines.pop();
+                        for (var i = 0; i < lines.length; i++) {
+                            var line = lines[i];
+                            if (line.startsWith('data: ')) {
+                                try {
+                                    var data = JSON.parse(line.substring(6));
+                                    if (data.type === 'ping') continue;
+                                    if (data.type === 'error') {
+                                        addLog('err', '错误: ' + data.msg);
+                                        alert('生成失败: ' + data.msg);
+                                        showPage('materials');
+                                        return;
+                                    }
+                                    if (data.type === 'done') {
+                                        handleGenerationResult(data.result);
+                                        return;
+                                    }
+                                    // Real-time log from backend
+                                    addLog(data.level || 'info', '[' + (data.time || '') + '] ' + data.msg);
+                                } catch(e) {}
+                            }
+                        }
+                        read();
+                    });
+                }
+                read();
+            })
             .catch(function(e) {
                 addLog('err', '请求失败: ' + e.message);
                 alert('生成失败: ' + e.message);

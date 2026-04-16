@@ -35,8 +35,10 @@ class ScriptModule:
         # 构建Prompt
         prompt = self._build_script_prompt(topic, platform, video_duration, style)
 
-        # 调用Ollama生成
+        # 调用Ollama生成，失败则尝试云端API
         script_content = self._call_ollama(prompt)
+        if 'error' in script_content or not script_content.strip():
+            script_content = self._call_cloud_api(prompt)
 
         # 解析生成的内容
         result = self._parse_script_content(script_content, topic, platform)
@@ -109,6 +111,39 @@ class ScriptModule:
             return f"{{'error': 'Ollama连接失败: {str(e)}', 'script': {{}}}}"
         except json.JSONDecodeError as e:
             return f"{{'error': '响应解析失败', 'script': {{}}}}"
+
+    def _call_cloud_api(self, prompt: str) -> str:
+        """调用云端API（DeepSeek/MiniMax）生成内容"""
+        import os
+        try:
+            import requests
+            # 优先使用 DeepSeek
+            api_key = os.environ.get('DEEPSEEK_API_KEY', '') or os.environ.get('OPENAI_API_KEY', '')
+            api_base = os.environ.get('DEEPSEEK_API_BASE', '') or os.environ.get('OPENAI_API_BASE', 'https://api.deepseek.com/v1')
+            model = os.environ.get('DEEPSEEK_MODEL', 'deepseek-chat')
+
+            if not api_key:
+                return "{'error': '未配置云端API密钥', 'script': {}}"
+
+            response = requests.post(
+                f'{api_base}/chat/completions',
+                headers={
+                    'Authorization': f'Bearer {api_key}',
+                    'Content-Type': 'application/json'
+                },
+                json={
+                    'model': model,
+                    'messages': [{'role': 'user', 'content': prompt}],
+                    'max_tokens': 1024,
+                    'temperature': 0.8
+                },
+                timeout=60,
+                proxies={'http': None, 'https': None}
+            )
+            result = response.json()
+            return result['choices'][0]['message']['content']
+        except Exception as e:
+            return f"{{'error': '云端API调用失败: {str(e)}', 'script': {{}}}}"
 
     def _parse_script_content(self, content: str, topic: Dict, platform: str) -> Dict:
         """解析Ollama返回的内容"""

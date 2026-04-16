@@ -8,7 +8,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import List, Optional
 from fastapi import APIRouter, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -26,7 +26,7 @@ def get_generator():
 @router.post("/api/generate/mode-a")
 async def api_generate_mode_a(request: Request):
     """
-    模式A：题材全自动生成
+    模式A：题材全自动生成（流式SSE实时日志）
 
     请求体:
     {
@@ -40,40 +40,86 @@ async def api_generate_mode_a(request: Request):
         "fetch_images": true
     }
     """
-    try:
-        data = await request.json()
+    import queue
+    import threading
+    import json
+    import time
+    import asyncio
 
-        topic_keyword = data.get("topic_keyword")
-        category = data.get("category")
-        platform = data.get("platform", "抖音")
-        duration = data.get("duration", 30)
-        voice = data.get("voice", "zh-CN-XiaoxiaoNeural")
-        use_whisper = data.get("use_whisper_subtitle", True)
-        add_bgm = data.get("add_bgm", True)
-        fetch_images = data.get("fetch_images", True)
+    data = await request.json()
 
-        generator = get_generator()
+    topic_keyword = data.get("topic_keyword")
+    category = data.get("category")
+    platform = data.get("platform", "抖音")
+    duration = data.get("duration", 30)
+    voice = data.get("voice", "zh-CN-XiaoxiaoNeural")
+    use_whisper = data.get("use_whisper_subtitle", True)
+    add_bgm = data.get("add_bgm", True)
+    fetch_images = data.get("fetch_images", True)
 
-        result = generator.generate_mode_a(
-            topic_keyword=topic_keyword,
-            category=category,
-            platform=platform,
-            duration=duration,
-            voice=voice,
-            use_whisper_subtitle=use_whisper,
-            add_bgm=add_bgm,
-            fetch_images=fetch_images,
-        )
+    log_queue = queue.Queue()
+    result_queue = queue.Queue()
 
-        return JSONResponse(result)
+    def log_callback(msg, level):
+        log_queue.put_nowait({'time': time.strftime('%H:%M:%S'), 'msg': msg, 'level': level})
 
-    except Exception as e:
-        import traceback
-        return JSONResponse({
-            "success": False,
-            "error": str(e),
-            "trace": traceback.format_exc()
-        }, status_code=500)
+    generator = get_generator()
+    generator._log = log_callback
+
+    def run_generator():
+        try:
+            result = generator.generate_mode_a(
+                topic_keyword=topic_keyword,
+                category=category,
+                platform=platform,
+                duration=duration,
+                voice=voice,
+                use_whisper_subtitle=use_whisper,
+                add_bgm=add_bgm,
+                fetch_images=fetch_images,
+            )
+            result_queue.put(('result', result))
+        except Exception as e:
+            result_queue.put(('error', str(e)))
+
+    thread = threading.Thread(target=run_generator)
+    thread.start()
+
+    async def event_generator():
+        while True:
+            # Check for log messages
+            try:
+                log_entry = log_queue.get(timeout=0.1)
+                yield f"data: {json.dumps(log_entry, ensure_ascii=False)}\n\n"
+            except queue.Empty:
+                pass
+
+            # Check for final result
+            try:
+                result_type, result_data = result_queue.get_nowait()
+                if result_type == 'error':
+                    yield f"data: {json.dumps({'type': 'error', 'msg': result_data}, ensure_ascii=False)}\n\n"
+                else:
+                    yield f"data: {json.dumps({'type': 'done', 'result': result_data}, ensure_ascii=False)}\n\n"
+                break
+            except queue.Empty:
+                pass
+
+            # Send ping to keep connection alive
+            yield f"data: {json.dumps({'type': 'ping'})}\n\n"
+            await asyncio.sleep(0.1)
+
+        thread.join()
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        }
+    )
 
 
 @router.post("/api/generate/mode-b")

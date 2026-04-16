@@ -156,12 +156,40 @@ class TTSModule:
         if not EDGE_TTS_AVAILABLE:
             return False
         try:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            return loop.run_until_complete(self._generate_edge_async(text, output_path))
+            # 避免在已有事件循环中调用 asyncio.run()
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                loop = None
+            if loop and loop.is_running():
+                # 在线程池中运行异步代码
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future = executor.submit(asyncio.run, self._generate_edge_async(text, output_path))
+                    return future.result()
+            else:
+                return asyncio.run(self._generate_edge_async(text, output_path))
         except Exception as e:
             print(f"TTS生成失败: {str(e)}")
             return False
+
+    def _generate_edge_no_proxy(self, text: str, output_path: str) -> bool:
+        """使用edge-tts生成音频（禁用代理）"""
+        if not EDGE_TTS_AVAILABLE:
+            return False
+        import os
+        # 临时清除代理环境变量
+        saved = {}
+        proxy_keys = ['http_proxy', 'https_proxy', 'HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'all_proxy']
+        for k in proxy_keys:
+            saved[k] = os.environ.pop(k, None)
+        try:
+            return self._generate_edge(text, output_path)
+        finally:
+            # 恢复代理环境变量
+            for k, v in saved.items():
+                if v is not None:
+                    os.environ[k] = v
 
     def _generate_gtts(self, text: str, output_path: str) -> bool:
         """使用Google TTS生成音频"""
@@ -195,7 +223,7 @@ class TTSModule:
         if self.backend == "sapi":
             return self._generate_sapi(text, output_path)
         elif self.backend == "edge":
-            return self._generate_edge(text, output_path)
+            return self._generate_edge_no_proxy(text, output_path)
         elif self.backend == "gtts":
             return self._generate_gtts(text, output_path)
         else:
@@ -289,7 +317,10 @@ class TTSModule:
 
         for f in Path(temp_dir).glob("*"):
             f.unlink(missing_ok=True)
-        Path(temp_dir).rmdir(missing_ok=True)
+        try:
+            Path(temp_dir).rmdir()
+        except FileNotFoundError:
+            pass
 
         return success
 
