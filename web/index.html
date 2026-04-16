@@ -855,17 +855,26 @@
 
         /* ========== 日志 ========== */
         .log-box {
-            background: #1A1A2E;
-            color: #00FF00;
-            padding: 16px;
+            background: #FFF5F7;
+            color: #000;
+            padding: 20px 24px;
             border-radius: var(--radius);
-            font-family: Consolas, monospace;
-            font-size: 12px;
-            max-height: 200px;
+            font-family: "PingFang SC", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+            font-size: 15px;
+            font-weight: 400;
+            min-height: 400px;
+            max-height: 70vh;
             overflow-y: auto;
-            line-height: 1.8;
-            margin-top: 20px;
+            line-height: 2.4;
+            border: 1px solid #F5E6E8;
+            text-rendering: optimizeLegibility;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
         }
+        .log-box .log-suc,
+        .log-box .log-err,
+        .log-box .log-warn,
+        .log-box .log-info { color: #000; font-weight: 400; }
         .log-line { margin-bottom: 2px; }
         .log-suc { color: #52C41A; }
         .log-err { color: #FF4D4F; }
@@ -1630,52 +1639,6 @@
                 <div class="card-body">
                     <div class="progress-wrap">
                         <div class="progress-tv"></div>
-                        <div class="progress-text" id="progress-text">准备中...</div>
-                        <div class="progress-step" id="progress-step">步骤 0/6</div>
-                    </div>
-                    <div class="step-log" id="step-log">
-                        <div class="step-item" id="step-topic">
-                            <div class="step-icon pending" id="step-topic-icon">1</div>
-                            <div class="step-info">
-                                <div class="step-name">选择选题</div>
-                                <div class="step-msg" id="step-topic-msg">正在从爆款库中选择...</div>
-                            </div>
-                        </div>
-                        <div class="step-item" id="step-script">
-                            <div class="step-icon pending" id="step-script-icon">2</div>
-                            <div class="step-info">
-                                <div class="step-name">生成脚本</div>
-                                <div class="step-msg" id="step-script-msg">正在调用AI生成口播脚本...</div>
-                            </div>
-                        </div>
-                        <div class="step-item" id="step-material">
-                            <div class="step-icon pending" id="step-material-icon">3</div>
-                            <div class="step-info">
-                                <div class="step-name">处理素材</div>
-                                <div class="step-msg" id="step-material-msg">正在整理素材...</div>
-                            </div>
-                        </div>
-                        <div class="step-item" id="step-video">
-                            <div class="step-icon pending" id="step-video-icon">4</div>
-                            <div class="step-info">
-                                <div class="step-name">FFmpeg剪辑</div>
-                                <div class="step-msg" id="step-video-msg">正在合成视频片段...</div>
-                            </div>
-                        </div>
-                        <div class="step-item" id="step-subtitle">
-                            <div class="step-icon pending" id="step-subtitle-icon">5</div>
-                            <div class="step-info">
-                                <div class="step-name">字幕烧录</div>
-                                <div class="step-msg" id="step-subtitle-msg">正在生成并烧录字幕...</div>
-                            </div>
-                        </div>
-                        <div class="step-item" id="step-export">
-                            <div class="step-icon pending" id="step-export-icon">6</div>
-                            <div class="step-info">
-                                <div class="step-name">多平台导出</div>
-                                <div class="step-msg" id="step-export-msg">正在适配各平台格式...</div>
-                            </div>
-                        </div>
                     </div>
                     <div class="log-box" id="log-box"></div>
                 </div>
@@ -2980,8 +2943,6 @@
             if (selectedMode === 'mode_a') {
                 // 直接开始Mode A生成
                 showPage('generating');
-                var steps = ['topic', 'script', 'material', 'video', 'subtitle', 'export'];
-                for (var i = 0; i < steps.length; i++) updateStep(steps[i], 'pending', '等待中...');
                 var log = document.getElementById('log-box');
                 if (log) log.innerHTML = '';
                 callModeAApi();
@@ -3039,10 +3000,6 @@
 
             showPage('generating');
 
-            // Reset step indicators
-            var steps = ['topic', 'script', 'material', 'video', 'subtitle', 'export'];
-            for (var i = 0; i < steps.length; i++) updateStep(steps[i], 'pending', '等待中...');
-
             var log = document.getElementById('log-box');
             if (log) log.innerHTML = '';
 
@@ -3064,7 +3021,6 @@
             var platform = document.getElementById('home-mode-a-platform') ? document.getElementById('home-mode-a-platform').value : '抖音';
 
             addLog('info', '🚀 开始题材全自动生成...');
-            updateStep('topic', 'running', '正在推荐选题...');
 
             fetch(API + '/generate/mode-a', {
                 method: 'POST',
@@ -3128,7 +3084,6 @@
             var platform = selectedPlatform === 'all' ? '抖音' : selectedPlatform;
 
             addLog('info', '✂️ 开始素材智能剪辑...');
-            updateStep('material', 'running', '正在处理素材...');
 
             fetch(API + '/generate/mode-b', {
                 method: 'POST',

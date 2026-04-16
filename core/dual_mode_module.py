@@ -137,8 +137,9 @@ class DualModeVideoGenerator:
         script_result = self.script_mod.generate_script(topic, platform, duration)
         result["script"] = script_result
         result["steps"].append({"step": "script", "status": "success", "preview": script_result.get("full_script", "")[:100]})
-        _log(f"✅ 脚本生成完成", 'info')
-        print(f"  脚本生成完成: {script_result.get('full_script', '')[:50]}...")
+        script_preview = script_result.get('full_script', '')[:80]
+        _log(f"✅ 脚本生成完成: {script_preview}...", 'info')
+        print(f"  脚本生成完成: {script_preview}...")
 
         # Step 3: 分句TTS配音
         _log("🎙️ 正在生成配音...", 'info')

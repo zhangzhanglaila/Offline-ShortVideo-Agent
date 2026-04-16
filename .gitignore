@@ -35,3 +35,6 @@ downloads/
 *.mp4
 
 ".env" 
+".env" 
+.env
+
