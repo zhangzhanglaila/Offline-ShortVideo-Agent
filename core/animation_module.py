@@ -376,7 +376,10 @@ class AnimationModule:
 
         # 清理临时文件
         for clip in video_clips:
-            Path(clip[0]).unlink(missing_ok=True)
+            try:
+                Path(clip[0]).unlink()
+            except FileNotFoundError:
+                pass
         try:
             concat_list.unlink()
         except FileNotFoundError:
@@ -458,7 +461,10 @@ class AnimationModule:
             ]
 
             result = self._run_ffmpeg(cmd)
-            concat_list.unlink(missing_ok=True)
+            try:
+                concat_list.unlink()
+            except FileNotFoundError:
+                pass
             return result
 
         return self._run_ffmpeg(cmd)
@@ -474,7 +480,27 @@ class AnimationModule:
                 timeout=300
             )
             if result.returncode != 0:
-                print(f"[FFmpeg错误] {result.stderr[:200] if result.stderr else '未知错误'}")
+                stderr_lines = result.stderr.strip().split('\n')
+                error_lines = []
+                skip_patterns = ['ffmpeg version', 'built with', 'configuration:', 'Copyright',
+                                 'libavformat', 'libavcodec', 'libavutil', 'libavfilter',
+                                 'libswscale', 'libswresample', 'libpostproc', 'FFmpeg']
+                for line in stderr_lines:
+                    line_stripped = line.strip()
+                    if not line_stripped:
+                        continue
+                    skip = False
+                    for pattern in skip_patterns:
+                        if pattern.lower() in line_stripped.lower():
+                            skip = True
+                            break
+                    if skip:
+                        continue
+                    error_lines.append(line_stripped)
+                if error_lines:
+                    print(f"[FFmpeg错误] {' | '.join(error_lines[:3])}")
+                else:
+                    print(f"[FFmpeg错误] 返回码 {result.returncode}")
                 return False
             return True
         except subprocess.TimeoutExpired:

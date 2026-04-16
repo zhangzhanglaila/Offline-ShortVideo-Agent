@@ -50,7 +50,10 @@
       "Bash(curl:*)",
       "Bash(xxd D:/Offline-ShortVideo-Agent/models/faster-whisper-base/model.bin)",
       "Bash(git add:*)",
-      "Bash(set PYTHONIOENCODING=utf-8)"
+      "Bash(set PYTHONIOENCODING=utf-8)",
+      "WebFetch(domain:www.xfyun.cn)",
+      "mcp__MiniMax__web_search",
+      "WebFetch(domain:github.com)"
     ]
   }
 }

@@ -525,7 +525,10 @@ class DualModeVideoGenerator:
 
         # 清理
         for f in temp_dir.glob("*"):
-            f.unlink(missing_ok=True)
+            try:
+                f.unlink()
+            except FileNotFoundError:
+                pass
         try:
             temp_dir.rmdir()
         except FileNotFoundError:
@@ -649,7 +652,10 @@ class DualModeVideoGenerator:
         except:
             return False
         finally:
-            list_file.unlink(missing_ok=True)
+            try:
+                list_file.unlink()
+            except FileNotFoundError:
+                pass
 
     def _add_narration(self, video_path: str, audio_path: str, output_path: str) -> bool:
         """添加配音"""

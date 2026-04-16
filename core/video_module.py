@@ -328,7 +328,10 @@ class VideoModule:
 
         # 清理临时文件
         for clip in video_clips:
-            Path(clip).unlink(missing_ok=True)
+            try:
+                Path(clip).unlink()
+            except FileNotFoundError:
+                pass
         if concat_output.exists():
             concat_output.unlink()
 
