@@ -26,3 +26,11 @@ assets/
 !assets/素材池_待剪辑/.gitkeep
 !assets/thumbnails/.gitkeep
 
+# 本地模型和下载
+models/
+downloads/
+*.bin
+*.whl
+*.mp3
+*.mp4
+
