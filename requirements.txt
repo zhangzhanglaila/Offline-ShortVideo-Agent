@@ -1,28 +1,69 @@
-# Offline-ShortVideo-Agent 依赖列表
+# Offline-ShortVideo-Agent 完整依赖清单
 # 安装命令: pip install -r requirements.txt
 
-# 核心依赖
+# ========== 核心依赖 ==========
 faster-whisper>=1.0.0
 ollama>=0.1.0
+edge-tts>=6.1.0
+pyyaml>=6.0
 
-# Web前端 (本地Flask服务)
+# ========== Web框架 ==========
+fastapi>=0.100.0
+uvicorn[standard]>=0.23.0
 flask>=2.0.0
+starlette>=0.27.0
 
-# 爆款爬虫 (可选，需要联网)
-playwright>=1.40.0
+# ========== 数据处理 ==========
+requests>=2.28.0
+python-dotenv>=1.0.0
 
-# 可选: 如果使用GPU加速whisper
-# faster-whisper[cuda]>=1.0.0
+# ========== 视频处理 ==========
+# FFmpeg 必须单独安装: https://ffmpeg.org/download.html
 
-# 注意: FFmpeg 必须单独安装
-# Windows: https://ffmpeg.org/download.html
-# 或使用: winget install ffmpeg
+# ========== 可选依赖 ==========
+# playwright>=1.40.0  # 爬虫功能 (可选)
+# gtts>=2.3.0          # Google TTS (备用)
+
+# ========== 环境配置说明 ==========
+# 1. FFmpeg (必须): https://ffmpeg.org/download.html
+#    Windows: winget install ffmpeg
+#    或下载编译版并添加到PATH
 #
-# Ollama 必须单独安装
-# macOS/Linux: curl -fsSL https://ollama.com/install.sh | sh
-# Windows: https://ollama.com/download
-# 模型: ollama pull qwen2:7b
+# 2. Ollama (推荐): https://ollama.com/download
+#    模型: ollama pull qwen2.5:14b
 #
-# Playwright 安装 (爬虫功能需要)
-# pip install playwright
-# playwright install chromium
+# 3. Pexels API (联网配图,可选):
+#    获取API Key: https://www.pexels.com/api/
+#    环境变量: PEXELS_API_KEY=your_key
+#
+# 4. Unsplash API (联网配图,可选):
+#    获取API Key: https://unsplash.com/developers
+#    环境变量: UNSPLASH_ACCESS_KEY=your_key
+#
+# 5. 云端LLM API (API Key配置):
+#    在 .env 文件中配置:
+#    OPENAI_API_KEY=your_key
+#    OPENAI_API_BASE=https://api.openai.com/v1
+#    OPENAI_API_MODEL=gpt-4o
+
+# ========== 快速测试命令 ==========
+# 1. 启动 Ollama:
+#    ollama serve
+#    ollama pull qwen2.5:14b
+#
+# 2. 启动项目:
+#    python main_fastapi.py --port 5001
+#
+# 3. 访问API文档:
+#    http://127.0.0.1:5001/docs
+#
+# 4. 测试视频生成:
+#    # 模式A - 题材全自动生成
+#    curl -X POST http://127.0.0.1:5001/api/generate/mode-a \
+#      -H "Content-Type: application/json" \
+#      -d '{"topic_keyword": "AI变现", "duration": 30}'
+#
+#    # 模式B - 素材智能剪辑
+#    curl -X POST http://127.0.0.1:5001/api/generate/mode-b \
+#      -H "Content-Type: application/json" \
+#      -d '{"material_paths": ["assets/素材池_待剪辑/1.jpg"], "add_bgm": true}'

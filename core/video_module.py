@@ -90,7 +90,7 @@ class VideoModule:
         filter_str = ""
 
         if transition == "fade":
-            filter_str = f"fade=t:out:st:{duration-1}:d:1,fade=t:in:st:0:d:0.5"
+            filter_str = f"fade=t=out:st={duration-1}:d=1,fade=t=in:st=0:d=0.5"
 
         cmd = [
             "ffmpeg", "-y", "-loop", "1",
@@ -331,6 +331,10 @@ class VideoModule:
     def _run_ffmpeg(self, cmd: List[str]) -> bool:
         """执行FFmpeg命令"""
         try:
+            # 打印执行的命令（方便调试）
+            cmd_str = ' '.join(cmd)
+            print(f"执行FFmpeg命令: {cmd_str[:200]}...")
+
             result = subprocess.run(
                 cmd,
                 capture_output=True,
@@ -338,14 +342,39 @@ class VideoModule:
                 timeout=300
             )
             if result.returncode != 0:
-                print(f"FFmpeg错误: {result.stderr[:200]}")
+                # FFmpeg版本信息在前几行，真正的错误在后面
+                stderr_lines = result.stderr.strip().split('\n')
+                # 跳过版本信息行，找到真正的错误
+                error_lines = []
+                skip_patterns = ['ffmpeg version', 'built with', 'configuration:', 'Copyright',
+                                 'libavformat', 'libavcodec', 'libavutil', 'libavfilter',
+                                 'libswscale', 'libswresample', 'libpostproc', 'FFmpeg']
+                for line in stderr_lines:
+                    line_stripped = line.strip()
+                    if not line_stripped:
+                        continue
+                    # 跳过空行和版本信息
+                    skip = False
+                    for pattern in skip_patterns:
+                        if pattern.lower() in line_stripped.lower():
+                            skip = True
+                            break
+                    if skip:
+                        continue
+                    error_lines.append(line_stripped)
+
+                if error_lines:
+                    error_msg = ' | '.join(error_lines[:5])  # 最多显示5行
+                    print(f"FFmpeg执行失败: {error_msg}")
+                else:
+                    print(f"FFmpeg执行失败 (返回码: {result.returncode})")
                 return False
             return True
         except subprocess.TimeoutExpired:
-            print("FFmpeg执行超时")
+            print("FFmpeg执行超时 (超过5分钟)")
             return False
         except Exception as e:
-            print(f"FFmpeg执行失败: {str(e)}")
+            print(f"FFmpeg执行异常: {str(e)}")
             return False
 
     def _cleanup_temp_files(self, *paths):

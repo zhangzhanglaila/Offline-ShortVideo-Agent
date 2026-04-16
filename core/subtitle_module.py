@@ -4,7 +4,10 @@
 纯本地语音转文字，自动生成SRT字幕、时间轴对齐，白字黑边硬字幕烧录
 支持脚本直接生成字幕，双重方案
 """
+# 【重要】必须在 import faster_whisper 之前设置镜像站点，否则会尝试连接 HuggingFace 失败
 import os
+os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
+
 import re
 import json
 from pathlib import Path
@@ -29,21 +32,54 @@ class SubtitleModule:
 
     def _load_model(self):
         """加载Whisper模型"""
+        # 设置HuggingFace镜像，解决网络问题
+        os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
+
         if not WHISPER_AVAILABLE:
-            print("警告: faster-whisper未安装，字幕功能将使用备选方案")
-            print("请运行: pip install faster-whisper")
+            print("⚠️ 警告: faster-whisper未安装，字幕功能将使用备选方案（根据脚本直接生成）")
+            print("   如需语音识别功能，请运行: pip install faster-whisper")
             return
 
+        # 本地模型路径
+        local_model_path = Path(__file__).parent.parent / "models" / f"faster-whisper-{self.model_size}"
+        model_dir = local_model_path.parent
+
         try:
-            # 使用CPU推理，int8量化以加速
-            self.model = WhisperModel(
-                self.model_size,
-                device="cpu",
-                compute_type="int8"
-            )
-            print(f"Whisper模型 '{self.model_size}' 加载成功")
+            # 检查本地模型是否存在
+            if local_model_path.exists() and (local_model_path / "model.bin").exists():
+                print(f"📂 从本地加载 Whisper 模型 '{self.model_size}' ...")
+                self.model = WhisperModel(
+                    str(local_model_path),
+                    device="cpu",
+                    compute_type="int8"
+                )
+                print(f"✅ Whisper模型 '{self.model_size}' 加载成功")
+            else:
+                # 本地模型不存在，尝试从镜像下载
+                print(f"📥 正在下载/加载 Whisper 模型 '{self.model_size}' ...")
+                print(f"   (首次使用会从 HuggingFace 下载模型，约500MB，请耐心等待)")
+                self.model = WhisperModel(
+                    self.model_size,
+                    device="cpu",
+                    compute_type="int8"
+                )
+                print(f"✅ Whisper模型 '{self.model_size}' 加载成功")
         except Exception as e:
-            print(f"模型加载失败: {str(e)}")
+            error_msg = str(e)
+            print(f"❌ 模型加载失败: {error_msg}")
+            if 'Hub' in error_msg or 'snapshot' in error_msg or 'ConnectTimeout' in error_msg:
+                print("   原因: 无法连接到 HuggingFace 下载模型")
+                print("   解决方案:")
+                print("   1. 等待网络恢复后重试")
+                print("   2. 或手动下载模型到 models/ 目录")
+                print("   3. 或使用更小的模型: tiny/base (模型更小但准确度略低)")
+            elif 'SSL' in error_msg or 'EOF' in error_msg:
+                print("   原因: SSL连接被中断，可能是网络不稳定或使用了代理")
+                print("   解决方案: 检查网络/代理设置，或稍后重试")
+            elif 'model' in error_msg.lower() and 'not found' in error_msg.lower():
+                print("   原因: 本地模型文件不存在或损坏")
+                print(f"   模型路径: {local_model_path}")
+                print("   请确保已将模型文件(model.bin, config.json, tokenizer.json)放入此目录")
             self.model = None
 
     def transcribe_audio(self, audio_path: str, language: str = WHISPER_LANGUAGE) -> List[Dict]:
