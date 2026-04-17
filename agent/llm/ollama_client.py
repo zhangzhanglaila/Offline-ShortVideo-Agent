@@ -500,7 +500,8 @@ class DualModeLLMClient:
             # 云端可用但ollama不可用时，检查key是否为空
             if not self.cloud.api_key:
                 return False, False, LLMError.CLOUD_API_NOT_CONFIGURED
-            return False, True, LLMError.OLLAMA_NOT_RUNNING
+            # 云端可用，无错误（前端不需要弹出配置框）
+            return False, True, None
         elif ollama_ok and not cloud_ok:
             return True, False, LLMError.CLOUD_API_NOT_CONFIGURED
         return True, True, None
@@ -650,3 +651,7 @@ def reset_llm_client():
     import importlib
     import config as config_module
     importlib.reload(config_module)
+    # 同时重置Agent实例，确保使用新的LLM客户端
+    import agent.agent as agent_module
+    if hasattr(agent_module, '_agent'):
+        agent_module._agent = None

@@ -22,6 +22,7 @@ THUMBNAILS_DIR = ASSETS_DIR / "thumbnails"
 OUTPUT_DY = OUTPUT_DIR / "抖音"
 OUTPUT_XHS = OUTPUT_DIR / "小红书"
 OUTPUT_BILIBILI = OUTPUT_DIR / "B站"
+OUTPUT_TECH = OUTPUT_DIR / "技术存档"  # tech_lecture、流程图动画
 
 TOPICS_DB = DATA_DIR / "topics.db"
 
@@ -138,5 +139,5 @@ LIBRARY_EXPAND_CONFIG = {
 def ensure_dirs():
     """确保所有必要目录存在"""
     for dir_path in [DATA_DIR, ASSETS_DIR, OUTPUT_DIR, BGM_DIR, MATERIAL_DIR, THUMBNAILS_DIR,
-                     OUTPUT_DY, OUTPUT_XHS, OUTPUT_BILIBILI]:
+                     OUTPUT_DY, OUTPUT_XHS, OUTPUT_BILIBILI, OUTPUT_TECH]:
         dir_path.mkdir(parents=True, exist_ok=True)

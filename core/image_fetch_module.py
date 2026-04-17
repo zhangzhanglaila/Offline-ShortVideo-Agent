@@ -40,6 +40,7 @@ class ImageFetchModule:
 
     # 备用搜索引擎
     BING_IMAGE_URL = "https://www.bing.com/images/search?q="
+    BING_IMAGE_API = "https://www.bing.com/images/async?q={q}&first={offset}&count={count}&adlt=off"
 
     # 请求头
     HEADERS = {
@@ -129,6 +130,43 @@ class ImageFetchModule:
 
         return []
 
+    def fetch_from_bing(self, keywords: str, count: int = 5) -> List[Dict]:
+        """从Bing图片搜索抓取（无需API Key）"""
+        try:
+            import re
+            from urllib.parse import unquote
+            search_url = self.BING_IMAGE_API.format(
+                q=quote_plus(keywords),
+                offset=0,
+                count=count * 2  # 多抓一些，过滤无效链接
+            )
+            response = self._session.get(search_url, timeout=15)
+            if response.status_code != 200:
+                return []
+
+            # Bing返回的是mJSONP格式，提取图片URL
+            # 实际格式: mediaurl=https%3a%2f%2f...
+            html = response.text
+            img_pattern = re.compile(r'mediaurl=([^&\s]+)')
+            matches = img_pattern.findall(html)
+
+            results = []
+            for encoded_url in matches[:count]:
+                # URL解码
+                url = unquote(encoded_url)
+                # 过滤掉太小或无效的URL
+                if url.startswith('http'):
+                    clean_url = url.split('?')[0]
+                    results.append({
+                        "url": clean_url,
+                        "thumb": url,
+                        "source": "bing"
+                    })
+            return results
+        except Exception as e:
+            print(f"[Bing图片] 抓取异常: {str(e)}")
+            return []
+
     def download_image(self, url: str, filename: str = None) -> Optional[str]:
         """下载单张图片"""
         if not filename:
@@ -204,6 +242,27 @@ class ImageFetchModule:
                         ))
                         local_paths.append(local)
 
+                        if len(results) >= count:
+                            break
+
+        # Unsplash也不够 → Bing图片搜索（无需Key，作为最终降级）
+        if len(results) < count:
+            remaining = count - len(results)
+            bing_results = self.fetch_from_bing(keywords, count=remaining)
+            for item in bing_results:
+                orig_url = item.get("url", "")
+                if orig_url:
+                    local = self.download_image(orig_url)
+                    if local:
+                        results.append(ImageResult(
+                            url=orig_url,
+                            local_path=local,
+                            width=0,
+                            height=0,
+                            source="bing",
+                            keywords=keywords
+                        ))
+                        local_paths.append(local)
                         if len(results) >= count:
                             break
 

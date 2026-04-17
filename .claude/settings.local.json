@@ -53,7 +53,24 @@
       "Bash(set PYTHONIOENCODING=utf-8)",
       "WebFetch(domain:www.xfyun.cn)",
       "mcp__MiniMax__web_search",
-      "WebFetch(domain:github.com)"
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:www.bilibili.com)",
+      "WebSearch",
+      "Bash(env)",
+      "Read(//c/Users/H/.claude/**)",
+      "Read(//c/Users/H/.claude//**)",
+      "Bash(claude mcp:*)",
+      "Bash(powershell:*)",
+      "WebFetch(domain:search.bilibili.com)",
+      "Bash(rm -f abs_concat.txt final_concat_list.txt test.ass test.srt burn_test.mp4 final_output.mp4 'final_test_*.mp4' 'final_test_*.png' full_test_video.mp4 full_test_with_subtitle.mp4 full_test_with_subtitle.srt silent_test.mp4 silent_with_audio.mp4 'test_audio_add*.mp4' 'test_bgm_only*.mp4' 'test_sub*.mp4' 'test_sub*.wav' 'test_sub_direct*.mp4' test_sapi.mp3 test_srt_filter.mp4 test_with_subtitle.mp4 test_baidu.wav test_tts.wav test_tts2.wav test_tts3.wav test_xunfei.wav test_xunfei2.wav test_xunfei3.wav test.png 'test_*.png' 'test_flow*.png' 'test_multi*.png' test_multi_image.mp4 test_full_flow.mp4 'test_fixed*.mp4' 'test_fixed*.srt' test.ass test.ass.mp4)",
+      "Bash(find ModeA/ -type f -name \"*.wav\" -delete)",
+      "Bash(find ModeA/ -type d -empty -delete)",
+      "Bash(find 临时/ -type f \\\\\\( -name \"*.wav\" -o -name \"*.mp4\" -o -name \"*.srt\" \\\\\\) -delete)",
+      "Bash(find 临时/ -type d -empty -delete)",
+      "Bash(tasklist)",
+      "Bash(findstr python:*)",
+      "Bash(findstr \"python\\\\|uvicorn\\\\|fastapi\")",
+      "Bash(rm:*)"
     ]
   }
 }

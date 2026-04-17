@@ -107,7 +107,7 @@ async def api_generate_with_materials(request: Request):
         # ========== 步骤4: 生成视频 ==========
         logs.append({'step': '剪辑', 'status': 'running', 'msg': '正在拼接视频帧...'})
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_path = str(config.OUTPUT_DIR / "临时" / f"video_{timestamp}.mp4")
+        output_path = str(config.OUTPUT_DIR / "_work" / f"video_{timestamp}.mp4")
         Path(output_path).parent.mkdir(parents=True, exist_ok=True)
 
         duration_per_image = 5
@@ -239,7 +239,7 @@ async def api_generate(request: Request):
 
         # 4. 生成视频
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_path = str(config.OUTPUT_DIR / "临时" / f"video_{timestamp}.mp4")
+        output_path = str(config.OUTPUT_DIR / "_work" / f"video_{timestamp}.mp4")
         Path(output_path).parent.mkdir(parents=True, exist_ok=True)
 
         success = video.create_video_from_images(

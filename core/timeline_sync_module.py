@@ -38,8 +38,8 @@ class TimelineSyncModule:
         os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
 
         if not WHISPER_AVAILABLE:
-            print("⚠️ 警告: faster-whisper未安装，时间轴同步功能将受限")
-            print("   如需此功能，请运行: pip install faster-whisper")
+            print("[WARNING] faster-whisper not installed, timeline sync capability will be limited")
+            print("   To enable this feature, run: pip install faster-whisper")
             return
 
         # 本地模型路径
@@ -48,30 +48,30 @@ class TimelineSyncModule:
         try:
             # 检查本地模型是否存在
             if local_model_path.exists() and (local_model_path / "model.bin").exists():
-                print(f"📂 从本地加载时间轴同步模型 '{self.model_size}' ...")
+                print(f"[LOAD] Loading timeline sync model '{self.model_size}' from local...")
                 self.model = WhisperModel(
                     str(local_model_path),
                     device="cpu",
                     compute_type="int8"
                 )
-                print(f"✅ 时间轴同步模型 '{self.model_size}' 加载成功")
+                print(f"[OK] Timeline sync model '{self.model_size}' loaded successfully")
             else:
-                print(f"📥 正在加载时间轴同步模型 '{self.model_size}' ...")
+                print(f"[DOWNLOAD] Loading timeline sync model '{self.model_size}'...")
                 self.model = WhisperModel(
                     self.model_size,
                     device="cpu",
                     compute_type="int8"
                 )
-                print(f"✅ 时间轴同步模型 '{self.model_size}' 加载成功")
+                print(f"[OK] Timeline sync model '{self.model_size}' loaded successfully")
         except Exception as e:
             error_msg = str(e)
-            print(f"❌ 时间轴同步模型加载失败: {error_msg}")
+            print(f"[FAIL] Timeline sync model loading failed: {error_msg}")
             if 'Hub' in error_msg or 'snapshot' in error_msg:
-                print("   原因: 无法连接到 HuggingFace")
-                print("   解决方案: 手动下载模型或使用备选方案")
+                print("   Reason: Cannot connect to HuggingFace")
+                print("   Solution: Manually download model or use fallback")
             elif 'model' in error_msg.lower() and 'not found' in error_msg.lower():
-                print("   原因: 本地模型文件不存在或损坏")
-                print(f"   模型路径: {local_model_path}")
+                print("   Reason: Local model file does not exist or corrupted")
+                print(f"   Model path: {local_model_path}")
             self.model = None
 
     def transcribe_audio(self, audio_path: str, language: str = WHISPER_LANGUAGE) -> List[Dict]:

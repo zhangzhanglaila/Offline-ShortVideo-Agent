@@ -6,6 +6,8 @@ faster-whisper>=1.0.0
 ollama>=0.1.0
 edge-tts>=6.1.0
 pyyaml>=6.0
+pygments>=2.15.0   # 代码语法高亮（技术讲座风格）
+Pillow>=10.0.0    # 图片处理（技术讲座风格代码渲染）
 
 # ========== Web框架 ==========
 fastapi>=0.100.0

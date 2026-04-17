@@ -71,6 +71,20 @@ class ScriptModule:
    - "cta": 结尾行动号召
    - "full_script": 完整口播文案(hook+body+cta)
    - "storyboard": 分镜表(数组，每个元素包含: 时间点, 画面描述, 字幕要点, 时长)
+   - "diagram_layout": (仅技术讲解类内容填写) 流程图/架构图DSL描述，用于生成动态示意图动画
+     格式: ```diagram\n[id] 标签 (x, y, w, h)\n[id] -> [id] "标注"\n```
+     示例（Agent智能体架构）:
+     ```diagram
+     [sense] 感知层 (400, 80, 200, 70)
+     [brain] 思维层 (400, 280, 200, 70)
+     [action] 执行层 (400, 480, 200, 70)
+     [memory] 记忆层 (650, 280, 180, 70)
+     [sense] -> [brain]
+     [brain] -> [action]
+     [brain] <-> [memory]
+     ```
+     布局坐标基于1080x1920画布，仅填真正需要的节点，线条用 -> 或 <->（双向）
+     当内容不涉及流程架构时可不填写diagram_layout字段
 
 【分镜表格式示例】
 [

@@ -106,7 +106,7 @@ class TTSModule:
         "WangYi": "王毅（男声-中文）",
     }
 
-    DEFAULT_VOICE = "xiaoyan"
+    DEFAULT_VOICE = "zh-CN-XiaoxiaoNeural"
     DEFAULT_RATE = 0
 
     def __init__(self, voice: str = None, backend: str = None):
@@ -117,13 +117,13 @@ class TTSModule:
         self.voice_id = self._get_voice_id(voice)
 
     def _detect_backend(self) -> str:
-        """检测可用的TTS后端（讯飞最优先）"""
-        if XUNFEI_APPID and XUNFEI_APIKEY and XUNFEI_APISECRET and XUNFEI_AVAILABLE:
+        """检测可用的TTS后端（优先自然人声edge-tts，其次讯飞"""
+        if EDGE_TTS_AVAILABLE:
+            return "edge"
+        elif XUNFEI_APPID and XUNFEI_APIKEY and XUNFEI_APISECRET and XUNFEI_AVAILABLE:
             return "xunfei"
         elif BAIDU_APP_ID and BAIDU_API_KEY and BAIDU_SECRET_KEY and BAIDU_AVAILABLE:
             return "baidu"
-        elif EDGE_TTS_AVAILABLE:
-            return "edge"
         elif WIN_SAPI_AVAILABLE:
             return "sapi"
         elif GTTS_AVAILABLE:

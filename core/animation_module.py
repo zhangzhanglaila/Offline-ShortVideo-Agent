@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
 """
 动画生成模块 - 基于FFmpeg动态效果
-支持：Ken Burns缩放、文字逐字出现、转场动画、关键帧动画
+支持：Ken Burns缩放、文字逐字出现、转场动画、关键帧动画、技术讲座风格多图层合成
 """
 import subprocess
 import random
+import tempfile
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple
 
@@ -54,21 +55,20 @@ class AnimationModule:
             zoom_start, zoom_end = zoom_end, zoom_start
 
         # 构建zoompan滤镜
-        # z: 缩放值，x/y: 平移位置，d: 持续帧数，s: 输出尺寸
+        # zoom变量从1.0开始，min(zoom+增量, 最大值) 实现平滑放大
+        total_frames = int(duration * OUTPUT_FPS)
+        zoom_delta = (zoom_end - zoom_start) / total_frames
         filter_str = (
-            f"zoompan=z='if(lte(i,{int(duration * OUTPUT_FPS)}),"
-            f"{zoom_start}+({zoom_end}-{zoom_start})*min(i/{int(duration * OUTPUT_FPS)},1),"
-            f"{zoom_end})':"
-            f"x='iw/2-(iw/zoom/2)+{int(pan_x * 100)}':"
-            f"y='ih/2-(ih/zoom/2)+{int(pan_y * 100)}':"
-            f"d={int(duration * OUTPUT_FPS)}:"
-            f"s={self.output_width}x{self.output_height}:"
-            f"fps={self.output_fps}"
+            f"zoompan=z='min(zoom+{zoom_delta:.6f},{zoom_end})':"
+            f"x=iw/2-(iw/zoom/2)+{int(pan_x * 100)}':"
+            f"y=ih/2-(ih/zoom/2)+{int(pan_y * 100)}':"
+            f"d={total_frames}:s={self.output_width}x{self.output_height}:fps={self.output_fps}"
         )
 
         cmd = [
             "ffmpeg", "-y",
             "-loop", "1",
+            "-framerate", str(self.output_fps),
             "-i", image_path,
             "-vf", filter_str,
             "-pix_fmt", "yuv420p",
@@ -123,22 +123,21 @@ class AnimationModule:
                 f"{pan_filter}"
             )
         else:
+            total_frames = int(duration * self.output_fps)
+            zoom_delta = (float(zoom_end) - float(zoom_start)) / total_frames
             filter_str = (
-                f"scale={self.output_width}x{self.output_height}:"
-                f"force_original_aspect_ratio=increase,"
-                f"crop={self.output_width}:{self.output_height},"
-                f"zoompan=z='if(lte(t,{duration}),{zoom_start}+({zoom_end}-{zoom_start})*t/{duration},{zoom_end})':"
-                f"d={int(duration * self.output_fps)}:"
-                f"s={self.output_width}x{self.output_height}"
+                f"zoompan=z='min(zoom+{zoom_delta:.6f},{zoom_end})':"
+                f"x=iw/2-(iw/zoom/2):y=ih/2-(ih/zoom/2):"
+                f"d={total_frames}:s={self.output_width}x{self.output_height}:fps={self.output_fps}"
             )
 
         cmd = [
             "ffmpeg", "-y",
             "-loop", "1",
+            "-framerate", str(self.output_fps),
             "-i", image_path,
             "-vf", filter_str,
             "-pix_fmt", "yuv420p",
-            "-r", str(self.output_fps),
             "-t", str(duration),
             "-c:v", "libx264",
             "-preset", "fast",
@@ -468,6 +467,259 @@ class AnimationModule:
             return result
 
         return self._run_ffmpeg(cmd)
+
+    def _run_ffmpeg(self, cmd: List[str]) -> bool:
+        """执行FFmpeg命令"""
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                encoding='utf-8',
+                errors='replace',
+                timeout=300
+            )
+            if result.returncode != 0:
+                stderr_lines = result.stderr.strip().split('\n')
+                error_lines = []
+                skip_patterns = ['ffmpeg version', 'built with', 'configuration:', 'Copyright',
+                                 'libavformat', 'libavcodec', 'libavutil', 'libavfilter',
+                                 'libswscale', 'libswresample', 'libpostproc', 'FFmpeg']
+                for line in stderr_lines:
+                    line_stripped = line.strip()
+                    if not line_stripped:
+                        continue
+                    skip = False
+                    for pattern in skip_patterns:
+                        if pattern.lower() in line_stripped.lower():
+                            skip = True
+                            break
+                    if skip:
+                        continue
+                    error_lines.append(line_stripped)
+                if error_lines:
+                    print(f"[FFmpeg错误] {' | '.join(error_lines[:3])}")
+                else:
+                    print(f"[FFmpeg错误] 返回码 {result.returncode}")
+                return False
+            return True
+        except subprocess.TimeoutExpired:
+            print("FFmpeg执行超时")
+            return False
+        except Exception as e:
+            print(f"FFmpeg执行失败: {str(e)}")
+            return False
+
+    # ==================== 技术讲座风格（Geek Tech Layout）====================
+
+    def _render_code_image(self, code: str, lang: str = "python",
+                           width: int = 500, height: int = 600,
+                           font_size: int = 18) -> Optional[str]:
+        """
+        渲染代码为语法高亮图片（使用Pygments）
+
+        返回:
+            生成的临时图片路径，失败返回None
+        """
+        try:
+            from pygments import highlight
+            from pygments.lexers import get_lexer_by_name
+            from pygments.formatters import ImageFormatter
+            from pygments.styles import get_style_by_name
+            from PIL import Image, ImageDraw
+            import io
+        except ImportError:
+            print("[警告] 需要安装 pygments 和 Pillow 来渲染代码高亮")
+            return None
+
+        try:
+            lexer = get_lexer_by_name(lang)
+            formatter = ImageFormatter(
+                font_size=font_size,
+                style=get_style_by_name('monokai'),
+                line_numbers=True,
+                background_color='#1e1e1e',
+                image_size=(width, height)
+            )
+            img_data = highlight(code, lexer, formatter)
+
+            # 保存到临时文件
+            temp_path = tempfile.mktemp(suffix='.png')
+            with open(temp_path, 'wb') as f:
+                f.write(img_data)
+            return temp_path
+        except Exception as e:
+            print(f"[代码渲染] 失败: {e}")
+            return None
+
+    def _build_lecture_overlay(
+        self,
+        title: str,
+        points: List[str],
+        code: str,
+        code_lang: str,
+        duration: float,
+        temp_dir: Path
+    ) -> Tuple[Optional[str], Optional[str], List[Tuple[str, float, float]]]:
+        """
+        构建技术讲座风格的字幕/Overlay文件
+
+        返回:
+            (title_srt_path, points_srt_path, code_clip_times)
+            title_srt_path: 顶部标题SRT路径
+            points_srt_path: 左侧知识点SRT路径
+            code_clip_times: [(code_frame_path, start_time, end_time), ...]
+        """
+        title_srt = temp_dir / "lecture_title.srt"
+        points_srt = temp_dir / "lecture_points.srt"
+        code_frames = []
+
+        # ---------- 1. 生成标题SRT（顶部居中，淡入淡出） ----------
+        start_t = 0.0
+        end_t = duration
+
+        # 标题分句（按逗号或换行拆分）
+        title_lines = []
+        for part in title.replace('\n', '，').split('，'):
+            part = part.strip()
+            if part:
+                title_lines.append(part)
+
+        if not title_lines:
+            title_lines = [title]
+
+        seg_duration = duration / max(len(title_lines), 1)
+        with open(title_srt, "w", encoding="utf-8") as f:
+            for i, line in enumerate(title_lines):
+                f.write(f"{i+1}\n")
+                st = i * seg_duration
+                et = (i + 1) * seg_duration
+                f.write(f"{self._fmt_time(st)} --> {self._fmt_time(et)}\n")
+                f.write(f"{line}\n\n")
+
+        # ---------- 2. 生成知识点SRT（逐行出现，左侧） ----------
+        point_start = 1.0  # 延迟1秒开始
+        with open(points_srt, "w", encoding="utf-8") as f:
+            for i, pt in enumerate(points):
+                f.write(f"{i+1}\n")
+                st = point_start + i * 1.5
+                et = st + 2.0
+                if et > duration:
+                    et = duration
+                f.write(f"{self._fmt_time(st)} --> {self._fmt_time(et)}\n")
+                f.write(f"• {pt}\n\n")
+
+        # ---------- 3. 生成代码帧序列（打字机效果） ----------
+        if code:
+            # 把代码渲染成一张高亮图
+            code_img_path = self._render_code_image(
+                code, code_lang,
+                width=min(500, self.output_width // 2),
+                height=min(600, self.output_height - 200),
+                font_size=16
+            )
+            if code_img_path:
+                # 生成代码片段视频（持续全程）
+                code_clip_path = str(temp_dir / "code_clip.mp4")
+                zoom_in = random.choice([True, False])
+                self.create_ken_burns_clip(
+                    code_img_path, code_clip_path,
+                    duration=duration,
+                    zoom_in=zoom_in,
+                    zoom_range=(1.0, 1.1)
+                )
+                if Path(code_clip_path).exists():
+                    code_frames.append((code_clip_path, 0.0, duration))
+
+        return str(title_srt), str(points_srt), code_frames
+
+    def _fmt_time(self, seconds: float) -> str:
+        """将秒数格式化为SRT时间码 HH:MM:SS,mmm"""
+        hours = int(seconds // 3600)
+        minutes = int((seconds % 3600) // 60)
+        secs = int(seconds % 60)
+        millis = int((seconds - int(seconds)) * 1000)
+        return f"{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}"
+
+    def create_tech_lecture_video(
+        self,
+        bg_image: str,
+        output_path: str,
+        title: str,
+        points: List[str],
+        code: str = "",
+        code_lang: str = "python",
+        duration: float = 8.0,
+        animation_style: str = "ken_burns"
+    ) -> bool:
+        """
+        创建技术讲座风格视频
+        仅生成Ken Burns背景视频 + 保留标题/知识点/代码信息到SRT文件
+        字幕叠加由dual_mode_module的Step7/8统一处理
+        """
+        if not Path(bg_image).exists():
+            print(f"[错误] 背景图片不存在: {bg_image}")
+            return False
+
+        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+        temp_dir = Path(output_path).parent / "temp_lecture"
+        temp_dir.mkdir(parents=True, exist_ok=True)
+
+        try:
+            # Step 1: 生成Ken Burns背景视频
+            if animation_style == "ken_burns":
+                zoom_in = random.choice([True, False])
+                success = self.create_ken_burns_clip(
+                    bg_image, output_path,
+                    duration=duration,
+                    zoom_in=zoom_in,
+                    zoom_range=(1.0, random.uniform(1.1, 1.3))
+                )
+            else:
+                success = self._create_simple_clip(bg_image, output_path, duration)
+
+            if not success or not Path(output_path).exists():
+                print("[错误] 背景视频生成失败")
+                return False
+
+            # Step 2: 生成SRT字幕文件（由Step7/8使用）
+            title_srt = str(temp_dir / "lecture_title.srt")
+            points_srt = str(temp_dir / "lecture_points.srt")
+
+            # 标题SRT（顶部居中，逐句出现）
+            title_lines = title.replace('\n', '，').split('，')
+            title_lines = [t.strip() for t in title_lines if t.strip()]
+            if not title_lines:
+                title_lines = [title]
+            seg_dur = duration / max(len(title_lines), 1)
+            with open(title_srt, "w", encoding="utf-8") as f:
+                for i, line in enumerate(title_lines):
+                    f.write(f"{i+1}\n")
+                    st, et = i * seg_dur, (i + 1) * seg_dur
+                    f.write(f"{self._fmt_time(st)} --> {self._fmt_time(et)}\n")
+                    f.write(f"{line}\n\n")
+
+            # 知识点SRT（左侧，逐行出现）
+            with open(points_srt, "w", encoding="utf-8") as f:
+                for i, pt in enumerate(points):
+                    f.write(f"{i+1}\n")
+                    st = 1.0 + i * 1.5
+                    et = st + 2.0
+                    if et > duration:
+                        et = duration
+                    f.write(f"{self._fmt_time(st)} --> {self._fmt_time(et)}\n")
+                    f.write(f"• {pt}\n\n")
+
+            print(f"[TechLecture] 背景视频生成成功: {output_path}")
+            print(f"[TechLecture] 标题SRT: {title_srt}")
+            print(f"[TechLecture] 知识点SRT: {points_srt}")
+            return True
+
+        finally:
+            import shutil
+            try:
+                shutil.rmtree(temp_dir)
+            except Exception:
+                pass
 
     def _run_ffmpeg(self, cmd: List[str]) -> bool:
         """执行FFmpeg命令"""

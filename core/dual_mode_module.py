@@ -22,6 +22,7 @@ from core.timeline_sync_module import get_timeline_module
 from core.image_fetch_module import get_image_fetch_module
 from core.topics_module import TopicsModule
 from core.script_module import ScriptModule
+from core.diagram_animation_module import get_diagram_module
 
 # 日志回调 - 实时推送进度到前端
 _dual_log_callback = None
@@ -50,6 +51,7 @@ class DualModeVideoGenerator:
         self.subtitle = get_subtitle_module()
         self.video = get_video_module()
         self.animation = get_animation_module()
+        self.diagram = get_diagram_module()
         self.timeline = get_timeline_module()
         self.image_fetch = get_image_fetch_module()
         self.topics = TopicsModule(
@@ -57,6 +59,10 @@ class DualModeVideoGenerator:
             preload_count=config.CACHE_CONFIG.get("preload_count", 500)
         )
         self.script_mod = ScriptModule()
+
+    # 技术讲座风格触发的赛道分类
+    TECH_LECTURE_CATEGORIES = {"科技数码", "技术教程", "编程教学", "极客科普"}
+    TECH_LECTURE_STYLE = "tech_lecture"  # 中性标识，不含外部关键词
 
     def generate_mode_a(
         self,
@@ -68,6 +74,7 @@ class DualModeVideoGenerator:
         use_whisper_subtitle: bool = True,
         add_bgm: bool = True,
         fetch_images: bool = True,
+        style: str = "normal",
     ) -> Dict:
         """
         模式A：题材全自动生成
@@ -81,10 +88,17 @@ class DualModeVideoGenerator:
             use_whisper_subtitle: 字幕是否用Whisper对齐
             add_bgm: 是否添加BGM
             fetch_images: 是否联网抓取配图
+            style: 动画风格 ("normal"=默认KenBurns | "tech_lecture"=技术讲座风格)
 
         返回:
             生成结果字典
         """
+
+        # 判断是否触发技术讲座风格
+        is_tech_lecture = (
+            style == self.TECH_LECTURE_STYLE or
+            (category and category in self.TECH_LECTURE_CATEGORIES)
+        )
         result = {
             "mode": self.MODE_AUTO,
             "success": False,
@@ -99,7 +113,8 @@ class DualModeVideoGenerator:
         }
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_dir = config.OUTPUT_DIR / "ModeA" / timestamp
+        # 临时工作目录（不暴露给用户）
+        output_dir = config.OUTPUT_DIR / "_work" / timestamp
         output_dir.mkdir(parents=True, exist_ok=True)
 
         # Step 1: 获取选题
@@ -189,13 +204,76 @@ class DualModeVideoGenerator:
         _log("🎬 正在生成动画视频...", 'info')
         print("[Mode A] Step 6: 动画视频生成...")
         raw_video_path = str(output_dir / "raw_video.mp4")
-        animation_success = self.animation.create_animated_video_from_segments(
-            images=image_paths,
-            segments=timeline,
-            output_path=raw_video_path,
-            animation_style="ken_burns",
-            transition="fade"
-        )
+
+        if is_tech_lecture:
+            # 技术讲座风格：优先使用2D流程图动画，其次用Ken Burns图文布局
+            _log("📺 使用技术讲座风格生成", 'info')
+
+            # 尝试从脚本中提取流程图布局描述（检查 full_script 和 raw_llm_response）
+            script_text = script_result.get("full_script", "")
+            raw_response = script_result.get("raw_llm_response", "")
+            # 优先从 raw_llm_response 提取（包含完整的LLM输出，包括```diagram块）
+            combined_text = raw_response if raw_response else script_text
+            layout = self._parse_diagram_layout(combined_text, topic)
+
+            if layout and len(layout) >= 2:
+                # 有有效布局 → 使用2D流程图动画
+                _log("📊 检测到架构/流程描述，生成2D示意图动画", 'info')
+                diagram_success = self.diagram.generate_from_layout(
+                    layout=layout,
+                    output_path=raw_video_path,
+                    fps=30,
+                    auto_duration=True,
+                )
+                animation_success = diagram_success
+                if animation_success:
+                    _log("✅ 2D流程图动画生成完成", 'info')
+                else:
+                    _log("⚠️ 流程图生成失败，降级到Ken Burns图文风格", 'warn')
+                    animation_success = self.animation.create_animated_video_from_segments(
+                        images=image_paths if image_paths else [],
+                        segments=timeline,
+                        output_path=raw_video_path,
+                        animation_style="ken_burns",
+                        transition="fade"
+                    )
+            else:
+                # 无布局描述 → 使用Ken Burns图文风格（顶部标题+左侧知识点+右侧代码）
+                _log("📺 无流程图描述，使用Ken Burns图文风格", 'info')
+                if image_paths:
+                    bg_image = image_paths[0]
+                else:
+                    bg_image = image_paths[0] if image_paths else None
+
+                lecture_title = topic.get("title", "技术分享")[:30]
+                lecture_points = [s[:40] for s in sentences[:5] if s.strip()]
+                code_match = re.search(r'```[\w]*\n(.*?)```', script_text, re.DOTALL)
+                lecture_code = code_match.group(1).strip()[:300] if code_match else ""
+                code_lang = "python"
+
+                if bg_image and Path(bg_image).exists():
+                    animation_success = self.animation.create_tech_lecture_video(
+                        bg_image=bg_image,
+                        output_path=raw_video_path,
+                        title=lecture_title,
+                        points=lecture_points,
+                        code=lecture_code,
+                        code_lang=code_lang,
+                        duration=float(duration),
+                        animation_style="ken_burns"
+                    )
+                else:
+                    animation_success = False
+                    _log("⚠️ 素材池无可用图片，无法生成Ken Burns视频", 'warn')
+        else:
+            # 默认Ken Burns动画风格
+            animation_success = self.animation.create_animated_video_from_segments(
+                images=image_paths,
+                segments=timeline,
+                output_path=raw_video_path,
+                animation_style="ken_burns",
+                transition="fade"
+            )
 
         if not animation_success:
             result["error"] = "动画视频生成失败"
@@ -292,7 +370,7 @@ class DualModeVideoGenerator:
         }
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_dir = config.OUTPUT_DIR / "ModeB" / timestamp
+        output_dir = config.OUTPUT_DIR / "_work" / timestamp
         output_dir.mkdir(parents=True, exist_ok=True)
 
         # 分离素材类型
@@ -571,22 +649,50 @@ class DualModeVideoGenerator:
         bgm_path: str,
         output_path: str
     ) -> bool:
-        """多轨道合成"""
-        filter_parts = []
+        """多轨道合成 - 使用两-pass方法避免filter_complex中subtitles的pad绑定问题"""
+        import subprocess
+        from pathlib import Path
 
-        # 字幕
+        # 第一步：烧录字幕到视频（单独使用 -vf subtitles=）
+        subtitled_video = Path(output_path).parent / "video_with_subs.mp4"
+
         if subtitle_path and Path(subtitle_path).exists():
-            filter_parts.append(f"subtitles={subtitle_path}")
+            # 使用相对路径避免FFmpeg将绝对路径中的冒号解析为选项分隔符
+            try:
+                rel_sub_path = Path(subtitle_path).relative_to(Path.cwd()).as_posix()
+            except ValueError:
+                rel_sub_path = Path(subtitle_path).as_posix()
 
-        video_filter = ",".join(filter_parts) if filter_parts else "null"
+            cmd_sub = [
+                "ffmpeg", "-y",
+                "-i", video_path,
+                "-vf", f"subtitles={rel_sub_path}",
+                "-c:v", "libx264",
+                "-preset", "fast",
+                "-crf", str(config.OUTPUT_CRF),
+                "-c:a", "copy",
+                str(subtitled_video)
+            ]
 
-        # 构建命令
-        cmd = ["ffmpeg", "-y", "-i", video_path, "-i", audio_path]
+            try:
+                result = subprocess.run(cmd_sub, capture_output=True, text=True, timeout=600)
+                if result.returncode != 0 or not subtitled_video.exists():
+                    _log(f"字幕烧录失败: {result.stderr[:300]}", 'error')
+                    return False
+            except Exception:
+                return False
+        else:
+            # 无字幕则跳过第一步
+            subtitled_video = Path(video_path)
+
+        # 第二步：混合音频
+        input_video = str(subtitled_video)
+        cmd_audio = ["ffmpeg", "-y", "-i", input_video, "-i", audio_path]
 
         input_idx = 2
         if bgm_path and Path(bgm_path).exists():
-            cmd.append("-i")
-            cmd.append(bgm_path)
+            cmd_audio.append("-i")
+            cmd_audio.append(bgm_path)
             bgm_idx = input_idx
             input_idx += 1
         else:
@@ -595,24 +701,18 @@ class DualModeVideoGenerator:
         # 音频混合
         if bgm_idx:
             audio_filter = (
-                f"[0:a]volume=0.8[a0];"
-                f"[1:a]volume=1.0[a1];"
-                f"[{bgm_idx}:a]volume={config.BGM_VOLUME}[a2];"
-                f"[a0][a1][a2]amix=inputs=3:duration=first[aout]"
+                f"[1:a]volume=1.0[narration];"
+                f"[{bgm_idx}:a]volume={config.BGM_VOLUME}[bgmtrack];"
+                f"[narration][bgmtrack]amix=inputs=2:duration=first[aout]"
             )
         else:
-            audio_filter = "[0:a]volume=1.0[a0];[1:a]volume=1.0[a1];[a0][a1]amix=inputs=2:duration=first[aout]"
+            audio_filter = "[1:a]volume=1.0[aout]"
 
-        if video_filter != "null":
-            filter_str = f"{video_filter},{audio_filter}"
-        else:
-            filter_str = audio_filter
-
-        cmd.extend(["-filter_complex", filter_str])
-        cmd.extend(["-map", "0:v"])
-        cmd.extend(["-map", "[aout]"])
-        cmd.extend([
-            "-c:v", "libx264",
+        cmd_audio.extend([
+            "-filter_complex", audio_filter,
+            "-map", "0:v",
+            "-map", "[aout]",
+            "-c:v", "copy" if input_video == str(subtitled_video) else "libx264",
             "-preset", "fast",
             "-crf", str(config.OUTPUT_CRF),
             "-c:a", "aac",
@@ -622,7 +722,7 @@ class DualModeVideoGenerator:
         ])
 
         try:
-            result = subprocess.run(cmd, capture_output=True, encoding='utf-8', errors='replace', timeout=600)
+            result = subprocess.run(cmd_audio, capture_output=True, text=True, timeout=600)
             return result.returncode == 0 and Path(output_path).exists()
         except:
             return False
@@ -678,6 +778,138 @@ class DualModeVideoGenerator:
             return result.returncode == 0 and Path(output_path).exists()
         except:
             return False
+
+    def _parse_diagram_layout(self, script_text: str, topic: Dict) -> List[Dict]:
+        """
+        从脚本文本中提取流程图/架构图布局描述
+
+        支持两种格式：
+        1. Markdown 格式：```diagram ... ``` 包裹的布局描述
+        2. 结构化描述：带有 "→" 或 "->" 箭头的流程描述
+
+        返回 layout 列表，供 diagram_animation_module.generate_from_layout() 使用
+        """
+        layout = []
+
+        # 预处理：将JSON字符串中的转义换行还原为普通换行
+        # raw_llm_response 中的 `\n` 是转义字符，实际存储为 `\\n`
+        script_text_clean = script_text.replace('\\n', '\n').replace('\\"', '"')
+
+        # 格式1: 检查 ```diagram 代码块
+        diagram_block = re.search(r'```diagram\s*\n(.*?)```', script_text_clean, re.DOTALL)
+        if diagram_block:
+            lines = diagram_block.group(1).strip().split('\n')
+            return self._parse_dsl_layout(lines)
+
+        # 格式2: 检查流程箭头模式 "模块A → 模块B → 模块C"
+        arrow_pattern = re.search(r'([^\n→\->]{2,20})\s*(?:→|->)\s*([^\n→\->]{2,20})', script_text_clean)
+        if arrow_pattern:
+            # 提取所有箭头连接的节点
+            nodes = []
+            full_flow = re.findall(r'([^\n→\->]{2,20})\s*(?:→|->)\s*', script_text_clean)
+            if full_flow:
+                # 找到起始节点（箭头左边的第一个）
+                first_node = re.match(r'^([^\n→\->]{2,20})', script_text_clean.strip())
+                if first_node:
+                    nodes.append(first_node.group(1).strip())
+                nodes.extend(full_flow)
+            if len(nodes) >= 2:
+                layout = self._build_flow_layout(nodes)
+                return layout
+
+        return layout
+
+    def _parse_dsl_layout(self, lines: List[str]) -> List[Dict]:
+        """解析 DSL 格式的布局描述"""
+        layout = []
+        rect_index_map = {}
+        scheme_colors = ["teal", "blue", "blue", "orange", "purple", "teal"]
+
+        for i, line in enumerate(lines):
+            line = line.strip()
+            if not line or line.startswith('#'):
+                continue
+
+            # 节点定义: [id] label (x, y, w, h)
+            # 格式: [api] API网关 (400, 100) 或 [api] API网关 (400, 100, 200, 80)
+            node_match = re.match(r'\[(\w+)\]\s+([^\(]+?)(?=\s*\(|\s*$)', line)
+            if node_match:
+                node_id = node_match.group(1)
+                label = node_match.group(2).strip()
+
+                # 单独匹配坐标
+                coord_match = re.search(r'\((\d+),(\d+)(?:,(\d+),(\d+))?\)', line)
+                if coord_match:
+                    x = int(coord_match.group(1))
+                    y = int(coord_match.group(2))
+                    w = int(coord_match.group(3)) if coord_match.group(3) else 180
+                    h = int(coord_match.group(4)) if coord_match.group(4) else 80
+                else:
+                    # 自动布局
+                    x = 350
+                    y = 150 + i * 120
+                    w = 180
+                    h = 80
+                scheme = scheme_colors[i % len(scheme_colors)]
+
+                idx = len(layout)
+                rect_index_map[node_id] = idx
+                layout.append({
+                    "type": "rect",
+                    "id": node_id,
+                    "label": label,
+                    "x": x, "y": y, "w": w, "h": h,
+                    "scheme": scheme
+                })
+                continue
+
+            # 箭头定义: [from] -> [to] label?
+            arrow_match = re.match(r'\[(\w+)\]\s*(?:→|->)\s*\[(\w+)\](?:\s*["""](.+?)["""])?', line)
+            if arrow_match:
+                from_id = arrow_match.group(1)
+                to_id = arrow_match.group(2)
+                label = arrow_match.group(3) or ""
+                if from_id in rect_index_map and to_id in rect_index_map:
+                    layout.append({
+                        "type": "arrow",
+                        "from": from_id, "to": to_id,
+                        "label": label
+                    })
+
+        return layout
+
+    def _build_flow_layout(self, nodes: List[str]) -> List[Dict]:
+        """将线性节点列表转换为网格布局"""
+        layout = []
+        scheme_colors = ["teal", "blue", "blue", "orange", "purple", "teal"]
+        canvas_w = 1080
+        node_w, node_h = 180, 80
+        cols = 3
+        padding = 40
+        gap_x = (canvas_w - cols * node_w - (cols - 1) * padding) // 2
+
+        for i, label in enumerate(nodes):
+            col = i % cols
+            row = i // cols
+            x = gap_x + col * (node_w + padding)
+            y = 150 + row * (node_h + padding + 30)
+            scheme = scheme_colors[i % len(scheme_colors)]
+            layout.append({
+                "type": "rect",
+                "id": f"node_{i}",
+                "label": label[:15],
+                "x": x, "y": y, "w": node_w, "h": node_h,
+                "scheme": scheme
+            })
+            if i > 0:
+                layout.append({
+                    "type": "arrow",
+                    "from": f"node_{i-1}",
+                    "to": f"node_{i}",
+                    "label": ""
+                })
+
+        return layout
 
 
 # ==================== 便捷函数 ====================
