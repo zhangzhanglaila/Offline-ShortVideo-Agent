@@ -54,6 +54,7 @@ class ImageFetchModule:
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self._session = requests.Session()
         self._session.headers.update(self.HEADERS)
+        self._session.trust_env = False  # 禁用系统代理，避免被代理阻断
         self._pexels_used = 0
         self._unsplash_used = 0
 

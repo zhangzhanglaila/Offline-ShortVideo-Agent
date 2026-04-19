@@ -7,13 +7,13 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import fs from "node:fs/promises";
 
-import { renderMedia, selectComposition } from "@remotion/renderer";
+import { renderMedia, selectComposition, getCompositions } from "@remotion/renderer";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const SERVER_DIR = __dirname;
-const BUNDLE_DIR = path.join(SERVER_DIR, "..", "bundle");
-const RENDER_DIR = path.join(SERVER_DIR, "..", "renders");
-const PUBLIC_DIR = path.join(SERVER_DIR, "..", "public");
+const SERVER_DIR = path.resolve(__dirname, "..");
+const BUNDLE_DIR = path.join(SERVER_DIR, "build");
+const RENDER_DIR = path.join(SERVER_DIR, "renders");
+const PUBLIC_DIR = path.join(SERVER_DIR, "public");
 
 console.info("[Server] Directories:", { SERVER_DIR, BUNDLE_DIR, RENDER_DIR, PUBLIC_DIR });
 
@@ -52,15 +52,19 @@ async function renderComposition(
   try {
     jobs.set(jobId, { status: "rendering", progress: 0, outputPath });
 
+    console.info(`[render] ${jobId} DEBUG: calling selectComposition with id=TimelineFlow, serveUrl=${SERVE_URL}`);
+
     const composition = await selectComposition({
       serveUrl: SERVE_URL,
       id: "TimelineFlow",
       inputProps: layout,
     });
 
+    console.info(`[render] ${jobId} DEBUG: selectComposition result = ${JSON.stringify(composition ? { id: composition.id, duration: composition.durationInFrames } : null)}`);
+
     if (!composition) {
       throw new Error(
-        `Composition "TimelineFlow" not found. Check that registerRoot() is called in your entry point.`
+        `Composition "CinematicTest" not found. Check that registerRoot() is called in your entry point.`
       );
     }
 
@@ -74,13 +78,17 @@ async function renderComposition(
 
     console.info(`[render] Starting render for ${jobId}...`);
     console.info(`[render] Duration: ${durationInFrames} frames`);
+    console.info(`[render] ${jobId} DEBUG: calling renderMedia, composition.id=${composition.id}`);
 
-    await renderMedia({
+    // Add timeout wrapper
+    const timeoutMs = 60000;
+    const renderPromise = renderMedia({
       serveUrl: SERVE_URL,
       composition: {
         ...composition,
         durationInFrames,
         fps: 30,
+        props: layout,
       },
       inputProps: layout,
       codec: "h264",
@@ -91,6 +99,15 @@ async function renderComposition(
         jobs.set(jobId, { status: "rendering", progress: progress.progress, outputPath });
       },
     });
+
+    console.info(`[render] ${jobId} DEBUG: renderMedia called, waiting...`);
+
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error(`TIMEOUT after ${timeoutMs}ms`)), timeoutMs);
+    });
+
+    await Promise.race([renderPromise, timeoutPromise]);
+    console.info(`[render] ${jobId} DEBUG: renderMedia completed`);
 
     jobs.set(jobId, {
       status: "completed",
@@ -113,6 +130,23 @@ const app = express();
 app.get("/test", (req, res) => {
   console.info("[Test] Route hit!");
   res.json({ ok: true });
+});
+
+// Debug route to check static files
+app.get("/debug/static", (req, res) => {
+  const fs = require('fs');
+  const files = fs.readdirSync(BUNDLE_DIR);
+  res.json({ BUNDLE_DIR, files: files.slice(0, 10) });
+});
+
+// Debug route to list all available compositions
+app.get("/debug/compositions", async (_req, res) => {
+  try {
+    const compositions = await getCompositions(SERVE_URL);
+    res.json({ compositions: compositions.map(c => ({ id: c.id, width: c.width, height: c.height })) });
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
 });
 
 // Serve static bundle files at root

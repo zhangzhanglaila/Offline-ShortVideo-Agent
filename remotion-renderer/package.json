@@ -4,9 +4,9 @@
   "description": "Remotion renderer service for Python bridge",
   "type": "module",
   "scripts": {
-    "dev": "tsx watch server",
+    "dev": "npm run build && tsx watch server",
     "start": "tsx server",
-    "build": "remotion bundle",
+    "build": "remotion bundle remotion/index.ts",
     "render": "tsx server"
   },
   "dependencies": {
