@@ -34,7 +34,31 @@ downloads/
 *.mp3
 *.mp4
 
-".env" 
-".env" 
+".env"
+".env"
 .env
 
+# Remotion 渲染器（开发时构建产物）
+remotion-renderer/node_modules/
+remotion-renderer/bundle/
+remotion-renderer/renders/
+remotion-renderer/public/fonts/*.ttf
+remotion-renderer/public/fonts/*.ttc
+remotion-renderer/public/fonts/*.woff
+remotion-renderer/public/fonts/*.woff2
+
+# 独立实验项目（与主项目无关）
+remotion/
+remotionOriginal/
+
+# 实验性/未完成的模块（调试产物）
+core/spring_easing.py
+core/spring_diagram_animation_module.py
+core/diagram_animation_module.py
+core/diagram_anagram_module.py
+
+# 测试截图输出
+*.jpg
+*.png
+!assets/thumbnails/*.jpg
+!assets/thumbnails/*.png

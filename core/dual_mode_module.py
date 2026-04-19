@@ -22,7 +22,8 @@ from core.timeline_sync_module import get_timeline_module
 from core.image_fetch_module import get_image_fetch_module
 from core.topics_module import TopicsModule
 from core.script_module import ScriptModule
-from core.diagram_animation_module import get_diagram_module
+from core.spring_diagram_animation_module import get_spring_diagram_module as get_diagram_module
+from core.remotion_bridge import RemotionBridge
 
 # 日志回调 - 实时推送进度到前端
 _dual_log_callback = None
@@ -59,6 +60,111 @@ class DualModeVideoGenerator:
             preload_count=config.CACHE_CONFIG.get("preload_count", 500)
         )
         self.script_mod = ScriptModule()
+        self._remotion_bridge: Optional[RemotionBridge] = None
+
+    def _get_remotion_bridge(self) -> Optional[RemotionBridge]:
+        """懒加载Remotion桥接器单例"""
+        if self._remotion_bridge is None:
+            try:
+                self._remotion_bridge = RemotionBridge()
+                if self._remotion_bridge.start_server(timeout=30):
+                    return self._remotion_bridge
+                else:
+                    print("[DualMode] Remotion server failed to start, falling back to PIL")
+                    self._remotion_bridge = None
+                    return None
+            except Exception as e:
+                print(f"[DualMode] Remotion bridge init failed: {e}")
+                self._remotion_bridge = None
+                return None
+        return self._remotion_bridge
+
+    def _convert_layout_for_remotion(
+        self,
+        layout: List[Dict],
+        bg_image: str = None,
+        fps: int = 30,
+    ) -> Dict:
+        """
+        将 diagram_layout 格式转换为 Remotion 布局格式
+
+        输入格式 (diagram_animation_module):
+            [
+                {"type": "rect", "id": 0, "label": "API网关", "x": 400, "y": 100,
+                 "w": 200, "h": 80, "scheme": "teal"},
+                {"type": "arrow", "from": 0, "to": 1, "label": "HTTP"},
+            ]
+
+        输出格式 (Remotion):
+            {
+                "backgroundImage": "...",
+                "boxes": [{"id": "box0", "label": "API网关", ...}],
+                "arrows": [{"id": "a0", "fromBoxId": "box0", ...}],
+            }
+        """
+        if not layout:
+            return None
+
+        boxes = []
+        arrows = []
+        box_id_map = {}  # original index -> remotion id
+
+        # 预定义配色（与 diagram_animation_module 一致）
+        color_schemes = {
+            "teal":    {"color": "#4EC9B0", "fill": "#4EC9B033", "text": "#FFFFFF"},
+            "blue":    {"color": "#569CD6", "fill": "#569CD633", "text": "#FFFFFF"},
+            "orange":  {"color": "#CE9178", "fill": "#CE917833", "text": "#FFFFFF"},
+            "purple":  {"color": "#C586C0", "fill": "#C586C033", "text": "#FFFFFF"},
+        }
+
+        for i, item in enumerate(layout):
+            t = item.get("type")
+            if t == "rect":
+                scheme = item.get("scheme", "teal")
+                colors = color_schemes.get(scheme, color_schemes["teal"])
+                box_id = f"box{i}"
+                box_id_map[i] = box_id
+
+                boxes.append({
+                    "id": box_id,
+                    "label": item.get("label", ""),
+                    "subLabel": item.get("sub", ""),
+                    "x": item.get("x", 0),
+                    "y": item.get("y", 0),
+                    "width": item.get("w", 180),
+                    "height": item.get("h", 80),
+                    "color": colors["color"],
+                    "fillColor": colors["fill"],
+                    "textColor": colors["text"],
+                    "fontSize": 18,
+                    "showFrom": i * fps * 2,   # 每个元素2秒后出现
+                    "durationInFrames": fps * 4,  # 显示4秒
+                    "highlighted": False,
+                    "highlightColor": "#CE9178",
+                })
+            elif t == "arrow":
+                from_idx = item.get("from")
+                to_idx = item.get("to")
+                if from_idx in box_id_map and to_idx in box_id_map:
+                    arrows.append({
+                        "id": f"arrow{i}",
+                        "fromBoxId": box_id_map[from_idx],
+                        "toBoxId": box_id_map[to_idx],
+                        "label": item.get("label", ""),
+                        "color": "#808080",
+                        "showFrom": (max(from_idx, to_idx) + 1) * fps * 2,
+                    })
+
+        if not boxes:
+            return None
+
+        return {
+            "backgroundImage": bg_image or "https://images.unsplash.com/photo-1518770660439-4636190af475?w=1080",
+            "boxes": boxes,
+            "arrows": arrows,
+            "width": 1080,
+            "height": 1920,
+        }
 
     # 技术讲座风格触发的赛道分类
     TECH_LECTURE_CATEGORIES = {"科技数码", "技术教程", "编程教学", "极客科普"}
@@ -217,26 +323,61 @@ class DualModeVideoGenerator:
             layout = self._parse_diagram_layout(combined_text, topic)
 
             if layout and len(layout) >= 2:
-                # 有有效布局 → 使用2D流程图动画
+                # 有有效布局 → 使用2D流程图动画（优先Remotion，其次PIL）
                 _log("📊 检测到架构/流程描述，生成2D示意图动画", 'info')
-                diagram_success = self.diagram.generate_from_layout(
-                    layout=layout,
-                    output_path=raw_video_path,
-                    fps=30,
-                    auto_duration=True,
-                )
-                animation_success = diagram_success
-                if animation_success:
-                    _log("✅ 2D流程图动画生成完成", 'info')
+
+                # 优先尝试Remotion渲染
+                remotion_bridge = self._get_remotion_bridge()
+                bg_image = image_paths[0] if image_paths else None
+
+                if remotion_bridge and bg_image:
+                    _log("🎬 使用 Remotion 渲染（Spring动画+WebGL背景）", 'info')
+                    try:
+                        remotion_layout = self._convert_layout_for_remotion(
+                            layout, bg_image=bg_image, fps=30
+                        )
+                        if remotion_layout:
+                            remotion_output = remotion_bridge.render_sync(
+                                remotion_layout,
+                                output_path=raw_video_path,
+                                timeout=300,
+                            )
+                            if remotion_output and Path(remotion_output).exists():
+                                animation_success = True
+                                _log("✅ Remotion视频生成完成", 'info')
+                            else:
+                                animation_success = False
+                                _log("⚠️ Remotion渲染失败，降级到Ken Burns", 'warn')
+                        else:
+                            animation_success = False
+                    except Exception as e:
+                        print(f"[DualMode] Remotion render error: {e}")
+                        animation_success = False
+                        _log("⚠️ Remotion异常，降级到Ken Burns", 'warn')
                 else:
-                    _log("⚠️ 流程图生成失败，降级到Ken Burns图文风格", 'warn')
-                    animation_success = self.animation.create_animated_video_from_segments(
-                        images=image_paths if image_paths else [],
-                        segments=timeline,
+                    animation_success = False
+
+                # 降级到PIL Spring动画
+                if not animation_success:
+                    _log("📦 使用PIL Spring动画（备选方案）", 'info')
+                    diagram_success = self.diagram.generate_from_layout(
+                        layout=layout,
                         output_path=raw_video_path,
-                        animation_style="ken_burns",
-                        transition="fade"
+                        fps=30,
+                        auto_duration=True,
                     )
+                    animation_success = diagram_success
+                    if animation_success:
+                        _log("✅ 2D流程图动画生成完成", 'info')
+                    else:
+                        _log("⚠️ 流程图生成失败，降级到Ken Burns图文风格", 'warn')
+                        animation_success = self.animation.create_animated_video_from_segments(
+                            images=image_paths if image_paths else [],
+                            segments=timeline,
+                            output_path=raw_video_path,
+                            animation_style="ken_burns",
+                            transition="fade"
+                        )
             else:
                 # 无布局描述 → 使用Ken Burns图文风格（顶部标题+左侧知识点+右侧代码）
                 _log("📺 无流程图描述，使用Ken Burns图文风格", 'info')
