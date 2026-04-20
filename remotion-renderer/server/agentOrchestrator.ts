@@ -19,7 +19,7 @@
  *   修复: VideoScene 每帧读 state.emphasis，驱动 shake / flash / zoom
  */
 import { generateScriptFromTopic } from "./llm";
-import { buildDirector, type DirectorIntent, type SubtitleCue, type WordCue } from "./director";
+import { buildDirector, type DirectorIntent, type SubtitleCue, type WordCue, bindEmphasisToWords } from "./director";
 import { generateVideoLayoutFromScript, preResolveAllImages } from "./generator";
 import type { Scene } from "./director";
 import type { VideoLayout } from "../remotion/types";
@@ -343,7 +343,9 @@ async function buildAudioTrack(
   const totalDuration = await getAudioDuration(finalAudioPath);
 
   // 收集所有 word-level 字幕（按 sceneIdx 分组，每段一个 SubtitleCue）
+  // 全局词序号：跨所有 segment 连续编号（用于 emphasisPointsWord 绑定）
   const wordSubtitles: SubtitleCue[] = [];
+  let globalWordIndex = 0;
   let timeOffset = 0;
   for (const seg of validSegments) {
     if (seg.wordCues && seg.wordCues.length > 0) {
@@ -352,6 +354,7 @@ async function buildAudioTrack(
         start: parseFloat(timeOffset.toFixed(3)),
         end: parseFloat((timeOffset + seg.realDuration).toFixed(3)),
         words: seg.wordCues.map((wc) => ({
+          index: globalWordIndex++,
           word: wc.word,
           start: parseFloat((timeOffset + wc.start).toFixed(3)),
           end: parseFloat((timeOffset + wc.end).toFixed(3)),
@@ -373,7 +376,8 @@ async function buildAudioTrack(
 function rebuildDirector(
   original: DirectorIntent,
   segments: TTSResult[],
-  script: { steps: Array<{ title: string; desc: string }> }
+  script: { steps: Array<{ title: string; desc: string }> },
+  subtitleCues: SubtitleCue[],
 ): DirectorIntent {
   const newScenes: Scene[] = [];
   let currentStart = 0;
@@ -398,11 +402,16 @@ function rebuildDirector(
     return Array.from({ length: len }, (_, i) => orig[Math.round((i / (len - 1)) * (orig.length - 1))]);
   };
 
+  // 语义驱动：把时间区间 emphasisPoints 绑定到词索引
+  const emphasisPointsWord = bindEmphasisToWords(original.emphasisPoints, subtitleCues);
+
   return {
     ...original,
     scenes: newScenes,
     emotionalCurve: rebuildCurve(original.emotionalCurve, newScenes.length),
     pacingCurve: rebuildCurve(original.pacingCurve, newScenes.length),
+    subtitleCues,
+    emphasisPointsWord,
   };
 }
 
@@ -550,7 +559,7 @@ export async function runAgent(config: OrchestratorConfig): Promise<Orchestrator
     if (enableTTS) {
       audioTrack = await buildAudioTrack(script, director0, jobId, outputDir);
       if (audioTrack) {
-        director = rebuildDirector(director0, audioTrack.segments, script);
+        director = rebuildDirector(director0, audioTrack.segments, script, audioTrack.wordSubtitles);
         console.info(`[Orchestrator:${jobId}] 4: audio=${audioTrack.totalDuration.toFixed(3)}s, wordCues=${audioTrack.wordSubtitles.length}`);
       } else {
         console.warn(`[Orchestrator:${jobId}] 4: TTS failed`);
