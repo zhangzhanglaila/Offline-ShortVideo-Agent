@@ -1,16 +1,189 @@
 /**
- * VideoScene.tsx - V6 视频级渲染引擎
+ * VideoScene.tsx - V13 剪辑决策引擎
  *
- * 基于 elements[] 的动态渲染：
- * - 每个元素根据 animation metadata 动态计算 opacity/transform
- * - 支持: fade, slide-up, slide-down, zoom-in, zoom-out, bounce-in, blur-in
- * - 元素层级通过 zIndex 控制
+ * v13 Architecture: Timeline-aware Editorial Policy Layer
+ *
+ * 三层分离（关键设计）：
+ *   1. TransitionPlanner  — 整条视频的 transition 规划（pure function, useMemo）
+ *   2. useTransitionPlan  — 将规划接入 React 渲染管线（无状态）
+ *   3. useShotsAroundFrame — 执行：查规划 + 驱动 CSS transform
+ *
+ * 相比 v12 的本质区别：
+ *   v12: reactive（每帧根据 frame 实时决定）→ module-level state 污染风险
+ *   v13: planned（一次性规划全 timeline）→ 无状态，纯函数，无跨视频污染
  */
 import React, { useMemo } from "react";
 import { AbsoluteFill, useCurrentFrame, useVideoConfig, interpolate, Easing, Img, spring } from "remotion";
 import { FONT_FAMILY } from "./constants";
 import type { VideoLayout, VideoElement, TextElement, ImageElement, StickerElement, BackgroundElement, ShapeElement, Shot } from "./types";
 import { evaluateDirector, type DirectorState } from "./directorEval";
+
+// ============================================================
+// v13: Transition Planner（核心新模块）
+// ============================================================
+
+export type TransitionType = "whip" | "fade" | "zoom";
+
+/**
+ * 单个镜头的 transition 决策
+ * microCut: shot 内部的 micro-cut（v13 新增，在 shot 60%~62% 处做微冲击）
+ */
+export interface TransitionDecision {
+  shotIndex: number;
+  type: TransitionType;
+  /** shot 内部 micro-cut 的时间点（0~1，相对于 shot 长度） */
+  microCutAt?: number;
+  /** micro-cut 的强度（0~1） */
+  microCutIntensity?: number;
+}
+
+/**
+ * 全量 transition 规划（整个 timeline 一次性算好）
+ * Map: shotIndex → TransitionDecision
+ */
+export type TransitionPlan = Map<number, TransitionDecision>;
+
+/**
+ * v13: 剪辑预算系统（Budget-based Editorial Policy）
+ *
+ * whip   = -3 budget（高消耗）
+ * zoom   = -1 budget
+ * fade   = +0.5 budget（恢复）
+ *
+ * budget 耗尽 → 强制 fade/zoom
+ * budget 缓慢自动恢复（+0.5/shot）
+ *
+ * cooldown: cooldown > 0 时禁止 whip
+ */
+interface EditorState {
+  budget: number;
+  cooldown: number; // frames
+  lastTransition: TransitionType;
+}
+
+const MAX_BUDGET = 6;
+const BUDGET_REGEN = 0.5;      // 每 shot 恢复 0.5 budget
+const WHIP_COST = 3;
+const ZOOM_COST = 1;
+const COOLDOWN_FRAMES = 8;     // whip 后强制 cooldown 8 帧（≈ 0.27秒@30fps）
+const MAX_CONSECUTIVE_WHIP = 2;
+
+/**
+ * v13: 一次性规划整条视频的 transition 决策
+ *
+ * @param shots - 镜头序列
+ * @param emotions - 每个 shot 对应的情绪强度（0~1），长度应与 shots 一致
+ * @param fps - 帧率
+ *
+ * 算法：
+ *   1. 从全局 budget + cooldown 状态机出发
+ *   2. 对每个 shot boundary：
+ *      - emotion → rawType
+ *      - budget/cooldown 校验 → 降级
+ *      - lastTransition 防重复
+ *      - consecutiveWhip 限制
+ *   3. 更新状态机
+ *   4. 记录 micro-cut（shot 60%~62%）
+ */
+function buildTransitionPlan(
+  shots: Shot[],
+  emotions: number[],
+  fps: number
+): TransitionPlan {
+  const plan = new Map<number, TransitionDecision>();
+  let state: EditorState = {
+    budget: MAX_BUDGET,
+    cooldown: 0,
+    lastTransition: "zoom",
+  };
+  let consecutiveWhip = 0;
+
+  for (let i = 0; i < shots.length - 1; i++) {
+    const emotion = emotions[i] ?? 0.5;
+    const beat = Math.sin((shots[i].start / fps) * 0.05);
+    const rhythmBoost = beat > 0.6 ? 1 : beat < -0.4 ? -1 : 0;
+
+    // ── Step 1: emotion → raw type ──────────────────────────
+    let rawType: TransitionType =
+      emotion >= 0.75 + (rhythmBoost > 0 ? 0 : -0.1)
+        ? "whip"
+        : emotion <= 0.35 + (rhythmBoost < 0 ? 0.1 : 0)
+        ? "fade"
+        : "zoom";
+
+    // ── Step 2: cooldown 校验 ────────────────────────────────
+    if (state.cooldown > 0) {
+      rawType = rawType === "whip" ? "zoom" : rawType;
+      state.cooldown--;
+    }
+
+    // ── Step 3: budget 校验 ─────────────────────────────────
+    if (rawType === "whip" && state.budget < WHIP_COST) {
+      rawType = state.budget >= ZOOM_COST ? "zoom" : "fade";
+    }
+
+    // ── Step 4: lastTransition 防重复 ───────────────────────
+    let type: TransitionType = rawType;
+    if (type === state.lastTransition) {
+      if (type === "whip") type = "zoom";
+      else if (type === "zoom") type = "fade";
+      else type = "zoom";
+    }
+
+    // ── Step 5: consecutiveWhip 限制 ────────────────────────
+    if (type === "whip") {
+      consecutiveWhip++;
+      if (consecutiveWhip >= MAX_CONSECUTIVE_WHIP) {
+        type = "zoom";
+        consecutiveWhip = 0;
+      }
+    } else {
+      consecutiveWhip = 0;
+    }
+
+    // ── Step 6: 消耗 budget + 设置 cooldown ──────────────────
+    if (type === "whip") {
+      state.budget -= WHIP_COST;
+      state.cooldown = COOLDOWN_FRAMES;
+    } else if (type === "zoom") {
+      state.budget -= ZOOM_COST;
+    } else {
+      state.budget = Math.min(MAX_BUDGET, state.budget + BUDGET_REGEN);
+    }
+
+    // ── Step 7: micro-cut（shot 内部剪辑感，v13 新增）──────────
+    // 在 shot 的 60%~62% 处注入 micro-cut，让 shot 内部也有剪辑感
+    const microCutAt = 0.60 + Math.abs(Math.sin(shots[i].start * 0.03)) * 0.02;
+    const microCutIntensity = emotion * 0.12; // 情绪越强 micro-cut 越明显
+
+    plan.set(i, {
+      shotIndex: i,
+      type,
+      microCutAt,
+      microCutIntensity,
+    });
+
+    state.lastTransition = type;
+  }
+
+  return plan;
+}
+
+/**
+ * v13: 将 buildTransitionPlan 接入 React 渲染管线
+ * 依赖 shots + emotions（都加了 useMemo），结果稳定不变
+ */
+function useTransitionPlan(
+  shots: VideoLayout["shots"],
+  emotions: number[],
+  fps: number
+): TransitionPlan {
+  const plan = useMemo(
+    () => buildTransitionPlan(shots ?? [], emotions, fps),
+    [shots, emotions.join(","), fps]
+  );
+  return plan;
+}
 
 // ============================================================
 // 动画计算 Hook
@@ -367,19 +540,21 @@ function useDirectorState(layout: VideoLayout): DirectorState | null {
 const TRANSITION_FRAMES = 8;
 
 /**
- * v10.5 / v11: Transition 多样性 + 节奏感
+ * v13: 执行层 — 查规划 + 驱动 CSS transform
  *
- * emotion → transition type:
- *   intense → whip（快甩）
- *   calm   → fade（慢淡）
- *   default → zoom（cross-zoom，带 impact frame）
+ * 相比 v12 的根本区别：
+ *   v12: 每帧 reactive 决策（module state → 跨视频污染风险）
+ *   v13: 查预建规划（pure lookup → 无状态，无污染）
  *
- * emotion 从 directorState 传入（0~1 数值）
+ * microCut: shot 内部 micro-cut（v13 新增）
+ *   在 shot 的 microCutAt 时刻注入微冲击
+ *   效果：镜头内部也有剪辑感（不只是 shot boundary）
  */
 function useShotsAroundFrame(
   shots: VideoLayout["shots"],
   cameraOverride: string,
-  emotion: number
+  plan: TransitionPlan,
+  emotions: number[]
 ): {
   current: Shot | null;
   next: Shot | null;
@@ -409,16 +584,17 @@ function useShotsAroundFrame(
   const t = inWindow ? (frame - (shotEnd - TRANSITION_FRAMES)) / TRANSITION_FRAMES : 0;
   const isTransitioning = !!(inWindow && t >= 0 && t <= 1);
 
-  // ── v11: emotion → transition type ─────────────────────────
-  // intense → whip（横向甩切）
-  // calm   → fade（纯淡入淡出）
-  // default → zoom（带 impact frame）
-  const transitionType =
-    emotion >= 0.75
-      ? "whip"
-      : emotion <= 0.35
-      ? "fade"
-      : "zoom";
+  // ── v13: 从预建规划中查 TransitionDecision ───────────────────
+  const decision = plan.get(idx);
+  const transitionType: TransitionType = decision?.type ?? "zoom";
+
+  // ── v13: Shot 内部 micro-cut ────────────────────────────────
+  // 在 microCutAt 时刻注入 scale spike（制造 shot 内部剪辑感）
+  const progressInShot = current.duration > 0 ? (frame - current.start) / current.duration : 0;
+  const microCutAt = decision?.microCutAt ?? 0.60;
+  const microCutIntensity = decision?.microCutIntensity ?? 0.08;
+  const nearMicroCut = Math.abs(progressInShot - microCutAt) < 0.025;
+  const microCutScale = nearMicroCut ? 1 + microCutIntensity : 1;
 
   // ── v10.5: Impact frame — 中间帧微冲击（制造"剪辑点"节奏感）──
   // 仅 zoom 类型生效，在 t≈0.5 时产生一个 scale spike
@@ -453,7 +629,7 @@ function useShotsAroundFrame(
     // whip pan：横向甩切（t=0→1，current快速右甩出，next从右滑入）
     const whipCurrent = isTransitioning ? interpolate(t, [0, 1], [0, 800], { easing: Easing.out(Easing.quad) }) : 0;
     const whipNext = isTransitioning ? interpolate(t, [0, 1], [200, 0], { easing: Easing.out(Easing.quad) }) : 0;
-    currentTransform = `translateX(${whipCurrent}px)`;
+    currentTransform = `translateX(${whipCurrent}px) scale(${microCutScale})`;
     nextTransform = `translateX(${whipNext}px)`;
     // whip: 透明度在最后一段才切（不是全程淡）
     const whipCutoff = interpolate(t, [0, 1], [0, 1], { easing: Easing.linear });
@@ -465,7 +641,7 @@ function useShotsAroundFrame(
     nextOpacity = Math.max(0, Math.min(1, nextOpacity + Math.sin(frame * 11.3 + 1.5) * 0.012));
   } else if (transitionType === "fade") {
     // fade：纯 opacity 渐变，无 scale（适合慢内容）
-    currentTransform = `translateX(${exitTranslate * 0.3}px)`;
+    currentTransform = `translateX(${exitTranslate * 0.3}px) scale(${microCutScale})`;
     nextTransform = `translateX(${-enterTranslate * 0.3}px)`;
     const fadeT = isTransitioning ? interpolate(t, [0, 1], [1, 0], { easing: Easing.linear }) : 1;
     const fadeNext = isTransitioning ? interpolate(t, [0, 1], [0, 1], { easing: Easing.linear }) : 0;
@@ -478,7 +654,8 @@ function useShotsAroundFrame(
     const exitFade = isTransitioning ? interpolate(t, [0, 1], [1, 0], { easing: Easing.linear }) : 1;
     const enterZoom = isTransitioning ? interpolate(t, [0, 1], [1.15, 1], { easing: Easing.out(Easing.quad) }) : 1;
     const enterFade = isTransitioning ? interpolate(t, [0, 1], [0, 1], { easing: Easing.linear }) : 0;
-    currentTransform = `translateX(${exitTranslate}px) scale(${exitZoom * impactScale})`;
+    // v13 microCutScale: 镜头内部微冲击（叠加在 exitZoom 之上）
+    currentTransform = `translateX(${exitTranslate}px) scale(${exitZoom * impactScale * microCutScale})`;
     nextTransform = `translateX(${-enterTranslate}px) scale(${enterZoom})`;
     const noise = Math.sin(frame * 13.7) * 0.015;
     const nextNoise = Math.sin(frame * 11.3 + 1.5) * 0.015;
@@ -616,6 +793,22 @@ export const VideoScene: React.FC<{ layout: VideoLayout }> = ({ layout }) => {
   // 由 useDirectorState 每帧从 evaluateDirector() 实时查询
   const directorState = useDirectorState(layout);
 
+  // ── v13: 为每个 shot 计算代表情绪（用于 transition 规划）──
+  // emotion 在 shot 中点采样，得到 per-shot 的情绪序列
+  const { fps, durationInFrames } = useVideoConfig();
+  const emotions = useMemo(() => {
+    if (!layout.shots || !layout.director) return [];
+    return layout.shots.map((shot) => {
+      const midT = (shot.start + shot.duration / 2) / fps;
+      const duration = durationInFrames / fps;
+      const state = evaluateDirector(layout.director!, midT, duration);
+      return state?.emotion ?? 0.5;
+    });
+  }, [layout.shots, layout.director, fps, durationInFrames]);
+
+  // ── v13: Transition Planner（整条视频一次性规划）─────────────
+  const transitionPlan = useTransitionPlan(layout.shots ?? [], emotions, fps);
+
   // ── 全局 zoom（开场冲击 → 情绪驱动）──
   // emotionEffect.zoomBase 由情绪层决定（intense=1.05, calm=1.0）
   const introZoom = directorState
@@ -701,7 +894,7 @@ export const VideoScene: React.FC<{ layout: VideoLayout }> = ({ layout }) => {
       {/* 渲染在 elements 下方（zIndex=-1），当前+下一 shot 同时渲染，transition 区间渐变 */}
       {(() => {
         const { current, next, currentTransform, nextTransform, nextShotTransform, nextEmotionTransform, currentOpacity, nextOpacity, isTransitioning } =
-          useShotsAroundFrame(layout.shots, cameraOverride, directorState?.emotion ?? 0.5);
+          useShotsAroundFrame(layout.shots, cameraOverride, transitionPlan, emotions);
         if (!current) return null;
 
         // 当前 shot
