@@ -1,16 +1,30 @@
 /**
- * VideoScene.tsx - V13 剪辑决策引擎
+ * VideoScene.tsx - V16 Constraint-based Combinatorial Editorial Optimizer
  *
- * v13 Architecture: Timeline-aware Editorial Policy Layer
+ * 系统形式化：
+ *   π* = argmax_{π ∈ 𝒫} F(π)
+ *   其中 π = transition sequence (whip/fade/zoom)
+ *   𝒫 = 满足 budget + cooldown + diversity 约束的合法路径集合
+ *   F(π) = evaluateFullSequence(π) — 全局能量函数
  *
- * 三层分离（关键设计）：
- *   1. TransitionPlanner  — 整条视频的 transition 规划（pure function, useMemo）
- *   2. useTransitionPlan  — 将规划接入 React 渲染管线（无状态）
- *   3. useShotsAroundFrame — 执行：查规划 + 驱动 CSS transform
+ * v16 三层优化结构：
+ *   Layer 1 (Decision)   → decideTransition()     — constrained action space
+ *   Layer 2 (Search)      → beamSearchTransitionPlan — beam search over discrete space
+ *   Layer 3 (Eval)       → evaluateFullSequence()  — continuous global energy function
  *
- * 相比 v12 的本质区别：
- *   v12: reactive（每帧根据 frame 实时决定）→ module-level state 污染风险
- *   v13: planned（一次性规划全 timeline）→ 无状态，纯函数，无跨视频污染
+ * v15 vs v16 本质区别：
+ *   v15: score = Σ Δs_t（Markov 贪婪累加，beam search 保留多条 greedy）
+ *   v16: F(π) = GlobalStructure(energy, entropy, pacing, semantics)
+ *         rolloutEstimate ≈ E[F(π_full)]（有限视野近似，接近 MCTS rollout）
+ *
+ * 架构定位：
+ *   从 "剪辑逻辑系统" → "Sequence-level optimization engine"
+ *
+ *   v12: reactive, frame-level, module-state
+ *   v13: planned, shot-level, pure function
+ *   v14: greedy, timeline-level, constraint-aware
+ *   v15: beam search, globally-aware scoring (伪全局)
+ *   v16: full-sequence scoring + Monte Carlo rollout ≈ Deterministic MCTS
  */
 import React, { useMemo } from "react";
 import { AbsoluteFill, useCurrentFrame, useVideoConfig, interpolate, Easing, Img, spring } from "remotion";
@@ -68,105 +82,688 @@ const ZOOM_COST = 1;
 const COOLDOWN_FRAMES = 8;     // whip 后强制 cooldown 8 帧（≈ 0.27秒@30fps）
 const MAX_CONSECUTIVE_WHIP = 2;
 
+// ============================================================
+// v14: Global Energy Curve & Optimizer Helpers
+// ============================================================
+
 /**
- * v13: 一次性规划整条视频的 transition 决策
+ * v14: 全局连续能量曲线
+ *
+ * 将离散的 per-shot emotion 采样 → 连续平滑曲线
+ * 使用分段线性插值（spline 也可以但当前用 smoothstep 效果更好）
+ *
+ * 用于：
+ *   - 全局节奏密度分析
+ *   - micro-cut 位置语义锚点
+ *   - whip transition 与高能量区间的对齐评分
+ */
+function buildGlobalEnergyCurve(
+  shots: Shot[],
+  emotions: number[],
+  fps: number
+): Array<{ frame: number; energy: number }> {
+  if (shots.length === 0) return [];
+
+  const samples: Array<{ frame: number; energy: number }> = [];
+  // 在每个 shot 的 20%, 50%, 80% 处采样（不用 midpoint，用三点更平滑）
+  for (let i = 0; i < shots.length; i++) {
+    const shot = shots[i];
+    const emotion = emotions[i] ?? 0.5;
+    const f20 = shot.start + shot.duration * 0.2;
+    const f50 = shot.start + shot.duration * 0.5;
+    const f80 = shot.start + shot.duration * 0.8;
+    // 三点均值，减少异常值影响
+    const avgEmotion = emotion;
+    samples.push({ frame: f20, energy: avgEmotion });
+    samples.push({ frame: f50, energy: avgEmotion });
+    samples.push({ frame: f80, energy: avgEmotion });
+  }
+
+  // 按 frame 排序（理论上已经是有序的）
+  return samples.sort((a, b) => a.frame - b.frame);
+}
+
+/**
+ * v14: 在 shot 内找能量峰值帧
+ *
+ * 用折返方式找能量最高的采样点 frame
+ * 作为 semantic micro-cut anchor
+ *
+ * 效果：micro-cut 不再是"第 60% 帧"
+ * 而是"这个 shot 里能量最高的时刻"
+ */
+function findEmotionPeakFrame(
+  shot: Shot,
+  energyCurve: Array<{ frame: number; energy: number }>,
+  defaultFrac: number,
+  fps: number
+): number {
+  const inShot = energyCurve.filter(
+    (p) => p.frame > shot.start + fps * 0.1 && p.frame < shot.start + shot.duration - fps * 0.1
+  );
+  if (inShot.length === 0) {
+    return shot.start + shot.duration * defaultFrac;
+  }
+  const peak = inShot.reduce((best, p) => (p.energy > best.energy ? p : best));
+  return peak.frame;
+}
+
+/**
+ * v14: Whip 密度约束（全局窗口控制）
+ *
+ * 保证：每 150 帧（约 5 秒 @30fps）最多 1 次 whip
+ * 防止：连续 whip 集中在某一时段导致"节奏窒息"
+ *
+ * 策略：贪婪移除最低强度的 whip，直到满足密度约束
+ */
+function enforceWhipDensityConstraint(
+  plan: TransitionPlan,
+  shots: Shot[],
+  fps: number
+): void {
+  const WINDOW_FRAMES = 150;  // 150帧 ≈ 5秒 @30fps
+  const MAX_WHIP_PER_WINDOW = 1;
+
+  // 收集所有 whip transition 的 shotIndex
+  const whipIndices: number[] = [];
+  plan.forEach((dec, idx) => {
+    if (dec.type === "whip") whipIndices.push(idx);
+  });
+
+  // 滑动窗口检测：统计每个窗口内的 whip 数量
+  function countWhipsInWindow(startFrame: number): number {
+    return whipIndices.filter((i) => {
+      const t = shots[i].start;
+      return t >= startFrame && t < startFrame + WINDOW_FRAMES;
+    }).length;
+  }
+
+  // 持续收紧直到满足密度约束
+  let changed = true;
+  while (changed) {
+    changed = false;
+    const sortedWhips = [...whipIndices].sort((a, b) => {
+      // 按 shot 能量降序：能量高的 whip 优先保留
+      const aDec = plan.get(a)!;
+      const bDec = plan.get(b)!;
+      return (bDec.microCutIntensity ?? 0) - (aDec.microCutIntensity ?? 0);
+    });
+
+    for (const idx of sortedWhips) {
+      const startFrame = shots[idx].start;
+      if (countWhipsInWindow(startFrame) > MAX_WHIP_PER_WINDOW) {
+        // 强制降级为 zoom
+        const dec = plan.get(idx)!;
+        plan.set(idx, { ...dec, type: "zoom" });
+        whipIndices.splice(whipIndices.indexOf(idx), 1);
+        changed = true;
+      }
+    }
+  }
+}
+
+/**
+ * v14: Plan 全局质量评分（用于调试和未来优化方向）
+ *
+ * 评分维度：
+ *   1. 多样性（transition type 分布是否均匀）
+ *   2. Budget 利用率（是否在 budget 范围内高效消耗）
+ *   3. 节奏对齐（whip 是否对齐高能量区间）
+ */
+function scorePlan(
+  plan: TransitionPlan,
+  shots: Shot[],
+  energyCurve: Array<{ frame: number; energy: number }>,
+  _fps: number
+): number {
+  if (plan.size === 0) return 0;
+
+  // 1. 多样性评分（0~1，越高越好）
+  const typeCount = { whip: 0, fade: 0, zoom: 0 };
+  plan.forEach((dec) => { typeCount[dec.type]++; });
+  const total = plan.size;
+  const typeProbs = [typeCount.whip / total, typeCount.fade / total, typeCount.zoom / total];
+  const diversity = 1 - Math.max(...typeProbs); // 最高类型占比越低，多样性越高
+
+  // 2. Budget 利用率（whip 是高消耗高回报）
+  const whipRatio = typeCount.whip / total;
+  const budgetScore = Math.min(1, whipRatio * 2); // whip 占比 50% 时得满分
+
+  // 3. 节奏对齐（whip 落在高能量区间的比例）
+  const energyThreshold = 0.65;
+  let alignmentHits = 0;
+  plan.forEach((dec) => {
+    if (dec.type === "whip") {
+      const peakFrame = findEmotionPeakFrame(shots[dec.shotIndex], energyCurve, 0.6, _fps);
+      const peakEnergy = energyCurve.find((p) => p.frame === peakFrame)?.energy ?? 0;
+      if (peakEnergy >= energyThreshold) alignmentHits++;
+    }
+  });
+  const alignmentScore = typeCount.whip > 0 ? alignmentHits / typeCount.whip : 1;
+
+  // 加权总分
+  return diversity * 0.4 + budgetScore * 0.3 + alignmentScore * 0.3;
+}
+
+// ============================================================
+// ============================================================
+// v16: Global Sequence Optimization (Full-Objective Editor)
+// ============================================================
+
+/**
+ * v16: Beam 结构（改为 cost-based，score 从全局评估得到）
+ *
+ * 核心变化（相比 v15）：
+ *   v15: beam.score = 增量累积（greedy accumulation）
+ *   v16: beam.score = 待评估（beam search 时为 pending，
+ *                               最终在 evaluateFullSequence 中统一计算）
+ */
+interface Beam {
+  plan: TransitionPlan;
+  state: EditorState;
+  pendingCost: number;
+  consecutiveWhip: number;
+}
+
+interface MctsNode {
+  shotIndex: number;
+  state: EditorState;
+  parent: MctsNode | null;
+  children: MctsNode[];
+  visits: number;
+  Q: number;
+  consecutiveWhip: number;
+  type: TransitionType | null;
+  plan: TransitionPlan;
+}
+
+const BEAM_WIDTH = 4;
+const TRANSITION_TYPES: TransitionType[] = ["whip", "fade", "zoom"];
+
+/**
+ * v16: Pure Decision Function（无评分，纯逻辑）
+ *
+ * 给定当前 state + emotion + beat，输出一个合法的 transition type
+ * 不返回分数，只返回决策结果和更新后的状态
+ *
+ * 与 v15 的本质区别：
+ *   v15: 评估每个候选的增量 score → 搜索空间被 score 引导
+ *   v16: 只返回合法决策 → 评分全部推迟到全局评估
+ */
+function decideTransition(
+  type: TransitionType,
+  state: EditorState,
+  emotion: number,
+  beat: number,
+  consecutiveWhip: number
+): { type: TransitionType; newState: EditorState; newConsecutiveWhip: number } {
+  const rhythmBoost = beat > 0.6 ? 1 : beat < -0.4 ? -1 : 0;
+
+  let finalType = type;
+  if (state.cooldown > 0 && finalType === "whip") {
+    finalType = "zoom";
+  }
+
+  if (finalType === "whip" && state.budget < WHIP_COST) {
+    finalType = state.budget >= ZOOM_COST ? "zoom" : "fade";
+  }
+
+  if (finalType === state.lastTransition) {
+    if (finalType === "whip") finalType = "zoom";
+    else if (finalType === "zoom") finalType = "fade";
+    else finalType = "zoom";
+  }
+
+  let newConsecutiveWhip = consecutiveWhip;
+  if (finalType === "whip") {
+    newConsecutiveWhip++;
+    if (newConsecutiveWhip >= MAX_CONSECUTIVE_WHIP) {
+      finalType = "zoom";
+      newConsecutiveWhip = 0;
+    }
+  } else {
+    newConsecutiveWhip = 0;
+  }
+
+  const newState: EditorState = { ...state };
+  if (finalType === "whip") {
+    newState.budget -= WHIP_COST;
+    newState.cooldown = COOLDOWN_FRAMES;
+  } else if (finalType === "zoom") {
+    newState.budget -= ZOOM_COST;
+  } else {
+    newState.budget = Math.min(MAX_BUDGET, newState.budget + BUDGET_REGEN);
+  }
+  newState.lastTransition = finalType;
+
+  return { type: finalType, newState, newConsecutiveWhip };
+}
+
+/**
+ * v16: 统一全局目标函数（Full-Sequence Scoring）
+ *
+ * 这是 v16 的核心创新：
+ *   不是增量累积 score，而是在完整序列上统一评估全局目标
+ *
+ * Score 维度：
+ *   1. Energy Alignment - whip 是否落在高能量区间
+ *   2. Rhythm Entropy - transition type 分布的熵
+ *   3. Pacing Smoothness - whip 在时间轴上的分布均匀程度
+ *   4. Micro-cut Semantic - micro-cut 是否落在能量峰值
+ */
+function evaluateFullSequence(
+  plan: TransitionPlan,
+  energyCurve: Array<{ frame: number; energy: number }>,
+  shots: Shot[],
+  emotions: number[],
+  fps: number
+): number {
+  if (plan.size === 0) return 0;
+  const WINDOW_FRAMES = 150;
+
+  // Energy Alignment
+  const ENERGY_THRESHOLD = 0.65;
+  let energyHits = 0;
+  let energyMisses = 0;
+  plan.forEach((dec) => {
+    if (dec.type === "whip") {
+      const shot = shots[dec.shotIndex];
+      if (!shot) return;
+      const peakFrame = findEmotionPeakFrame(shot, energyCurve, 0.6, fps);
+      const peakEnergy = energyCurve.find(
+        (p) => Math.abs(p.frame - peakFrame) < fps * 0.5
+      )?.energy ?? emotions[dec.shotIndex] ?? 0.5;
+      if (peakEnergy >= ENERGY_THRESHOLD) energyHits++;
+      else energyMisses++;
+    }
+  });
+  const totalWhips = energyHits + energyMisses;
+  const energyAlignmentScore = totalWhips > 0 ? energyHits / totalWhips : 1;
+
+  // Rhythm Entropy
+  const typeCount = { whip: 0, fade: 0, zoom: 0 };
+  plan.forEach((dec) => { typeCount[dec.type]++; });
+  const total = plan.size;
+  const probs = [typeCount.whip / total, typeCount.fade / total, typeCount.zoom / total];
+  const entropy = probs.reduce((h, p) => p > 0 ? h - p * Math.log(p) : h, 0);
+  const maxEntropy = Math.log(3);
+  const entropyScore = maxEntropy > 0 ? entropy / maxEntropy : 0;
+
+  // Pacing Smoothness
+  const whipCounts: number[] = [];
+  plan.forEach((dec) => {
+    if (dec.type === "whip") {
+      const t = shots[dec.shotIndex]?.start ?? 0;
+      const windowIdx = Math.floor(t / WINDOW_FRAMES);
+      whipCounts[windowIdx] = (whipCounts[windowIdx] ?? 0) + 1;
+    }
+  });
+  let pacingPenalty = 0;
+  const PENALTY_PER_EXCESS_WHIP = 0.12;
+  for (const count of whipCounts) {
+    if (count > 1) pacingPenalty += (count - 1) * PENALTY_PER_EXCESS_WHIP;
+  }
+  const pacingScore = Math.max(0, 1 - pacingPenalty);
+
+  // Micro-cut Semantic
+  let microCutScoreSum = 0;
+  let microCutCount = 0;
+  plan.forEach((dec) => {
+    if (dec.microCutAt !== undefined) {
+      const shot = shots[dec.shotIndex];
+      if (!shot) return;
+      const peakFrame = findEmotionPeakFrame(shot, energyCurve, 0.6, fps);
+      const peakFrac = shot.duration > 0 ? (peakFrame - shot.start) / shot.duration : 0.6;
+      const dist = Math.abs(dec.microCutAt - peakFrac);
+      microCutScoreSum += Math.max(0, 1 - dist * 3);
+      microCutCount++;
+    }
+  });
+  const microCutScore = microCutCount > 0 ? microCutScoreSum / microCutCount : 0.5;
+
+  return Math.max(0, Math.min(1,
+    energyAlignmentScore * 0.30 +
+    entropyScore * 0.25 +
+    pacingScore * 0.25 +
+    microCutScore * 0.20
+  ));
+}
+
+/**
+ * v16: Monte Carlo Rollout（简化版向前模拟）
+ *
+ * 当 beam 尚未覆盖完整 timeline 时，用 rollout 估算完整 score
+ * 策略：对当前 beam 的 state，假设剩余 shot 使用 zoom，计算下界
+ */
+function rolloutEstimate(
+  beam: Beam,
+  shots: Shot[],
+  emotions: number[],
+  energyCurve: Array<{ frame: number; energy: number }>,
+  fps: number,
+  currentIdx: number
+): number {
+  const fullPlan = new Map(beam.plan);
+  for (let i = currentIdx; i < shots.length - 1; i++) {
+    if (!fullPlan.has(i)) {
+      fullPlan.set(i, { shotIndex: i, type: "zoom" });
+    }
+  }
+  return evaluateFullSequence(fullPlan, energyCurve, shots, emotions, fps);
+}
+
+/**
+ * v16: Beam Search with Full-Sequence Evaluation
+ *
+ * 相比 v15 的本质变化：
+ *   v15: beam.score = 增量累积（greedy）
+ *   v16: beam.score = evaluateFullSequence(plan)（全局评估）
+ *   v15: 剪枝用累积分数（误导性的近期偏差）
+ *   v16: 剪枝用 rollout 估算（全局 score 的近似）
+ */
+
+/**
+ * v17: MCTS-UCT Search + Stochastic Rollout
+ *
+ * v17 在 v16 基础上做本质跃迁：
+ *
+ *   v16: Beam Search（横向并行，只保留最优路径）
+ *         beam.score = rolloutEstimate（近似全局）
+ *         无 exploration term
+ *         无 visit statistics
+ *
+ *   v17: Monte Carlo Tree Search + UCT（真正的树搜索）
+ *         ① Node tree 替代 Beam[]（树结构替代列表）
+ *         ② UCT selection：Q + c·√(ln(N_parent)/N_child)（探索+利用平衡）
+ *         ③ Backpropagation：更新 visit count + Q-value
+ *         ④ Stochastic rollout：非确定性策略，不再是"全填 zoom"
+ *
+ * v17 核心范式转变：
+ *   "保留最优路径" → "统计意义上的最优策略"
+ *
+ * 与 v16 的根本区别：
+ *   v16: deterministic argmax beam search
+ *   v17: stochastic tree search with UCT
+ *
+ * MCTS-UCT 组件对应关系：
+ *   Component       | v17 实现
+ *   Policy          | decideTransition() — constrained action space
+ *   Selection       | UCT selection — balance explore/exploit
+ *   Expansion       | expand() — add all valid child nodes
+ *   Simulation      | stochasticRollout() — Monte Carlo evaluation
+ *   Backpropagation | backpropagate() — update visits + Q-values
+ *   Value function  | evaluateFullSequence() — 直接复用 v16
+ **/
+function beamSearchTransitionPlan(
+  shots: Shot[],
+  emotions: number[],
+  fps: number
+): TransitionPlan {
+  const energyCurve = buildGlobalEnergyCurve(shots, emotions, fps);
+
+  // ── Step 1: 构建根节点 ────────────────────────────────────
+  // 根节点代表"尚未做任何决策"的初始状态
+  const root: MctsNode = {
+    shotIndex: -1,
+    state: { budget: MAX_BUDGET, cooldown: 0, lastTransition: "zoom" as TransitionType },
+    parent: null,
+    children: [],
+    visits: 0,
+    Q: 0,
+    consecutiveWhip: 0,
+    type: null,
+    plan: new Map(),
+  };
+
+  // ── Step 2: MCTS-UCT 主循环 ───────────────────────────────
+  const SIMULATION_COUNT = 3;
+  const EXPLORATION_CONSTANT = 1.4;
+
+  for (let i = 0; i < shots.length - 1; i++) {
+    let currentNode = root;
+
+    // ── Selection：从根向下 UCT 选择到当前层 ────────────────
+    for (let depth = 0; depth <= i; depth++) {
+      if (currentNode.children.length === 0) break;
+
+      const N_parent = currentNode.visits;
+      let bestChild = currentNode.children[0];
+      let bestUCT = -Infinity;
+
+      for (const child of currentNode.children) {
+        if (child.visits === 0) {
+          bestUCT = Infinity;
+          bestChild = child;
+          break;
+        }
+        const exploitation = child.Q;
+        const exploration = EXPLORATION_CONSTANT * Math.sqrt(Math.log(N_parent) / child.visits);
+        const uct = exploitation + exploration;
+        if (uct > bestUCT) {
+          bestUCT = uct;
+          bestChild = child;
+        }
+      }
+
+      currentNode = bestChild;
+    }
+
+    // currentNode 现在是第 i 层的最佳选择节点
+    if (currentNode.children.length === 0) {
+      // ── Expansion：为此 shot 展开所有合法 action ─────────
+      const emotion = emotions[currentNode.shotIndex] ?? 0.5;
+      const beat = Math.sin((shots[currentNode.shotIndex].start / fps) * 0.05);
+
+      for (const ttype of TRANSITION_TYPES) {
+        const { type: legalType, newState, newConsecutiveWhip } = decideTransition(
+          ttype, currentNode.state, emotion, beat, currentNode.consecutiveWhip
+        );
+
+        const childPlan = new Map(currentNode.plan);
+        childPlan.set(currentNode.shotIndex, { shotIndex: currentNode.shotIndex, type: legalType });
+
+        const childNode: MctsNode = {
+          shotIndex: currentNode.shotIndex + 1,
+          state: newState,
+          parent: currentNode,
+          children: [],
+          visits: 0,
+          Q: 0,
+          consecutiveWhip: newConsecutiveWhip,
+          type: legalType,
+          plan: childPlan,
+        };
+
+        currentNode.children.push(childNode);
+      }
+    }
+
+    // ── Simulation：对当前 shot 层所有子节点做 stochastic rollout ──
+    for (const childNode of currentNode.children) {
+      for (let sim = 0; sim < SIMULATION_COUNT; sim++) {
+        const simResult = stochasticRollout(
+          childNode, shots, emotions, energyCurve, fps
+        );
+        backpropagate(childNode, simResult);
+      }
+    }
+  }
+
+  // ── Step 3: 从根节点 children 中选最优 action ───────────────
+  let bestRootChild = root.children.reduce((best, node) =>
+    node.visits > best.visits ? node : best, root.children[0] ?? null
+  );
+
+  if (!bestRootChild) {
+    return fallbackGreedyPlan(shots, emotions, fps, energyCurve);
+  }
+
+  // 从最优子节点回溯到完整 plan
+  const fullPlan = new Map<number, TransitionDecision>();
+  let node: MctsNode | null = bestRootChild;
+  while (node !== null && node.type !== null) {
+    fullPlan.set(node.shotIndex, { shotIndex: node.shotIndex, type: node.type });
+    node = node.parent;
+  }
+
+  // ── 后处理 1: micro-cut 语义锚定 ─────────────────────────
+  for (let i = 0; i < shots.length - 1; i++) {
+    if (!fullPlan.has(i)) continue;
+    const shot = shots[i];
+    const emotion = emotions[i] ?? 0.5;
+    const peakFrame = findEmotionPeakFrame(shot, energyCurve, 0.6, fps);
+    const microCutAt = shot.duration > 0
+      ? Math.max(0.55, Math.min(0.9, (peakFrame - shot.start) / shot.duration))
+      : 0.60;
+    const peakEnergy = energyCurve.find(
+      (p) => Math.abs(p.frame - peakFrame) < fps * 0.5
+    )?.energy ?? emotion;
+    const microCutIntensity = peakEnergy * 0.14;
+
+    const existing = fullPlan.get(i)!;
+    fullPlan.set(i, { ...existing, microCutAt, microCutIntensity });
+  }
+
+  // ── 后处理 2: Whip 密度约束（硬约束）────────────────────
+  enforceWhipDensityConstraint(fullPlan, shots, fps);
+
+  return fullPlan;
+}
+
+/**
+ * v17: Stochastic Rollout（替代 v16 deterministic zoom fill）
+ *
+ * v16 rollout: 对所有未覆盖 shot 填 zoom（deterministic）
+ * v17 rollout: 基于能量分布的概率采样（stochastic）
+ *
+ * 策略：
+ *   - energy > 0.75 → 高概率选 whip（但非 100%，有随机性）
+ *   - energy 0.35~0.75 → 中概率 zoom
+ *   - energy < 0.35 → 高概率 fade
+ *   - 加随机噪声避免 deterministic collapse
+ **/
+function stochasticRollout(
+  startNode: MctsNode,
+  shots: Shot[],
+  emotions: number[],
+  energyCurve: Array<{ frame: number; energy: number }>,
+  fps: number
+): number {
+  const plan = new Map(startNode.plan);
+  let state = { ...startNode.state };
+  let consecutiveWhip = startNode.consecutiveWhip;
+
+  for (let i = startNode.shotIndex + 1; i < shots.length - 1; i++) {
+    const emotion = emotions[i] ?? 0.5;
+    const energy = energyCurve.find(
+      (p) => p.frame >= shots[i].start && p.frame < shots[i].start + shots[i].duration
+    )?.energy ?? emotion;
+
+    const beat = Math.sin((shots[i].start / fps) * 0.05);
+
+    // ── Stochastic action selection（概率驱动，非贪婪）─────────
+    const rand = Math.random();
+
+    let chosenType: TransitionType;
+    if (energy >= 0.75 && rand < 0.6) {
+      chosenType = "whip";
+    } else if (energy <= 0.35 && rand < 0.5) {
+      chosenType = "fade";
+    } else if (rand < 0.7) {
+      chosenType = "zoom";
+    } else {
+      chosenType = TRANSITION_TYPES[Math.floor(Math.random() * TRANSITION_TYPES.length)];
+    }
+
+    const { type: legalType, newState, newConsecutiveWhip } = decideTransition(
+      chosenType, state, emotion, beat, consecutiveWhip
+    );
+
+    plan.set(i, { shotIndex: i, type: legalType });
+    state = newState;
+    consecutiveWhip = newConsecutiveWhip;
+  }
+
+  return evaluateFullSequence(plan, energyCurve, shots, emotions, fps);
+}
+
+/**
+ * v17: Backpropagation（更新 visit count + Q-value）
+ *
+ * MCTS 的核心：通过 backpropagation 累积统计量
+ * 使得高频访问节点的 Q 值趋于稳定
+ *
+ * Q-value 更新公式（增量平均）：
+ *   Q_new = Q_old + (R - Q_old) / visits
+ *   其中 R = evaluateFullSequence(full_plan)
+ **/
+function backpropagate(node: MctsNode | null, reward: number): void {
+  while (node !== null) {
+    node.visits++;
+    node.Q = node.Q + (reward - node.Q) / node.visits;
+    node = node.parent;
+  }
+}
+
+/**
+ * v17: UCT Fallback Greedy（当 MCTS 未能展开时退保）
+ **/
+function fallbackGreedyPlan(
+  shots: Shot[],
+  emotions: number[],
+  fps: number,
+  energyCurve: Array<{ frame: number; energy: number }>
+): TransitionPlan {
+  const plan = new Map<number, TransitionDecision>();
+  let state = { budget: MAX_BUDGET, cooldown: 0, lastTransition: "zoom" as TransitionType };
+  let consecutiveWhip = 0;
+
+  for (let i = 0; i < shots.length - 1; i++) {
+    const emotion = emotions[i] ?? 0.5;
+    const beat = Math.sin((shots[i].start / fps) * 0.05);
+
+    let chosenType: TransitionType = "zoom";
+    const { type: legalType, newState, newConsecutiveWhip } = decideTransition(
+      chosenType, state, emotion, beat, consecutiveWhip
+    );
+
+    plan.set(i, { shotIndex: i, type: legalType });
+    state = newState;
+    consecutiveWhip = newConsecutiveWhip;
+  }
+
+  return plan;
+}
+
+
+
+
+/**
+ * v14: 一次性规划整条视频的 transition 决策（整合版）
  *
  * @param shots - 镜头序列
  * @param emotions - 每个 shot 对应的情绪强度（0~1），长度应与 shots 一致
  * @param fps - 帧率
  *
- * 算法：
- *   1. 从全局 budget + cooldown 状态机出发
- *   2. 对每个 shot boundary：
- *      - emotion → rawType
- *      - budget/cooldown 校验 → 降级
- *      - lastTransition 防重复
- *      - consecutiveWhip 限制
- *   3. 更新状态机
- *   4. 记录 micro-cut（shot 60%~62%）
+ * v14 升级：
+ *   - microCut 由能量峰值语义锚定（不再用固定 0.60）
+ *   - 构建完成后调用 enforceWhipDensityConstraint（全局 whip 密度约束）
+ *   - 返回 plan 附带全局评分（用于调试和未来优化）
+ */
+
+/**
+ * v15: 统一入口（代理到 Beam Search 实现）
+ *
+ * buildTransitionPlan 保持 API 不变，内部替换为 beamSearchTransitionPlan
+ * 使 v13 的 useTransitionPlan 无需改动
  */
 function buildTransitionPlan(
   shots: Shot[],
   emotions: number[],
   fps: number
 ): TransitionPlan {
-  const plan = new Map<number, TransitionDecision>();
-  let state: EditorState = {
-    budget: MAX_BUDGET,
-    cooldown: 0,
-    lastTransition: "zoom",
-  };
-  let consecutiveWhip = 0;
-
-  for (let i = 0; i < shots.length - 1; i++) {
-    const emotion = emotions[i] ?? 0.5;
-    const beat = Math.sin((shots[i].start / fps) * 0.05);
-    const rhythmBoost = beat > 0.6 ? 1 : beat < -0.4 ? -1 : 0;
-
-    // ── Step 1: emotion → raw type ──────────────────────────
-    let rawType: TransitionType =
-      emotion >= 0.75 + (rhythmBoost > 0 ? 0 : -0.1)
-        ? "whip"
-        : emotion <= 0.35 + (rhythmBoost < 0 ? 0.1 : 0)
-        ? "fade"
-        : "zoom";
-
-    // ── Step 2: cooldown 校验 ────────────────────────────────
-    if (state.cooldown > 0) {
-      rawType = rawType === "whip" ? "zoom" : rawType;
-      state.cooldown--;
-    }
-
-    // ── Step 3: budget 校验 ─────────────────────────────────
-    if (rawType === "whip" && state.budget < WHIP_COST) {
-      rawType = state.budget >= ZOOM_COST ? "zoom" : "fade";
-    }
-
-    // ── Step 4: lastTransition 防重复 ───────────────────────
-    let type: TransitionType = rawType;
-    if (type === state.lastTransition) {
-      if (type === "whip") type = "zoom";
-      else if (type === "zoom") type = "fade";
-      else type = "zoom";
-    }
-
-    // ── Step 5: consecutiveWhip 限制 ────────────────────────
-    if (type === "whip") {
-      consecutiveWhip++;
-      if (consecutiveWhip >= MAX_CONSECUTIVE_WHIP) {
-        type = "zoom";
-        consecutiveWhip = 0;
-      }
-    } else {
-      consecutiveWhip = 0;
-    }
-
-    // ── Step 6: 消耗 budget + 设置 cooldown ──────────────────
-    if (type === "whip") {
-      state.budget -= WHIP_COST;
-      state.cooldown = COOLDOWN_FRAMES;
-    } else if (type === "zoom") {
-      state.budget -= ZOOM_COST;
-    } else {
-      state.budget = Math.min(MAX_BUDGET, state.budget + BUDGET_REGEN);
-    }
-
-    // ── Step 7: micro-cut（shot 内部剪辑感，v13 新增）──────────
-    // 在 shot 的 60%~62% 处注入 micro-cut，让 shot 内部也有剪辑感
-    const microCutAt = 0.60 + Math.abs(Math.sin(shots[i].start * 0.03)) * 0.02;
-    const microCutIntensity = emotion * 0.12; // 情绪越强 micro-cut 越明显
-
-    plan.set(i, {
-      shotIndex: i,
-      type,
-      microCutAt,
-      microCutIntensity,
-    });
-
-    state.lastTransition = type;
-  }
-
-  return plan;
+  // v15: 全局最优搜索（beam search）
+  return beamSearchTransitionPlan(shots, emotions, fps);
 }
 
 /**

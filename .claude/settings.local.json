@@ -217,7 +217,9 @@
       "Bash(echo \"exit: $?\")",
       "Bash(grep:*)",
       "Bash(head -30 ../remotion/packages/*/types*.ts)",
-      "Bash(echo \"tsc: $?\")"
+      "Bash(echo \"tsc: $?\")",
+      "Bash(python3:*)",
+      "Bash(mv:*)"
     ]
   }
 }
