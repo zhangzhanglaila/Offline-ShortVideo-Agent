@@ -19,7 +19,7 @@
  *   修复: VideoScene 每帧读 state.emphasis，驱动 shake / flash / zoom
  */
 import { generateScriptFromTopic } from "./llm";
-import { buildDirector, type DirectorIntent, type SubtitleCue, type WordCue, bindEmphasisToWords } from "./director";
+import { buildDirector, type DirectorIntent, type SubtitleCue, type WordCue, bindEmphasisToWords, buildAllWords } from "./director";
 import { generateVideoLayoutFromScript, preResolveAllImages } from "./generator";
 import type { Scene } from "./director";
 import type { VideoLayout } from "../remotion/types";
@@ -404,6 +404,7 @@ function rebuildDirector(
 
   // 语义驱动：把时间区间 emphasisPoints 绑定到词索引
   const emphasisPointsWord = bindEmphasisToWords(original.emphasisPoints, subtitleCues);
+  const allWords = buildAllWords(subtitleCues);
 
   return {
     ...original,
@@ -411,6 +412,7 @@ function rebuildDirector(
     emotionalCurve: rebuildCurve(original.emotionalCurve, newScenes.length),
     pacingCurve: rebuildCurve(original.pacingCurve, newScenes.length),
     subtitleCues,
+    allWords,
     emphasisPointsWord,
   };
 }

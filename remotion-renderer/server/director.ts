@@ -91,6 +91,8 @@ export interface DirectorIntent {
   };
   /** word-level 字幕（由 agentOrchestrator 从 VTT 解析后注入，VideoScene 用于逐词高亮） */
   subtitleCues: SubtitleCue[];
+  /** 运行时缓存：所有词展平（避免每帧 flatten） */
+  allWords: WordCue[];
   /** VTT 解析后的词级强调点（运行时消费，绑定到具体 wordIndex） */
   emphasisPointsWord: EmphasisPointWord[];
 }
@@ -290,6 +292,7 @@ export function buildDirector(topic: string, script: VideoScript, subtitleCues?:
       ? { primary: "#FFD700", fill: "rgba(255,215,0,0.15)", text: "#FFFFFF" }
       : undefined,
     subtitleCues: subtitleCues ?? [],
+    allWords: [],
     emphasisPointsWord: [],
   };
 }
@@ -300,15 +303,17 @@ export function buildDirector(topic: string, script: VideoScript, subtitleCues?:
  * 输入：emphasisPoints（时间区间）+ subtitleCues（词级时间戳）
  * 输出：emphasisPointsWord[]（绑定到 wordIndex）
  *
- * 区间相交判断：ep.at[0] < wordEnd && ep.at[1] > wordStart
- * 落在区间内的第一个词 = 触发词
+ * 用重叠量选词（而非 find 第一个相交）：
+ *   - 选中重叠时间最长的词 = 真正的语义焦点词
+ *   - 避免 emphasis 落在词尾"擦边"的情况
  */
 export function bindEmphasisToWords(
   emphasisPoints: EmphasisPoint[],
   subtitleCues: SubtitleCue[]
 ): EmphasisPointWord[] {
   const result: EmphasisPointWord[] = [];
-  // 展平所有词并记录全局 index
+
+  // 展平所有词
   const allWords: WordCue[] = [];
   for (const cue of subtitleCues) {
     for (const w of cue.words) {
@@ -317,15 +322,39 @@ export function bindEmphasisToWords(
   }
 
   for (const ep of emphasisPoints) {
-    // 找区间内第一个词
-    const found = allWords.find(
-      (w) => ep.at[0] < w.end && ep.at[1] > w.start
-    );
-    if (found) {
-      result.push({ wordIndex: found.index, type: ep.type, action: ep.action });
+    // 重叠量计算
+    const overlap = (wStart: number, wEnd: number) =>
+      Math.max(0, Math.min(ep.at[1], wEnd) - Math.max(ep.at[0], wStart));
+
+    // 找重叠量最大的词（可能多个词重叠，取最长的）
+    let best: WordCue | null = null;
+    let bestScore = 0;
+    for (const w of allWords) {
+      const score = overlap(w.start, w.end);
+      if (score > bestScore) {
+        bestScore = score;
+        best = w;
+      }
+    }
+
+    if (best && bestScore > 0) {
+      result.push({ wordIndex: best.index, type: ep.type, action: ep.action });
     }
   }
   return result;
+}
+
+/**
+ * 把 subtitleCues 展平为 allWords（一次性，不是每帧）
+ */
+export function buildAllWords(subtitleCues: SubtitleCue[]): WordCue[] {
+  const out: WordCue[] = [];
+  for (const cue of subtitleCues) {
+    for (const w of cue.words) {
+      out.push(w);
+    }
+  }
+  return out;
 }
 
 /**
