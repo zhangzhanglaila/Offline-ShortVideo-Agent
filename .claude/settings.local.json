@@ -219,7 +219,11 @@
       "Bash(head -30 ../remotion/packages/*/types*.ts)",
       "Bash(echo \"tsc: $?\")",
       "Bash(python3:*)",
-      "Bash(mv:*)"
+      "Bash(mv:*)",
+      "Bash(/d/programs/Python/Python310/python -m py_compile dataset/dataset_loader.py)",
+      "Bash(/d/programs/Python/Python310/python -m py_compile dataset/model.py)",
+      "Bash(/d/programs/Python/Python310/python -m py_compile dataset/train.py)",
+      "Bash(/d/programs/Python/Python310/python -m py_compile dataset/evaluate.py)"
     ]
   }
 }

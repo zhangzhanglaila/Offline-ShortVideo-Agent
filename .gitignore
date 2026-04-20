@@ -47,6 +47,9 @@ remotion-renderer/public/fonts/*.ttc
 remotion-renderer/public/fonts/*.woff
 remotion-renderer/public/fonts/*.woff2
 
+# v18: RL reward dataset（不提交，生产数据）
+remotion-renderer/dataset/
+
 # 外部参考项目（不参与构建，remotion-renderer 完全自洽）
 remotion/
 remotionOriginal/
