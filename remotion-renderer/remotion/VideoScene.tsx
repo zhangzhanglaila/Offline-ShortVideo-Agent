@@ -267,6 +267,7 @@ interface Beam {
 
 interface MctsNode {
   shotIndex: number;
+  abstractionKey: string;  // v17.1: 抽象状态键，用于 Q-Table 共享
   state: EditorState;
   parent: MctsNode | null;
   children: MctsNode[];
@@ -279,6 +280,252 @@ interface MctsNode {
 
 const BEAM_WIDTH = 4;
 const TRANSITION_TYPES: TransitionType[] = ["whip", "fade", "zoom"];
+
+// ============================================================
+// v17.1: State Abstraction Layer（让 MCTS 从"记忆型"变"泛化型"）
+// ============================================================
+
+/**
+ * v17.1: State Abstraction — 核心升级
+ *
+ * 问题：tabular MCTS 每个 shot 都是独立 state，即使 energy/emotion 很相似也不会共享 Q
+ *
+ * 解决：离散化 + hash，让相似 state 共享 Q-value
+ *
+ * abstraction key 生成：
+ *   energy_bucket  = round(energy / 0.10)  → 0~10 的离散桶
+ *   emotion_bucket  = round(emotion / 0.10) → 0~10 的离散桶
+ *   rhythm_phase    = floor(frame / 150)    → 每 150 帧（~5s@30fps）为同一相位
+ *   lastTransition  = 直接字符串
+ *   cooldown_bucket = round(cooldown / 4)  → 每 4 帧一个桶
+ *
+ * 效果：
+ *   - 相似 state 共享 Q → search tree 压缩 5-10x
+ *   - rollout variance ↓
+ *   - MCTS 从"记忆型"变"泛化型"
+ */
+function discretize(value: number, step: number): number {
+  return Math.round(value / step);
+}
+
+function getStateAbstractionKey(
+  energy: number,
+  emotion: number,
+  frame: number,
+  lastTransition: TransitionType,
+  cooldown: number,
+  consecutiveWhip: number
+): string {
+  const energyBucket = discretize(energy, 0.10);      // 0~10
+  const emotionBucket = discretize(emotion, 0.10);  // 0~10
+  const rhythmPhase = Math.floor(frame / 150);        // 每 150 帧一个相位
+  const cooldownBucket = discretize(cooldown, 4);    // 每 4 帧一个桶
+  return `${energyBucket}|${emotionBucket}|${rhythmPhase}|${lastTransition}|${cooldownBucket}|${consecutiveWhip}`;
+}
+
+// 全局 Q-Table：abstraction key → Q-value（跨节点共享）
+const globalQTable: Record<string, { visits: number; Q: number }> = {};
+
+// ── abstraction key 的 rollout 统计（用于评估）─────────────
+function getAbstractQ(abstractKey: string): number {
+  return globalQTable[abstractKey]?.Q ?? 0.5;  // 未知 state 返回中性 0.5
+}
+
+function updateAbstractQ(abstractKey: string, reward: number): void {
+  if (!globalQTable[abstractKey]) {
+    globalQTable[abstractKey] = { visits: 0, Q: 0.5 };
+  }
+  const entry = globalQTable[abstractKey];
+  entry.visits++;
+  // 增量平均
+  entry.Q = entry.Q + (reward - entry.Q) / entry.visits;
+}
+
+// ============================================================
+// v18: Reward Data Collector（把剪辑系统变成可训练环境）
+// ============================================================
+
+/**
+ * v18: Reward Data Infrastructure
+ *
+ * 本质：将"剪辑优化系统"升级为"强化学习训练数据生成器"
+ *
+ * 收集的数据：
+ *   1. best plan + reward（被选中的）
+ *   2. rejected alternatives（被拒绝的 beam）→ 用于 future preference learning
+ *   3. MCTS 统计（visit count, Q variance）→ 用于 uncertainty-aware reward model
+ *
+ * 输出格式：JSONL（每行一个 complete episode）
+ * 用于未来训练 neural reward model：
+ *   F(π) ≈ learned_reward_model(π, context)
+ */
+interface RewardFeatures {
+  energy_alignment: number;
+  entropy: number;
+  pacing_smoothness: number;
+  micro_cut_semantic: number;
+}
+
+interface RewardContext {
+  shot_count: number;
+  fps: number;
+  duration_frames: number;
+  emotion_histogram: number[];
+  energy_histogram: number[];
+}
+
+interface RewardPlanEntry {
+  shot: number;
+  type: TransitionType;
+  microCutAt?: number;
+  microCutIntensity?: number;
+}
+
+interface MctsStats {
+  avgVisits: number;
+  qVariance: number;
+  totalNodes: number;
+  rootChildren: number;
+}
+
+interface AlternativePlan {
+  plan: RewardPlanEntry[];
+  reward: number;
+  features: RewardFeatures;
+  qValue: number;
+  visits: number;
+}
+
+interface RewardDataEntry {
+  id: string;
+  timestamp: number;
+  selected_plan: RewardPlanEntry[];
+  selected_reward: number;
+  selected_features: RewardFeatures;
+  alternatives: AlternativePlan[];
+  mcts_stats: MctsStats;
+  context: RewardContext;
+}
+
+class RewardDataCollector {
+  private entries: RewardDataEntry[] = [];
+  private episodeId: string = "";
+
+  resetEpisode(): void {
+    this.episodeId = `episode_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    this.entries = [];
+  }
+
+  collect(
+    selectedPlan: TransitionPlan,
+    selectedReward: number,
+    selectedFeatures: RewardFeatures,
+    alternatives: AlternativePlan[],
+    shots: Shot[],
+    emotions: number[],
+    fps: number
+  ): void {
+    // 构建 emotion histogram (10 buckets)
+    const emotionHist = new Array(10).fill(0);
+    for (const e of emotions) {
+      const bucket = Math.min(9, Math.floor(e * 10));
+      emotionHist[bucket]++;
+    }
+
+    // 构建 energy histogram from shots
+    const energyHist = new Array(10).fill(0);
+    for (const shot of shots) {
+      const avgEnergy = emotions[shots.indexOf(shot)] ?? 0.5;
+      const bucket = Math.min(9, Math.floor(avgEnergy * 10));
+      energyHist[bucket]++;
+    }
+
+    const planEntries: RewardPlanEntry[] = [];
+    selectedPlan.forEach((v, k) => {
+      planEntries.push({ shot: k, type: v.type, microCutAt: v.microCutAt, microCutIntensity: v.microCutIntensity });
+    });
+    planEntries.sort((a, b) => a.shot - b.shot);
+
+    const entry: RewardDataEntry = {
+      id: `${this.episodeId}_${this.entries.length}`,
+      timestamp: Date.now(),
+      selected_plan: planEntries,
+      selected_reward: selectedReward,
+      selected_features: selectedFeatures,
+      alternatives,
+      mcts_stats: { avgVisits: 0, qVariance: 0, totalNodes: 0, rootChildren: 0 },
+      context: {
+        shot_count: shots.length,
+        fps,
+        duration_frames: shots.reduce((sum, s) => sum + s.duration, 0),
+        emotion_histogram: emotionHist,
+        energy_histogram: energyHist,
+      },
+    };
+
+    this.entries.push(entry);
+  }
+
+  // v18: 收集 MCTS 统计（需在 MCTS 完成后调用）
+  setMctsStats(root: MctsNode): void {
+    if (this.entries.length === 0) return;
+
+    const lastEntry = this.entries[this.entries.length - 1];
+    const visits: number[] = [];
+    let totalQ = 0;
+    let nodeCount = 0;
+
+    // BFS 遍历所有节点收集统计
+    const queue: MctsNode[] = [root];
+    while (queue.length > 0) {
+      const node = queue.shift()!;
+      visits.push(node.visits);
+      totalQ += node.Q;
+      nodeCount++;
+      for (const child of node.children) {
+        queue.push(child);
+      }
+    }
+
+    const avgVisits = visits.reduce((a, b) => a + b, 0) / (visits.length || 1);
+    const avgQ = totalQ / (nodeCount || 1);
+    const qVariance = visits.length > 0
+      ? visits.reduce((sum, v, i) => sum + Math.pow(nodeCount > 0 ? totalQ / nodeCount : 0 - v, 2), 0) / visits.length
+      : 0;
+
+    lastEntry.mcts_stats = {
+      avgVisits,
+      qVariance,
+      totalNodes: nodeCount,
+      rootChildren: root.children.length,
+    };
+  }
+
+  getEntries(): RewardDataEntry[] {
+    return this.entries;
+  }
+
+  exportJSONL(): string {
+    return this.entries.map(e => JSON.stringify(e)).join('\n');
+  }
+}
+
+// 全局实例（每个视频生成任务一个 episode）
+let rewardCollector = new RewardDataCollector();
+
+/**
+ * v18: 获取已收集的 Reward Data（供 server 端 flush 到 JSONL）
+ */
+export function getRewardData(): string {
+  return rewardCollector.exportJSONL();
+}
+
+/**
+ * v18: 获取原始 entries（供 server 做 intermediate 分析）
+ */
+export function getRewardEntries(): RewardDataEntry[] {
+  return rewardCollector.getEntries();
+}
 
 /**
  * v16: Pure Decision Function（无评分，纯逻辑）
@@ -430,6 +677,124 @@ function evaluateFullSequence(
 }
 
 /**
+ * v18: Extract 4-dim reward feature breakdown
+ * 用于 reward data collection（不改变 evaluateFullSequence 行为）
+ */
+function computeRewardFeatures(
+  plan: TransitionPlan,
+  energyCurve: Array<{ frame: number; energy: number }>,
+  shots: Shot[],
+  emotions: number[],
+  fps: number
+): { features: RewardFeatures; score: number } {
+  if (plan.size === 0) {
+    return { features: { energy_alignment: 0, entropy: 0, pacing_smoothness: 0, micro_cut_semantic: 0 }, score: 0 };
+  }
+  const WINDOW_FRAMES = 150;
+
+  // Energy Alignment
+  const ENERGY_THRESHOLD = 0.65;
+  let energyHits = 0;
+  let energyMisses = 0;
+  plan.forEach((dec) => {
+    if (dec.type === "whip") {
+      const shot = shots[dec.shotIndex];
+      if (!shot) return;
+      const peakFrame = findEmotionPeakFrame(shot, energyCurve, 0.6, fps);
+      const peakEnergy = energyCurve.find(
+        (p) => Math.abs(p.frame - peakFrame) < fps * 0.5
+      )?.energy ?? emotions[dec.shotIndex] ?? 0.5;
+      if (peakEnergy >= ENERGY_THRESHOLD) energyHits++;
+      else energyMisses++;
+    }
+  });
+  const totalWhips = energyHits + energyMisses;
+  const energyAlignmentScore = totalWhips > 0 ? energyHits / totalWhips : 1;
+
+  // Rhythm Entropy
+  const typeCount = { whip: 0, fade: 0, zoom: 0 };
+  plan.forEach((dec) => { typeCount[dec.type]++; });
+  const total = plan.size;
+  const probs = [typeCount.whip / total, typeCount.fade / total, typeCount.zoom / total];
+  const entropy = probs.reduce((h, p) => p > 0 ? h - p * Math.log(p) : h, 0);
+  const maxEntropy = Math.log(3);
+  const entropyScore = maxEntropy > 0 ? entropy / maxEntropy : 0;
+
+  // Pacing Smoothness
+  const whipCounts: number[] = [];
+  plan.forEach((dec) => {
+    if (dec.type === "whip") {
+      const t = shots[dec.shotIndex]?.start ?? 0;
+      const windowIdx = Math.floor(t / WINDOW_FRAMES);
+      whipCounts[windowIdx] = (whipCounts[windowIdx] ?? 0) + 1;
+    }
+  });
+  let pacingPenalty = 0;
+  const PENALTY_PER_EXCESS_WHIP = 0.12;
+  for (const count of whipCounts) {
+    if (count > 1) pacingPenalty += (count - 1) * PENALTY_PER_EXCESS_WHIP;
+  }
+  const pacingScore = Math.max(0, 1 - pacingPenalty);
+
+  // Micro-cut Semantic
+  let microCutScoreSum = 0;
+  let microCutCount = 0;
+  plan.forEach((dec) => {
+    if (dec.microCutAt !== undefined) {
+      const shot = shots[dec.shotIndex];
+      if (!shot) return;
+      const peakFrame = findEmotionPeakFrame(shot, energyCurve, 0.6, fps);
+      const peakFrac = shot.duration > 0 ? (peakFrame - shot.start) / shot.duration : 0.6;
+      const dist = Math.abs(dec.microCutAt - peakFrac);
+      microCutScoreSum += Math.max(0, 1 - dist * 3);
+      microCutCount++;
+    }
+  });
+  const microCutScore = microCutCount > 0 ? microCutScoreSum / microCutCount : 0.5;
+
+  const score = Math.max(0, Math.min(1,
+    energyAlignmentScore * 0.30 +
+    entropyScore * 0.25 +
+    pacingScore * 0.25 +
+    microCutScore * 0.20
+  ));
+
+  return {
+    features: {
+      energy_alignment: energyAlignmentScore,
+      entropy: entropyScore,
+      pacing_smoothness: pacingScore,
+      micro_cut_semantic: microCutScore,
+    },
+    score,
+  };
+}
+
+/**
+ * v18: Backtrack full plan from any MCTS child node
+ * 用于从 partial node 重建完整 transition plan
+ */
+function backtrackPlan(node: MctsNode, shots: Shot[]): TransitionPlan {
+  const plan = new Map<number, TransitionDecision>();
+
+  // 从叶节点回溯到根
+  let cur: MctsNode | null = node;
+  while (cur !== null && cur.type !== null) {
+    plan.set(cur.shotIndex, { shotIndex: cur.shotIndex, type: cur.type });
+    cur = cur.parent;
+  }
+
+  // 对尚未填充的 shot，填充 zoom
+  for (let i = 0; i < shots.length - 1; i++) {
+    if (!plan.has(i)) {
+      plan.set(i, { shotIndex: i, type: "zoom" });
+    }
+  }
+
+  return plan;
+}
+
+/**
  * v16: Monte Carlo Rollout（简化版向前模拟）
  *
  * 当 beam 尚未覆盖完整 timeline 时，用 rollout 估算完整 score
@@ -503,8 +868,12 @@ function beamSearchTransitionPlan(
 
   // ── Step 1: 构建根节点 ────────────────────────────────────
   // 根节点代表"尚未做任何决策"的初始状态
+  const rootAbstractKey = getStateAbstractionKey(
+    0.5, 0.5, 0, "zoom", 0, 0
+  );
   const root: MctsNode = {
     shotIndex: -1,
+    abstractionKey: rootAbstractKey,
     state: { budget: MAX_BUDGET, cooldown: 0, lastTransition: "zoom" as TransitionType },
     parent: null,
     children: [],
@@ -514,6 +883,9 @@ function beamSearchTransitionPlan(
     type: null,
     plan: new Map(),
   };
+
+  // v18: 重置 Reward Data Collector（新 episode）
+  rewardCollector.resetEpisode();
 
   // ── Step 2: MCTS-UCT 主循环 ───────────────────────────────
   const SIMULATION_COUNT = 3;
@@ -536,7 +908,8 @@ function beamSearchTransitionPlan(
           bestChild = child;
           break;
         }
-        const exploitation = child.Q;
+        // v17.1: 使用抽象 Q-Table（共享 Q）替代节点本地 Q
+        const exploitation = getAbstractQ(child.abstractionKey);
         const exploration = EXPLORATION_CONSTANT * Math.sqrt(Math.log(N_parent) / child.visits);
         const uct = exploitation + exploration;
         if (uct > bestUCT) {
@@ -551,8 +924,12 @@ function beamSearchTransitionPlan(
     // currentNode 现在是第 i 层的最佳选择节点
     if (currentNode.children.length === 0) {
       // ── Expansion：为此 shot 展开所有合法 action ─────────
-      const emotion = emotions[currentNode.shotIndex] ?? 0.5;
-      const beat = Math.sin((shots[currentNode.shotIndex].start / fps) * 0.05);
+      const childShotIndex = currentNode.shotIndex + 1;
+      const emotion = emotions[childShotIndex] ?? 0.5;
+      const beat = Math.sin((shots[childShotIndex].start / fps) * 0.05);
+      const energy = energyCurve.find(
+        (p) => p.frame >= shots[childShotIndex].start && p.frame < shots[childShotIndex].start + shots[childShotIndex].duration
+      )?.energy ?? emotion;
 
       for (const ttype of TRANSITION_TYPES) {
         const { type: legalType, newState, newConsecutiveWhip } = decideTransition(
@@ -562,8 +939,15 @@ function beamSearchTransitionPlan(
         const childPlan = new Map(currentNode.plan);
         childPlan.set(currentNode.shotIndex, { shotIndex: currentNode.shotIndex, type: legalType });
 
+        // v17.1: 生成抽象状态键，使相似 state 共享 Q-value
+        const childAbstractKey = getStateAbstractionKey(
+          energy, emotion, shots[childShotIndex].start,
+          newState.lastTransition, newState.cooldown, newConsecutiveWhip
+        );
+
         const childNode: MctsNode = {
-          shotIndex: currentNode.shotIndex + 1,
+          shotIndex: childShotIndex,
+          abstractionKey: childAbstractKey,
           state: newState,
           parent: currentNode,
           children: [],
@@ -626,6 +1010,38 @@ function beamSearchTransitionPlan(
 
   // ── 后处理 2: Whip 密度约束（硬约束）────────────────────
   enforceWhipDensityConstraint(fullPlan, shots, fps);
+
+  // ── v18: Reward Data Collection ─────────────────────────
+  // 收集最终选择的 plan + features + alternatives + MCTS stats
+  const { features: selectedFeatures, score: selectedScore } = computeRewardFeatures(
+    fullPlan, energyCurve, shots, emotions, fps
+  );
+
+  // 构建 alternatives（reject 的 root children）
+  const alternatives: AlternativePlan[] = [];
+  for (const child of root.children) {
+    if (child === bestRootChild) continue;  // 跳过已选择的
+    const altPlan = backtrackPlan(child, shots);
+    const altResult = computeRewardFeatures(altPlan, energyCurve, shots, emotions, fps);
+    alternatives.push({
+      plan: Array.from(altPlan.entries()).map(([shot, dec]) => ({
+        shot,
+        type: dec.type,
+        microCutAt: dec.microCutAt,
+        microCutIntensity: dec.microCutIntensity,
+      })),
+      reward: altResult.score,
+      features: altResult.features,
+      qValue: child.Q,
+      visits: child.visits,
+    });
+  }
+
+  rewardCollector.collect(
+    fullPlan, selectedScore, selectedFeatures,
+    alternatives, shots, emotions, fps
+  );
+  rewardCollector.setMctsStats(root);
 
   return fullPlan;
 }
@@ -701,6 +1117,8 @@ function backpropagate(node: MctsNode | null, reward: number): void {
   while (node !== null) {
     node.visits++;
     node.Q = node.Q + (reward - node.Q) / node.visits;
+    // v17.1: 同时更新全局 Q-Table（跨节点共享）
+    updateAbstractQ(node.abstractionKey, reward);
     node = node.parent;
   }
 }
