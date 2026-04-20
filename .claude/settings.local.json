@@ -211,7 +211,8 @@
       "Bash(ffmpeg -y -i renders/8e02f9ee-bcb8-4cde-81cf-b4edcb7229ea.mp4 -vf \"select=eq\\(n\\\\,30\\)\" -frames:v 1 -update 1 renders/font_test.jpg)",
       "Bash(ffmpeg -y -i renders/528b1c2d-928e-4830-830b-24653364469b.mp4 -vf \"select=eq\\(n\\\\,30\\)\" -frames:v 1 -update 1 renders/chinese_test.jpg)",
       "Bash(echo \"Exit: $?\")",
-      "Bash(echo \"TypeScript exit: $?\")"
+      "Bash(echo \"TypeScript exit: $?\")",
+      "Bash(git status:*)"
     ]
   }
 }

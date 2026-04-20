@@ -1,27 +1,22 @@
 /**
- * agentOrchestrator.ts — 短视频 Agent 编排器 v4
+ * agentOrchestrator.ts — 短视频 Agent 编排器 v5
  *
- * v3 → v4 修复清单：
+ * v4 → v5 修复清单：
  *
- * 坑1: emphasisPoints 没用 scene 时间过滤
- *   修复: ep.at[0] >= sceneStart && ep.at[1] <= sceneEnd
+ * 坑1: 区间判断太严格（必须用"相交"而非"包含"）
+ *   修复: ep.at[1] > sceneStart && ep.at[0] < sceneEnd
  *
- * 坑2: injectPauses 在词中间乱插
- *   修复: 在句末标点后插 "…"（自然的换气停顿）
+ * 坑2: 字幕 = segment-level，嘴型/听感漂移
+ *   修复: edge-tts --write-subtitles → word-level VTT
+ *         → SubtitleCue 按真实词边界切分
+ *         → 支持逐字高亮 / 卡点字幕
  *
- * 坑3: audioSegments 顺序假设（Promise.all 不保证顺序）
- *   修复: Map<sceneIdx, TTSResult> + 显式 sceneIdx 注入
+ * 坑3: MP3 concat -c copy 有 timestamp discontinuity
+ *   修复: decode → PCM concat → re-encode AAC
+ *         不用 -c copy，改用 filter_complex pipeline
  *
- * 坑4: -shortest 存在说明不信任时间轴
- *   修复: 去掉 -shortest，video = audio 完全对齐
- *
- * 坑5: totalDuration = sum(segment)，但 concat 后可能有 padding
- *   修复: 对 final audio 再测一次 FFprobe → totalDuration = 真实值
- *
- * v4 新增：
- * - SubtitleTrack 生成（基于真实音频时长）
- * - TTS + render 并行（省时间）
- * - 去掉 -shortest（完全信任时间轴）
+ * 坑4: Director emphasisPoints 只算出来了，没进 VideoScene 动画
+ *   修复: VideoScene 每帧读 state.emphasis，驱动 shake / flash / zoom
  */
 import { generateScriptFromTopic } from "./llm";
 import { buildDirector, type DirectorIntent } from "./director";
@@ -69,24 +64,40 @@ function mapVoice(director: DirectorIntent): { voice: string; baseRate: number }
 }
 
 // ============================================================
-// TTS 生成（显式 sceneIdx，不依赖 Promise.all 顺序）
+// TTS 生成 + Word-level 字幕（坑2修复）
 // ============================================================
 
 interface TTSResult {
-  sceneIdx: number;     // ← 显式标记，不依赖数组顺序
+  sceneIdx: number;
   text: string;
   path: string;
-  realDuration: number;  // FFprobe 实测秒数
+  realDuration: number;
+  /** edge-tts --write-subtitles 生成的词级时间戳（可选） */
+  wordCues?: Array<{ word: string; start: number; end: number }>;
+}
+
+interface SubtitleCue {
+  start: number;
+  end: number;
+  text: string;
+  sceneIdx: number;
+  /** word-level cue 时为单个词，segment-level 时等于 text */
+  word?: string;
 }
 
 /**
- * 生成单段 TTS，注入 emphasis 停顿，FFprobe 测真实时长
+ * 生成单段 TTS + edge-tts --write-subtitles（word-level 时间戳）
+ *
+ * edge-tts 会生成 .vtt 文件，每行格式：
+ *   word <start> <end>
+ * 解析后得到精确到每个词的 start/end（秒）
  */
 async function generateSceneTTS(
   text: string,
   director: DirectorIntent,
   sceneIdx: number,
-  outputPath: string
+  audioPath: string,
+  vttPath: string
 ): Promise<TTSResult | null> {
   if (!text?.trim()) return null;
 
@@ -96,26 +107,28 @@ async function generateSceneTTS(
   const scenePacing = director.pacingCurve[sceneIdx] ?? 1.0;
   const rateAdjust = Math.round((director.ttsSpeed * scenePacing - 1) * 100);
 
-  const pythonScript = `
-import sys
-sys.path.insert(0, r"${path.resolve(".")}")
-from core.tts_module import TTSModule
-tts = TTSModule(voice="${voice}")
-tts.rate = ${rateAdjust}
-tts.generate_audio(${JSON.stringify(emphasizedText)}, r"${outputPath}")
-`;
+  // edge-tts 命令：生成音频 + 生成字幕（含词级时间戳）
+  const edgeBin = "edge-tts";
+  const rateStr = rateAdjust >= 0 ? `+${rateAdjust}%` : `${rateAdjust}%`;
+
+  const ttsArgs = [
+    "--voice", voice,
+    "--rate", rateStr,
+    "--text", emphasizedText,
+    "--write-audio", audioPath,
+    "--write-subtitles", vttPath,
+  ];
 
   return new Promise((resolve) => {
-    const proc = spawn("python", ["-c", pythonScript], {
-      cwd: path.resolve(".."),
-      shell: true,
-    });
+    const proc = spawn(edgeBin, ttsArgs, { shell: true });
     let stderr = "";
     proc.stderr?.on("data", (d) => { stderr += d.toString(); });
     proc.on("close", async (code) => {
       if (code === 0) {
-        const realDuration = await getAudioDuration(outputPath);
-        resolve({ sceneIdx, text: emphasizedText, path: outputPath, realDuration });
+        const realDuration = await getAudioDuration(audioPath);
+        // 解析 .vtt 获取 word-level 时间戳
+        const wordCues = await parseVTT(vttPath);
+        resolve({ sceneIdx, text: emphasizedText, path: audioPath, realDuration, wordCues });
       } else {
         console.warn(`[Orchestrator] TTS scene ${sceneIdx} failed: ${stderr.slice(0, 150)}`);
         resolve(null);
@@ -125,14 +138,79 @@ tts.generate_audio(${JSON.stringify(emphasizedText)}, r"${outputPath}")
   });
 }
 
+/**
+ * 解析 .vtt 文件，提取词级时间戳
+ *
+ * VTT 格式（edge-tts 生成）：
+ *   WEBVTT
+ *
+ *   00:00:00.000 --> 00:00:01.234
+ *   锁定一个
+ *
+ *   00:00:01.234 --> 00:00:02.100
+ *   高需求
+ *   ...
+ *
+ * 返回: [{ word, start, end }]
+ */
+async function parseVTT(vttPath: string): Promise<Array<{ word: string; start: number; end: number }>> {
+  try {
+    const content = await fs.readFile(vttPath, "utf-8");
+    const cues: Array<{ word: string; start: number; end: number }> = [];
+    const lines = content.split("\n");
+
+    // VTT timestamp: HH:MM:SS.mmm --> HH:MM:SS.mmm
+    const TS_RE = /(\d{2}):(\d{2}):(\d{2})\.(\d{3})\s*-->\s*(\d{2}):(\d{2}):(\d{2})\.(\d{3})/;
+    let currentStart = 0;
+    let currentEnd = 0;
+
+    for (const line of lines) {
+      const m = line.match(TS_RE);
+      if (m) {
+        currentStart = parseInt(m[1]) * 3600 + parseInt(m[2]) * 60 + parseInt(m[3]) + parseInt(m[4]) / 1000;
+        currentEnd = parseInt(m[5]) * 3600 + parseInt(m[6]) * 60 + parseInt(m[7]) + parseInt(m[8]) / 1000;
+        continue;
+      }
+      const word = line.trim();
+      if (word && word !== "WEBVTT" && !word.startsWith("NOTE") && !word.match(/^\d+$/)) {
+        cues.push({ word, start: currentStart, end: currentEnd });
+      }
+    }
+    return cues;
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * 用 wordCues 构建精确字幕（坑2修复）
+ * 每个 VTT word 对应一条 SRT 字幕 → 逐字高亮 / 卡点效果
+ */
+function buildWordLevelSubtitles(wordCues: Array<{ word: string; start: number; end: number }>): SubtitleCue[] {
+  return wordCues.map((wc) => ({
+    start: parseFloat(wc.start.toFixed(2)),
+    end: parseFloat(wc.end.toFixed(2)),
+    text: wc.word,
+    sceneIdx: -1, // word-level，不属于特定 scene
+  }));
+}
+
 // ============================================================
-// emphasisPoints 注入停顿（修复：坑1 + 坑2）
+// emphasisPoints 区间相交判断（坑1修复）
 // ============================================================
 
 /**
- * 只在 scene 时间范围内的 emphasis 才注入
- * 插入方式：在句末标点后加 "…"（自然换气，而非词中间乱断）
+ * 判断两个闭区间是否相交
+ * 标准区间重叠公式：a.start < b.end && a.end > b.start
  */
+function intervalsOverlap(aStart: number, aEnd: number, bStart: number, bEnd: number): boolean {
+  return aStart < bEnd && aEnd > bStart;
+}
+
+// ============================================================
+// injectPauses — 句末自然停顿（坑2修复）
+// ============================================================
+
 function injectPauses(text: string, director: DirectorIntent, sceneIdx: number): string {
   if (!text) return text;
 
@@ -142,23 +220,21 @@ function injectPauses(text: string, director: DirectorIntent, sceneIdx: number):
   const sceneStart = scene.start;
   const sceneEnd = scene.end;
 
-  // 过滤出落在当前 scene 时间范围内的 audio emphasis
+  // 坑1修复：用区间相交判断（而非包含）
   const relevantEmphases = director.emphasisPoints.filter(
     (ep) =>
       (ep.type === "audio" || ep.type === "both") &&
-      ep.at[0] >= sceneStart &&
-      ep.at[1] <= sceneEnd
+      intervalsOverlap(ep.at[0], ep.at[1], sceneStart, sceneEnd)
   );
 
   let result = text;
 
   for (const ep of relevantEmphases) {
     if (ep.action === "pause" || ep.action === "slow-down") {
-      // 坑2修复：在句末标点后插省略号，自然停顿
+      // 句末标点后插省略号，自然换气感
       result = result.replace(/([。！？])/g, "$1…");
     }
     if (ep.action === "voice-up") {
-      // 感叹号增强语气
       result = result.replace(/。$/, "！").replace(/！$/, "！");
     }
   }
@@ -167,86 +243,100 @@ function injectPauses(text: string, director: DirectorIntent, sceneIdx: number):
 }
 
 // ============================================================
-// 字幕轨道生成（新增）
+// MP3 concat 稳定方案（坑3修复）
 // ============================================================
-
-export interface SubtitleCue {
-  start: number;   // 秒
-  end: number;     // 秒
-  text: string;
-  sceneIdx: number;
-}
 
 /**
- * 基于 TTS segments 生成字幕轨道
- * 每个 segment 的 text → 一条字幕
+ * 坑3修复：MP3 -c copy 有 timestamp discontinuity
+ *
+ * 解法：decode → PCM concat → encode AAC
+ * 全程无 timestamp 拼接错误
+ *
+ * @param segmentPaths 按 sceneIdx 有序的 MP3 文件路径
+ * @param outputPath 最终 AAC 文件路径
  */
-function buildSubtitleTrack(segments: TTSResult[]): SubtitleCue[] {
-  const cues: SubtitleCue[] = [];
-  let currentTime = 0;
-
-  for (const seg of segments) {
-    if (!seg.text.trim()) { currentTime += seg.realDuration; continue; }
-
-    cues.push({
-      start: parseFloat(currentTime.toFixed(2)),
-      end: parseFloat((currentTime + seg.realDuration).toFixed(2)),
-      text: seg.text,
-      sceneIdx: seg.sceneIdx,
-    });
-    currentTime += seg.realDuration;
+async function concatAudioSegmentsStable(segmentPaths: string[], outputPath: string): Promise<boolean> {
+  if (segmentPaths.length === 0) return false;
+  if (segmentPaths.length === 1) {
+    // 只有一个文件，直接转 AAC
+    return transcodeToAAC(segmentPaths[0], outputPath);
   }
 
-  return cues;
+  // 构建 filter_complex concat
+  // [0:a][1:a][2:a]... → concat → out
+  const inputs = segmentPaths.flatMap((p) => ["-i", p]);
+  const filters = segmentPaths.map((_, i) => `[${i}:a]`).join("") + `concat=n=${segmentPaths.length}:v=0:a=1[outa]`;
+
+  const args = [
+    "-y",
+    ...inputs,
+    "-filter_complex", filters,
+    "-map", "[outa]",
+    "-c:a", "aac",
+    "-b:a", "128k",
+    outputPath,
+  ];
+
+  return new Promise((resolve) => {
+    const proc = spawn("ffmpeg", args);
+    let stderr = "";
+    proc.stderr?.on("data", (d) => { stderr += d.toString(); });
+    proc.on("close", (code) => {
+      if (code === 0) resolve(true);
+      else { console.warn(`[Orchestrator] concat stable failed: ${stderr.slice(0, 200)}`); resolve(false); }
+    });
+    proc.on("error", () => resolve(false));
+  });
+}
+
+async function transcodeToAAC(inputPath: string, outputPath: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const proc = spawn("ffmpeg", ["-y", "-i", inputPath, "-c:a", "aac", "-b:a", "128k", outputPath]);
+    let stderr = "";
+    proc.stderr?.on("data", (d) => { stderr += d.toString(); });
+    proc.on("close", (code) => { resolve(code === 0); });
+    proc.on("error", () => resolve(false));
+  });
 }
 
 // ============================================================
-// Scene 级音频轨道构建
+// 音频轨道构建
 // ============================================================
 
 interface AudioTrack {
   path: string;
-  segments: TTSResult[];  // Map 保证顺序安全
-  totalDuration: number; // FFprobe 实测最终 concat 音频总时长
+  segments: TTSResult[];
+  totalDuration: number;
+  /** word-level 字幕（来自 VTT） */
+  wordSubtitles: SubtitleCue[];
 }
 
-/**
- * 构建完整音频轨道
- *
- * 坑3修复：显式 sceneIdx，不依赖 Promise.all 返回顺序
- * 坑5修复：对最终 concat 文件测 FFprobe，不用 sum 估算
- */
 async function buildAudioTrack(
   script: { hook: { text: string }; steps: Array<{ title: string; desc: string }>; cta: { text: string } },
   director: DirectorIntent,
   jobId: string,
   outputDir: string
 ): Promise<AudioTrack | null> {
-  // 构造：sceneIdx → text 映射
   const items: Array<{ text: string; sceneIdx: number }> = [];
-
   items.push({ text: script.hook.text, sceneIdx: 0 });
-
   script.steps.forEach((_, i) => {
     items.push({ text: `${script.steps[i].title}。${script.steps[i].desc}`, sceneIdx: 1 + i });
   });
-
   items.push({ text: script.cta.text, sceneIdx: director.scenes.length - 1 });
 
-  // 并行生成（Promise.all 返回顺序 = 数组顺序，但 sceneIdx 嵌入结果中，双保险）
+  // 并行生成所有 TTS（同时生成音频 + VTT 字幕）
   const rawResults = await Promise.all(
-    items.map(({ text, sceneIdx }) =>
-      generateSceneTTS(text, director, sceneIdx, path.join(outputDir, `${jobId}_s${sceneIdx}.mp3`))
-    )
+    items.map(({ text, sceneIdx }) => {
+      const audioPath = path.join(outputDir, `${jobId}_s${sceneIdx}.mp3`);
+      const vttPath = path.join(outputDir, `${jobId}_s${sceneIdx}.vtt`);
+      return generateSceneTTS(text, director, sceneIdx, audioPath, vttPath);
+    })
   );
 
-  // 坑3修复：用 sceneIdx 构建 Map，不怕顺序错位
+  // 按 sceneIdx 排序（Map 双保险）
   const segMap = new Map<number, TTSResult>();
-  for (const r of rawResults) {
-    if (r) segMap.set(r.sceneIdx, r);
-  }
+  for (const r of rawResults) { if (r) segMap.set(r.sceneIdx, r); }
 
-  // 按 sceneIdx 排序组装有序 segments
   const validSegments: TTSResult[] = [];
   for (let i = 0; i < items.length; i++) {
     const seg = segMap.get(i);
@@ -255,28 +345,45 @@ async function buildAudioTrack(
 
   if (validSegments.length === 0) return null;
 
-  // FFmpeg concat
-  const concatListPath = path.join(outputDir, `${jobId}_concat.txt`);
-  await fs.writeFile(concatListPath, validSegments.map((s) => `file '${s.path}'`).join("\n"), "utf-8");
-
-  const finalPath = path.join(outputDir, `${jobId}_audio.mp3`);
-  const concatOk = await ffmpegConcat(concatListPath, finalPath);
+  // 坑3修复：decode → PCM concat → AAC（不用 -c copy）
+  const finalAudioPath = path.join(outputDir, `${jobId}_audio.aac`);
+  const ok = await concatAudioSegmentsStable(validSegments.map((s) => s.path), finalAudioPath);
 
   // 清理临时文件
-  await Promise.all(validSegments.map((s) => fs.unlink(s.path).catch(() => {})));
-  fs.unlink(concatListPath).catch(() => {});
+  await Promise.all([
+    ...validSegments.map((s) => fs.unlink(s.path).catch(() => {})),
+    ...validSegments.map((s) => s.wordCues ? fs.unlink(s.path.replace(".mp3", ".vtt")).catch(() => {}) : Promise.resolve()),
+  ]);
 
-  if (!concatOk) return null;
+  if (!ok) return null;
 
-  // 坑5修复：对最终 concat 文件测 FFprobe（最准确）
-  const totalDuration = await getAudioDuration(finalPath);
-  console.info(`[Orchestrator:${jobId}] Audio track: ${validSegments.length} segments, ${totalDuration.toFixed(3)}s (FFprobe measured)`);
+  // 坑5：FFprobe 测最终文件真实时长
+  const totalDuration = await getAudioDuration(finalAudioPath);
 
-  return { path: finalPath, segments: validSegments, totalDuration };
+  // 收集所有 word-level 字幕（坑2修复核心）
+  const wordSubtitles: SubtitleCue[] = [];
+  let timeOffset = 0;
+  for (const seg of validSegments) {
+    if (seg.wordCues && seg.wordCues.length > 0) {
+      for (const wc of seg.wordCues) {
+        wordSubtitles.push({
+          word: wc.word,
+          start: parseFloat((timeOffset + wc.start).toFixed(2)),
+          end: parseFloat((timeOffset + wc.end).toFixed(2)),
+          text: wc.word,
+          sceneIdx: seg.sceneIdx,
+        });
+      }
+      timeOffset += seg.realDuration;
+    }
+  }
+
+  console.info(`[Orchestrator:${jobId}] Audio: ${validSegments.length} segs, ${totalDuration.toFixed(3)}s, ${wordSubtitles.length} word-cues`);
+  return { path: finalAudioPath, segments: validSegments, totalDuration, wordSubtitles };
 }
 
 // ============================================================
-// 用真实音频时长重建 Director 时间轴
+// rebuild Director 时间轴
 // ============================================================
 
 function rebuildDirector(
@@ -287,12 +394,10 @@ function rebuildDirector(
   const newScenes: Scene[] = [];
   let currentStart = 0;
 
-  // hook
   const hookDur = segments[0]?.realDuration ?? 3;
   newScenes.push({ ...original.scenes[0], start: 0, end: hookDur });
   currentStart = hookDur;
 
-  // steps
   for (let i = 0; i < script.steps.length; i++) {
     const dur = segments[1 + i]?.realDuration ?? 5;
     const sceneIdx = 1 + i;
@@ -300,7 +405,6 @@ function rebuildDirector(
     currentStart += dur;
   }
 
-  // cta
   const ctaDur = segments[segments.length - 1]?.realDuration ?? 3;
   const ctaSceneIdx = original.scenes.length - 1;
   newScenes.push({ ...original.scenes[ctaSceneIdx], start: currentStart, end: currentStart + ctaDur });
@@ -319,23 +423,9 @@ function rebuildDirector(
 }
 
 // ============================================================
-// FFmpeg 辅助
+// FFmpeg merge（坑4修复：无 -shortest）
 // ============================================================
 
-async function ffmpegConcat(listPath: string, outputPath: string): Promise<boolean> {
-  return new Promise((resolve) => {
-    const proc = spawn("ffmpeg", ["-y", "-f", "concat", "-safe", "0", "-i", listPath, "-c", "copy", outputPath]);
-    let stderr = "";
-    proc.stderr?.on("data", (d) => { stderr += d.toString(); });
-    proc.on("close", (code) => { resolve(code === 0); });
-    proc.on("error", () => resolve(false));
-  });
-}
-
-/**
- * 坑4修复：去掉 -shortest
- * video.duration = audio.duration 已通过 rebuildDirector 保证完全对齐
- */
 async function mergeAudioVideo(videoPath: string, audioPath: string, outputPath: string): Promise<boolean> {
   return new Promise((resolve) => {
     const proc = spawn("ffmpeg", [
@@ -344,7 +434,8 @@ async function mergeAudioVideo(videoPath: string, audioPath: string, outputPath:
       "-i", audioPath,
       "-c:v", "copy",
       "-c:a", "aac",
-      // 不加 -shortest：video 已按 audio 时长精确构建，两者完全对齐
+      "-b:a", "128k",
+      // 坑4修复：去掉 -shortest，video 已按 audio 时长精确构建
       outputPath,
     ]);
     let stderr = "";
@@ -358,14 +449,29 @@ async function mergeAudioVideo(videoPath: string, audioPath: string, outputPath:
 }
 
 // ============================================================
+// SRT 字幕生成（从 word-level cues）
+// ============================================================
+
+function buildSRT(cues: SubtitleCue[]): string {
+  return cues
+    .map((cue, i) => {
+      const toSRT = (t: number) => {
+        const h = Math.floor(t / 3600);
+        const m = Math.floor((t % 3600) / 60);
+        const s = Math.floor(t % 60);
+        const ms = Math.round((t % 1) * 1000);
+        return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")},${String(ms).padStart(3, "0")}`;
+      };
+      return `${i + 1}\n${toSRT(cue.start)} --> ${toSRT(cue.end)}\n${cue.text}`;
+    })
+    .join("\n");
+}
+
+// ============================================================
 // Remotion 渲染
 // ============================================================
 
-async function renderVideo(
-  jobId: string,
-  layout: VideoLayout,
-  outputPath: string
-): Promise<string | null> {
+async function renderVideo(jobId: string, layout: VideoLayout, outputPath: string): Promise<string | null> {
   const { renderMedia, selectComposition } = await import("@remotion/renderer");
   const SERVE_URL = `http://localhost:${process.env.PORT || 3333}`;
 
@@ -396,13 +502,13 @@ async function renderVideo(
 }
 
 // ============================================================
-// runAgent v4 — 完整编排入口
+// runAgent v5 — 完整编排入口
 // ============================================================
 
 export interface OrchestratorConfig {
   topic: string;
   enableTTS?: boolean;
-  enableSubtitles?: boolean;
+  enableWordSubtitles?: boolean; // word-level 字幕（坑2）
   outputDir?: string;
 }
 
@@ -413,50 +519,46 @@ export interface OrchestratorResult {
   totalTimeSeconds: number;
   videoDurationSeconds?: number;
   subtitlePath?: string;
+  wordSubtitlePath?: string; // word-level SRT（坑2新增）
   success: boolean;
   error?: string;
 }
 
 /**
- * runAgent v4
+ * runAgent v5
  *
- * 完整链路（v4）：
+ * 完整链路：
  *   generateScript
- *     → buildDirector (粗略 scene 分段)
+ *     → buildDirector (粗略 scene)
  *     → preResolveImages
- *     ───────────────────────────────────────────并行
- *     → TTS segments (FFprobe, Map<sceneIdx>)
- *     → rebuildDirector (真实音频时长)
- *     ───────────────────────────────────────────
+ *     → buildAudioTrack
+ *         generateSceneTTS × N
+ *           edge-tts --write-subtitles → .mp3 + .vtt
+ *           parseVTT → wordCues[]（词级时间戳）
+ *         concatAudioSegmentsStable → .aac（decode→PCM concat→AAC，坑3修复）
+ *         FFprobe final duration
+ *     → rebuildDirector (真实时长)
  *     → generateVideoLayout (精确时间轴)
- *     → render (时长 = audio duration)
- *     → merge (no -shortest)
- *     → FFprobe final duration (系统时间真值)
+ *     → render
+ *     → merge (无 -shortest)
+ *     → FFprobe final
+ *     → SRT (segment-level 或 word-level，坑2修复)
  */
 export async function runAgent(config: OrchestratorConfig): Promise<OrchestratorResult> {
   const startTime = Date.now();
-  const { topic, enableTTS = true, enableSubtitles = false, outputDir = path.join(process.cwd(), "renders") } = config;
+  const { topic, enableTTS = true, enableWordSubtitles = false, outputDir = path.join(process.cwd(), "renders") } = config;
   const jobId = randomUUID().slice(0, 8);
 
-  console.info(`[Orchestrator:${jobId}] Starting v4: "${topic}"`);
+  console.info(`[Orchestrator:${jobId}] Starting v5: "${topic}"`);
 
   try {
-    // ── Step 1: 脚本 ─────────────────────────────────────
+    // Step 1-3: 脚本 / 导演 / 图片
     const script = await generateScriptFromTopic(topic);
-    console.info(`[Orchestrator:${jobId}] 1. script — "${script.hook.text.slice(0, 25)}..."`);
-
-    // ── Step 2: 初始导演意图 ─────────────────────────────
     const director0 = buildDirector(topic, script);
-    console.info(`[Orchestrator:${jobId}] 2. director0 — arc=${director0.arc}, ${director0.scenes.length} scenes`);
+    const preResolved = await preResolveAllImages(script.topic ?? script.hook.text, script.steps.map((s) => s.imageKeyword));
+    console.info(`[Orchestrator:${jobId}] 1-3: arc=${director0.arc}, ${director0.scenes.length} scenes`);
 
-    // ── Step 3: 图片资产 ─────────────────────────────────
-    const preResolved = await preResolveAllImages(
-      script.topic ?? script.hook.text,
-      script.steps.map((s) => s.imageKeyword)
-    );
-    console.info(`[Orchestrator:${jobId}] 3. images — hook=${preResolved.hookAsset.provider}`);
-
-    // ── Step 4: TTS 音频轨道 ─────────────────────────────
+    // Step 4: TTS + 字幕
     let audioTrack: AudioTrack | null = null;
     let director: DirectorIntent = director0;
 
@@ -464,61 +566,63 @@ export async function runAgent(config: OrchestratorConfig): Promise<Orchestrator
       audioTrack = await buildAudioTrack(script, director0, jobId, outputDir);
       if (audioTrack) {
         director = rebuildDirector(director0, audioTrack.segments, script);
-        console.info(`[Orchestrator:${jobId}] 4. audio — ${audioTrack.totalDuration.toFixed(3)}s real (FFprobe), ${director.scenes.length} scenes rebuilt`);
+        console.info(`[Orchestrator:${jobId}] 4: audio=${audioTrack.totalDuration.toFixed(3)}s, wordCues=${audioTrack.wordSubtitles.length}`);
       } else {
-        console.warn(`[Orchestrator:${jobId}] 4. TTS failed, using silent`);
+        console.warn(`[Orchestrator:${jobId}] 4: TTS failed`);
       }
     }
 
-    // ── Step 5: 字幕轨道（可选）───────────────────────────
+    // Step 5: 字幕文件（坑2修复核心）
     let subtitlePath: string | undefined;
-    if (enableSubtitles && audioTrack) {
-      const subtitleTrack = buildSubtitleTrack(audioTrack.segments);
-      subtitlePath = path.join(outputDir, `${jobId}_subtitles.srt`);
-      await fs.writeFile(subtitlePath, buildSRT(subtitleTrack), "utf-8");
-      console.info(`[Orchestrator:${jobId}] 5. subtitles — ${subtitleTrack.length} cues`);
+    let wordSubtitlePath: string | undefined;
+
+    if (audioTrack) {
+      if (enableWordSubtitles && audioTrack.wordSubtitles.length > 0) {
+        // word-level SRT：每个词一条字幕 → 逐字高亮 / 卡点效果
+        wordSubtitlePath = path.join(outputDir, `${jobId}_words.srt`);
+        await fs.writeFile(wordSubtitlePath, buildSRT(audioTrack.wordSubtitles), "utf-8");
+        console.info(`[Orchestrator:${jobId}] 5: word-level subtitles → ${wordSubtitlePath}`);
+      } else {
+        // segment-level SRT：每句话一条（fallback）
+        const segCues: SubtitleCue[] = [];
+        let t = 0;
+        for (const seg of audioTrack.segments) {
+          segCues.push({ start: parseFloat(t.toFixed(2)), end: parseFloat((t + seg.realDuration).toFixed(2)), text: seg.text, sceneIdx: seg.sceneIdx });
+          t += seg.realDuration;
+        }
+        subtitlePath = path.join(outputDir, `${jobId}_subtitles.srt`);
+        await fs.writeFile(subtitlePath, buildSRT(segCues), "utf-8");
+      }
     }
 
-    // ── Step 6: 重建 layout（时间轴已精确）───────────────
+    // Step 6: Layout（基于真实时长重建）
     const layout: VideoLayout = generateVideoLayoutFromScript(script, preResolved, director);
-    const videoDuration = layout.director
-      ? layout.director.scenes[layout.director.scenes.length - 1].end
-      : 0;
-    console.info(`[Orchestrator:${jobId}] 6. layout — video duration=${videoDuration.toFixed(3)}s`);
+    const videoDuration = layout.director ? layout.director.scenes[layout.director.scenes.length - 1].end : 0;
+    console.info(`[Orchestrator:${jobId}] 6: layout duration=${videoDuration.toFixed(3)}s`);
 
-    // ── Step 7: 渲染 + TTS 并行执行 ─────────────────────
+    // Step 7: 渲染
     const silentPath = path.join(outputDir, `${jobId}_silent.mp4`);
-
-    let rendered: string | null = null;
-
-    if (enableTTS && audioTrack) {
-      // 并行：渲染视频 + TTS 已经在 Step 4 完成
-      rendered = await renderVideo(jobId, layout, silentPath);
-    } else {
-      rendered = await renderVideo(jobId, layout, silentPath);
-    }
-
+    const rendered = await renderVideo(jobId, layout, silentPath);
     if (!rendered) throw new Error("Remotion render failed");
-    console.info(`[Orchestrator:${jobId}] 7. rendered — ${rendered}`);
+    console.info(`[Orchestrator:${jobId}] 7: rendered → ${rendered}`);
 
-    // ── Step 8: 音画合并（无 -shortest）──────────────────
+    // Step 8: 音画合并（无 -shortest）
     let finalVideoPath = rendered;
-
     if (audioTrack) {
       finalVideoPath = path.join(outputDir, `${jobId}_final.mp4`);
       const merged = await mergeAudioVideo(rendered, audioTrack.path, finalVideoPath);
       if (merged) {
-        console.info(`[Orchestrator:${jobId}] 8. merged → ${finalVideoPath}`);
+        console.info(`[Orchestrator:${jobId}] 8: merged → ${finalVideoPath}`);
       } else {
         finalVideoPath = rendered;
       }
     }
 
-    // 坑5终极验证：对最终视频测一次 FFprobe
+    // 终极验证：FFprobe 最终视频时长
     const finalDuration = await getAudioDuration(finalVideoPath);
 
     const totalTime = (Date.now() - startTime) / 1000;
-    console.info(`[Orchestrator:${jobId}] DONE in ${totalTime.toFixed(1)}s — final duration=${finalDuration.toFixed(3)}s`);
+    console.info(`[Orchestrator:${jobId}] DONE in ${totalTime.toFixed(1)}s — final=${finalDuration.toFixed(3)}s`);
 
     return {
       outputPath: finalVideoPath,
@@ -527,38 +631,16 @@ export async function runAgent(config: OrchestratorConfig): Promise<Orchestrator
       totalTimeSeconds: totalTime,
       videoDurationSeconds: parseFloat(finalDuration.toFixed(2)),
       subtitlePath,
+      wordSubtitlePath,
       success: true,
     };
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);
     console.error(`[Orchestrator:${jobId}] FAILED: ${error}`);
     return {
-      outputPath: "",
-      topic,
-      arc: "unknown",
+      outputPath: "", topic, arc: "unknown",
       totalTimeSeconds: (Date.now() - startTime) / 1000,
-      success: false,
-      error,
+      success: false, error,
     };
   }
-}
-
-// ============================================================
-// SRT 字幕文件生成
-// ============================================================
-
-function buildSRT(cues: SubtitleCue[]): string {
-  return cues
-    .map((cue, i) => {
-      const n = i + 1;
-      const toSRTTime = (t: number) => {
-        const h = Math.floor(t / 3600);
-        const m = Math.floor((t % 3600) / 60);
-        const s = Math.floor(t % 60);
-        const ms = Math.round((t % 1) * 1000);
-        return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")},${String(ms).padStart(3, "0")}`;
-      };
-      return `${n}\n${toSRTTime(cue.start)} --> ${toSRTTime(cue.end)}\n${cue.text}\n`;
-    })
-    .join("\n");
 }
