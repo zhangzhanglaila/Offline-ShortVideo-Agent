@@ -213,7 +213,11 @@
       "Bash(echo \"Exit: $?\")",
       "Bash(echo \"TypeScript exit: $?\")",
       "Bash(git status:*)",
-      "Bash(npm list:*)"
+      "Bash(npm list:*)",
+      "Bash(echo \"exit: $?\")",
+      "Bash(grep:*)",
+      "Bash(head -30 ../remotion/packages/*/types*.ts)",
+      "Bash(echo \"tsc: $?\")"
     ]
   }
 }

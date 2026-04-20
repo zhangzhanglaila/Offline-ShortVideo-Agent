@@ -7,7 +7,7 @@
 
 import { ruleBasedScript, generateLayoutFromScript, generateVideoLayoutFromScript, preResolveAllImages } from "./generator";
 import type { VideoScript } from "./generator";
-import type { TimelineLayout, VideoLayout } from "../remotion/types";
+import type { TimelineLayout, VideoLayout } from "@remotion/types";
 import { buildDirector, type DirectorIntent } from "./director";
 
 // ============================================================

@@ -16,7 +16,8 @@
     "outDir": "dist",
     "baseUrl": ".",
     "paths": {
-      "remotion": ["./node_modules/remotion"]
+      "remotion": ["./node_modules/remotion"],
+      "@remotion/*": ["./remotion/*"]
     }
   },
   "include": ["src/**/*", "server/**/*", "remotion/**/*"],

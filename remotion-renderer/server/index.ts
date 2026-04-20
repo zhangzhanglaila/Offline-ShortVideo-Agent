@@ -10,8 +10,8 @@ import fs from "node:fs/promises";
 import { renderMedia, selectComposition, getCompositions } from "@remotion/renderer";
 import { generateLayoutFromTopic as generateLayoutFromTopicRule, generateMiniLayout } from "./generator";
 import { generateLayoutFromTopic as generateLayoutFromTopicLLM, generateVideoLayoutFromTopic } from "./llm";
-import type { TimelineLayout } from "../remotion/types";
-import type { VideoLayout } from "../remotion/types";
+import type { TimelineLayout } from "@remotion/types";
+import type { VideoLayout } from "@remotion/types";
 
 // ============================================================
 // 统一入参类型（只在边界做一次 Record<string, unknown> 转换）

@@ -1,0 +1,13 @@
+/**
+ * fonts.css - 中文字体加载
+ *
+ * 重要：Remotion bundle 不会打包 public/ 外的字体
+ * 必须通过 CSS @font-face 让浏览器从 /fonts/ 路径加载
+ */
+@font-face {
+  font-family: 'NotoSansSC';
+  src: url('/fonts/NotoSansSC-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}

@@ -22,7 +22,7 @@ import { generateScriptFromTopic } from "./llm";
 import { buildDirector, type DirectorIntent, type SubtitleCue, type WordCue, bindEmphasisToWords, buildAllWords } from "./director";
 import { generateVideoLayoutFromScript, preResolveAllImages } from "./generator";
 import type { Scene } from "./director";
-import type { VideoLayout } from "../remotion/types";
+import type { VideoLayout } from "@remotion/types";
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import path from "node:path";

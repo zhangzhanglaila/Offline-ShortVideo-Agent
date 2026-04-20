@@ -779,8 +779,8 @@ function keywordToImage(_keyword: string): string {
   return ''; // URLs are now pre-resolved via preResolveAllImages
 }
 
-import type { TimelineLayout, BoxData, ArrowData } from "../remotion/types";
-import type { VideoLayout } from "../remotion/types";
+import type { TimelineLayout, BoxData, ArrowData } from "@remotion/types";
+import type { VideoLayout } from "@remotion/types";
 import type { DirectorIntent, SubtitleCue, WordCue } from "./director";
 
 // ============================================================
@@ -1842,6 +1842,82 @@ export function generateVideoLayoutFromScript(
     animation: { enter: "fade", duration: 1 },
   });
 
+  // ============================================================
+  // v10: Shot System（镜头系统）
+  // 每张 step 图片生成 2-3 个镜头（camera motion），素材不再是静态背景
+  // ============================================================
+  type ShotCamera = "push-in" | "pan-left" | "pan-right" | "pull-out" | "static";
+  const CAMERA_POOL: ShotCamera[] = ["push-in", "pan-left", "pan-right", "static", "pull-out"];
+
+  function buildShots(
+    stepImageUrls: string[],
+    stepStartFrames: number[],
+    stepDurations: number[]
+  ): VideoLayout["shots"] {
+    const shots: VideoLayout["shots"] = [];
+
+    stepImageUrls.forEach((src, i) => {
+      if (!src) return;
+      const stepStart = stepStartFrames[i];
+      const stepDur = stepDurations[i] ?? 150;
+      const numShots = src.startsWith("http") ? 2 + (i % 2) : 0; // 有图才生成镜头
+
+      for (let s = 0; s < numShots; s++) {
+        const cameraIdx = (i * 2 + s) % CAMERA_POOL.length;
+        const camera = CAMERA_POOL[cameraIdx];
+        const shotDur = Math.floor(stepDur / numShots);
+        const shotStart = stepStart + s * shotDur;
+
+        // pan 类镜头：crop 偏移产生运动感
+        let cropX = 0, cropY = 0, cropW = 1, cropH = 1;
+        if (camera === "pan-right") {
+          cropX = 0.08 * s; cropW = 0.92;
+        } else if (camera === "pan-left") {
+          cropX = 0.08 * s; cropW = 0.92;
+        } else if (camera === "push-in") {
+          cropW = 0.92 - s * 0.06; cropH = 0.92 - s * 0.06;
+          cropX = (1 - cropW) / 2; cropY = (1 - cropH) / 2;
+        } else if (camera === "pull-out") {
+          cropW = 0.75 + s * 0.1; cropH = 0.75 + s * 0.1;
+          cropX = (1 - cropW) / 2; cropY = (1 - cropH) / 2;
+        }
+
+        shots.push({
+          start: shotStart,
+          duration: shotDur,
+          src,
+          camera,
+          cropX,
+          cropY,
+          cropW,
+          cropH,
+          opacity: 0.95,
+        });
+      }
+    });
+
+    return shots;
+  }
+
+  // 收集每个 step 的起始帧和持续帧（用于生成 shots）
+  const stepStartFrames: number[] = [];
+  const stepDurations: number[] = [];
+  let _frameCursor = 0;
+  // hook: 0 ~ 90 帧
+  stepStartFrames.push(0);
+  stepDurations.push(90);
+  _frameCursor = 90;
+  // steps
+  for (let i = 0; i < script.steps.length; i++) {
+    const stepStart = _frameCursor;
+    const stepDur = 70 + i * 70;
+    stepStartFrames.push(stepStart);
+    stepDurations.push(stepDur);
+    _frameCursor += stepDur;
+  }
+
+  const shots = buildShots(stepImageUrls, stepStartFrames, stepDurations);
+
   return {
     width: WIDTH,
     height: HEIGHT,
@@ -1850,5 +1926,6 @@ export function generateVideoLayoutFromScript(
     elements: elements as VideoLayout["elements"],
     director: _director,
     subtitleCues,
+    shots,
   };
 }
