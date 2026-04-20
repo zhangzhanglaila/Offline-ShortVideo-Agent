@@ -19,7 +19,7 @@
  *   修复: VideoScene 每帧读 state.emphasis，驱动 shake / flash / zoom
  */
 import { generateScriptFromTopic } from "./llm";
-import { buildDirector, type DirectorIntent } from "./director";
+import { buildDirector, type DirectorIntent, type SubtitleCue, type WordCue } from "./director";
 import { generateVideoLayoutFromScript, preResolveAllImages } from "./generator";
 import type { Scene } from "./director";
 import type { VideoLayout } from "../remotion/types";
@@ -27,6 +27,7 @@ import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import fs from "node:fs/promises";
+import pLimit from "p-limit";
 
 // ============================================================
 // FFprobe — 精确时长测量
@@ -74,15 +75,6 @@ interface TTSResult {
   realDuration: number;
   /** edge-tts --write-subtitles 生成的词级时间戳（可选） */
   wordCues?: Array<{ word: string; start: number; end: number }>;
-}
-
-interface SubtitleCue {
-  start: number;
-  end: number;
-  text: string;
-  sceneIdx: number;
-  /** word-level cue 时为单个词，segment-level 时等于 text */
-  word?: string;
 }
 
 /**
@@ -180,19 +172,6 @@ async function parseVTT(vttPath: string): Promise<Array<{ word: string; start: n
   } catch {
     return [];
   }
-}
-
-/**
- * 用 wordCues 构建精确字幕（坑2修复）
- * 每个 VTT word 对应一条 SRT 字幕 → 逐字高亮 / 卡点效果
- */
-function buildWordLevelSubtitles(wordCues: Array<{ word: string; start: number; end: number }>): SubtitleCue[] {
-  return wordCues.map((wc) => ({
-    start: parseFloat(wc.start.toFixed(2)),
-    end: parseFloat(wc.end.toFixed(2)),
-    text: wc.word,
-    sceneIdx: -1, // word-level，不属于特定 scene
-  }));
 }
 
 // ============================================================
@@ -324,13 +303,16 @@ async function buildAudioTrack(
   });
   items.push({ text: script.cta.text, sceneIdx: director.scenes.length - 1 });
 
-  // 并行生成所有 TTS（同时生成音频 + VTT 字幕）
+  // 并行生成所有 TTS（p-limit(3) 控并发，同时生成音频 + VTT 字幕）
+  const limit = pLimit(3);
   const rawResults = await Promise.all(
-    items.map(({ text, sceneIdx }) => {
-      const audioPath = path.join(outputDir, `${jobId}_s${sceneIdx}.mp3`);
-      const vttPath = path.join(outputDir, `${jobId}_s${sceneIdx}.vtt`);
-      return generateSceneTTS(text, director, sceneIdx, audioPath, vttPath);
-    })
+    items.map(({ text, sceneIdx }) =>
+      limit(() => {
+        const audioPath = path.join(outputDir, `${jobId}_s${sceneIdx}.mp3`);
+        const vttPath = path.join(outputDir, `${jobId}_s${sceneIdx}.vtt`);
+        return generateSceneTTS(text, director, sceneIdx, audioPath, vttPath);
+      })
+    )
   );
 
   // 按 sceneIdx 排序（Map 双保险）
@@ -360,22 +342,24 @@ async function buildAudioTrack(
   // 坑5：FFprobe 测最终文件真实时长
   const totalDuration = await getAudioDuration(finalAudioPath);
 
-  // 收集所有 word-level 字幕（坑2修复核心）
+  // 收集所有 word-level 字幕（按 sceneIdx 分组，每段一个 SubtitleCue）
   const wordSubtitles: SubtitleCue[] = [];
   let timeOffset = 0;
   for (const seg of validSegments) {
     if (seg.wordCues && seg.wordCues.length > 0) {
-      for (const wc of seg.wordCues) {
-        wordSubtitles.push({
+      const cue: SubtitleCue = {
+        id: `scene-${seg.sceneIdx}`,
+        start: parseFloat(timeOffset.toFixed(3)),
+        end: parseFloat((timeOffset + seg.realDuration).toFixed(3)),
+        words: seg.wordCues.map((wc) => ({
           word: wc.word,
-          start: parseFloat((timeOffset + wc.start).toFixed(2)),
-          end: parseFloat((timeOffset + wc.end).toFixed(2)),
-          text: wc.word,
-          sceneIdx: seg.sceneIdx,
-        });
-      }
-      timeOffset += seg.realDuration;
+          start: parseFloat((timeOffset + wc.start).toFixed(3)),
+          end: parseFloat((timeOffset + wc.end).toFixed(3)),
+        })),
+      };
+      wordSubtitles.push(cue);
     }
+    timeOffset += seg.realDuration;
   }
 
   console.info(`[Orchestrator:${jobId}] Audio: ${validSegments.length} segs, ${totalDuration.toFixed(3)}s, ${wordSubtitles.length} word-cues`);
@@ -462,7 +446,8 @@ function buildSRT(cues: SubtitleCue[]): string {
         const ms = Math.round((t % 1) * 1000);
         return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")},${String(ms).padStart(3, "0")}`;
       };
-      return `${i + 1}\n${toSRT(cue.start)} --> ${toSRT(cue.end)}\n${cue.text}`;
+      const text = cue.words?.map((w) => w.word).join("") ?? (cue as any).text ?? "";
+      return `${i + 1}\n${toSRT(cue.start)} --> ${toSRT(cue.end)}\n${text}`;
     })
     .join("\n");
 }
@@ -587,7 +572,12 @@ export async function runAgent(config: OrchestratorConfig): Promise<Orchestrator
         const segCues: SubtitleCue[] = [];
         let t = 0;
         for (const seg of audioTrack.segments) {
-          segCues.push({ start: parseFloat(t.toFixed(2)), end: parseFloat((t + seg.realDuration).toFixed(2)), text: seg.text, sceneIdx: seg.sceneIdx });
+          segCues.push({
+            id: `scene-${seg.sceneIdx}`,
+            start: parseFloat(t.toFixed(3)),
+            end: parseFloat((t + seg.realDuration).toFixed(3)),
+            words: [],
+          });
           t += seg.realDuration;
         }
         subtitlePath = path.join(outputDir, `${jobId}_subtitles.srt`);
@@ -595,8 +585,11 @@ export async function runAgent(config: OrchestratorConfig): Promise<Orchestrator
       }
     }
 
-    // Step 6: Layout（基于真实时长重建）
-    const layout: VideoLayout = generateVideoLayoutFromScript(script, preResolved, director);
+    // Step 6: Layout（基于真实时长重建，注入 word-level 字幕用于逐词高亮）
+    const layout: VideoLayout = generateVideoLayoutFromScript(
+      script, preResolved, director,
+      audioTrack ? audioTrack.wordSubtitles : undefined,
+    );
     const videoDuration = layout.director ? layout.director.scenes[layout.director.scenes.length - 1].end : 0;
     console.info(`[Orchestrator:${jobId}] 6: layout duration=${videoDuration.toFixed(3)}s`);
 

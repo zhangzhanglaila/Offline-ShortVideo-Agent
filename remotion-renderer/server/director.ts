@@ -82,6 +82,23 @@ export interface DirectorIntent {
     fill: string;
     text: string;
   };
+  /** word-level 字幕（由 agentOrchestrator 从 VTT 解析后注入，VideoScene 用于逐词高亮） */
+  subtitleCues: SubtitleCue[];
+}
+
+/** 单个词级字幕 */
+export interface WordCue {
+  word: string;
+  start: number;   // 秒（毫秒精度）
+  end: number;     // 秒
+}
+
+/** 一句话 = 多个 WordCue */
+export interface SubtitleCue {
+  id: string;
+  start: number;
+  end: number;
+  words: WordCue[];
 }
 
 // ============================================================
@@ -238,7 +255,7 @@ function buildEmphasisPoints(script: VideoScript, arc: NarrativeArc): EmphasisPo
  * @param topic   原始主题
  * @param script  已生成的脚本（hook + steps + cta）
  */
-export function buildDirector(topic: string, script: VideoScript): DirectorIntent {
+export function buildDirector(topic: string, script: VideoScript, subtitleCues?: SubtitleCue[]): DirectorIntent {
   const arc = inferArc(topic);
   const pacing: Pacing = script.steps.length > 4 ? "slow" : script.steps.length > 3 ? "medium" : "fast";
   const visualStyle = inferVisualStyle(arc);
@@ -261,6 +278,7 @@ export function buildDirector(topic: string, script: VideoScript): DirectorInten
     colorOverride: arc === "viral"
       ? { primary: "#FFD700", fill: "rgba(255,215,0,0.15)", text: "#FFFFFF" }
       : undefined,
+    subtitleCues: subtitleCues ?? [],
   };
 }
 

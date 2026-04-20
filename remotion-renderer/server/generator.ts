@@ -781,7 +781,7 @@ function keywordToImage(_keyword: string): string {
 
 import type { TimelineLayout, BoxData, ArrowData } from "../remotion/types";
 import type { VideoLayout } from "../remotion/types";
-import type { DirectorIntent } from "./director";
+import type { DirectorIntent, SubtitleCue, WordCue } from "./director";
 
 // ============================================================
 // 短视频脚本结构（真正的 Agent 输出）
@@ -1393,7 +1393,8 @@ function inferRenderHints(asset: ImageAsset): ImageAsset["renderHints"] {
 export function generateVideoLayoutFromScript(
   script: VideoScript,
   preResolved?: { hookAsset: ImageAsset; stepAssets: ImageAsset[] },
-  _director?: DirectorIntent
+  _director?: DirectorIntent,
+  subtitleCues?: SubtitleCue[]
 ): VideoLayout {
   const WIDTH = 1080;
   const HEIGHT = 1920;
@@ -1412,6 +1413,13 @@ export function generateVideoLayoutFromScript(
   }
   const elements: AnyEl[] = [];
   let zIdx = 0;
+
+  /** 从 subtitleCues 中提取指定 sceneIdx 的 wordCues */
+  const getWordCues = (sceneIdx: number): WordCue[] | undefined => {
+    if (!subtitleCues) return undefined;
+    const cue = subtitleCues.find((c) => c.id === `scene-${sceneIdx}`);
+    return cue?.words;
+  };
 
   // ============================================================
   // 背景
@@ -1464,7 +1472,7 @@ export function generateVideoLayoutFromScript(
     text: script.hook.text,
     x: 40, y: 200,
     fontSize: 52, color: hookColor, fontWeight: 900,
-    textAlign: "center", maxWidth: 1000,
+    wordCues: getWordCues(0),
     animation: { enter: "bounce-in", exit: "fade", duration: 22 },
   });
 
@@ -1544,6 +1552,7 @@ export function generateVideoLayoutFromScript(
         x: 60, y: imgY + 180,
         fontSize: 42, color: "#FFFFFF", fontWeight: 800, textAlign: "center", maxWidth: WIDTH - 120,
         start: showFrom + 8, duration: 162, zIndex: sz + 2,
+        wordCues: getWordCues(i + 1),
         animation: { enter: "bounce-in", duration: 16 },
       });
       // 描述
@@ -1611,6 +1620,7 @@ export function generateVideoLayoutFromScript(
         x: cardX + 60, y: cardY,
         fontSize: 32, color: "#FFFFFF", fontWeight: 700, textAlign: "left", maxWidth: WIDTH - cardX - 60,
         start: showFrom + 8, duration: 162, zIndex: sz + 2,
+        wordCues: getWordCues(i + 1),
         animation: { enter: "slide-up", duration: 14 },
       });
       // 描述
@@ -1677,6 +1687,7 @@ export function generateVideoLayoutFromScript(
         x: 110, y: imgY + imgH - 90,
         fontSize: 36, color: "#FFFFFF", fontWeight: 800, textAlign: "left", maxWidth: WIDTH - 220,
         start: showFrom + 10, duration: 160, zIndex: sz + 2,
+        wordCues: getWordCues(i + 1),
         animation: { enter: "slide-up", duration: 16 },
       });
       // 描述（底部，小字）
@@ -1732,6 +1743,7 @@ export function generateVideoLayoutFromScript(
       x: 80, y: ty + 110,
       fontSize: 44, color: "#FFFFFF", fontWeight: 800, textAlign: "center", maxWidth: WIDTH - 160,
       start: showFrom + 8, duration: 162, zIndex: sz + 2,
+      wordCues: getWordCues(i + 1),
       animation: { enter: "bounce-in", duration: 18 },
     });
     // 描述
@@ -1789,6 +1801,7 @@ export function generateVideoLayoutFromScript(
     x: 80, y: ctaY + 35,
     fontSize: 36, color: "#FF6B6B", fontWeight: 800, textAlign: "center", maxWidth: WIDTH - 380,
     start: ctaShowFrom + 12, duration: 128, zIndex: zIdx + stepCount * 15 + 2,
+    wordCues: getWordCues(script.steps.length + 1),
     animation: { enter: "bounce-in", duration: 20 },
   });
 
@@ -1836,5 +1849,6 @@ export function generateVideoLayoutFromScript(
     background: "#0A0E14",
     elements: elements as VideoLayout["elements"],
     director: _director,
+    subtitleCues,
   };
 }

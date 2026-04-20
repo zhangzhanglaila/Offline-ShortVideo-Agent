@@ -17,6 +17,7 @@
     "@remotion/renderer": "^4.0.448",
     "@remotion/zod-types": "^4.0.448",
     "express": "^5.1.0",
+    "p-limit": "^7.3.0",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
     "remotion": "^4.0.448",
