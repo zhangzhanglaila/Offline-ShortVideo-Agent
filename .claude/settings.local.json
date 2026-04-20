@@ -200,7 +200,18 @@
       "Bash(ffmpeg -y -i renders/e0cf0758-b4b9-4c0c-ab98-5943f1648415.mp4 -vf \"select=not\\(mod\\(n\\\\,5\\)\\)\" -frames:v 6 -update 1 renders/preview_f%03d.jpg)",
       "Bash(ffmpeg -y -i renders/e0cf0758-b4b9-4c0c-ab98-5943f1648415.mp4 -vf \"select=not\\(mod\\(n\\\\,10\\)\\)\" -frames:v 3 renders/preview_%03d.jpg)",
       "Bash(ffmpeg -y -i renders/e0cf0758-b4b9-4c0c-ab98-5943f1648415.mp4 -vf \"select=eq\\(n\\\\,2\\)\" -frames:v 1 -update 1 renders/preview_frame2.jpg)",
-      "Bash(ffmpeg -y -i renders/e0cf0758-b4b9-4c0c-ab98-5943f1648415.mp4 -vf \"select=eq\\(n\\\\,50\\)\" -frames:v 1 -update 1 renders/preview_frame50.jpg)"
+      "Bash(ffmpeg -y -i renders/e0cf0758-b4b9-4c0c-ab98-5943f1648415.mp4 -vf \"select=eq\\(n\\\\,50\\)\" -frames:v 1 -update 1 renders/preview_frame50.jpg)",
+      "Bash(ffmpeg -y -i renders/61842b96-09e3-48c7-9932-a1c5e456fe9e.mp4 -vf \"select=eq\\(n\\\\,5\\)\" -frames:v 1 -update 1 renders/v2_frame5.jpg)",
+      "Bash(ffmpeg -y -i renders/61842b96-09e3-48c7-9932-a1c5e456fe9e.mp4 -vf \"select=eq\\(n\\\\,45\\)\" -frames:v 1 -update 1 renders/v2_frame45.jpg)",
+      "Bash(ffmpeg -y -i renders/61842b96-09e3-48c7-9932-a1c5e456fe9e.mp4 -vf \"select=eq\\(n\\\\,85\\)\" -frames:v 1 -update 1 renders/v2_frame85.jpg)",
+      "Bash(ffmpeg -y -i renders/8566f8b0-4543-4fd4-9648-fdeadeca604a.mp4 -vf \"select=eq\\(n\\\\,45\\)\" -frames:v 1 -update 1 renders/v3_frame45.jpg)",
+      "Bash(ffmpeg -y -i renders/696ac5d8-e0d0-4a72-80c8-dfff46273fbe.mp4 -vf \"select=eq\\(n\\\\,0\\)\" -frames:v 1 -update 1 renders/v3_f0.jpg)",
+      "Bash(ffmpeg -y -i renders/696ac5d8-e0d0-4a72-80c8-dfff46273fbe.mp4 -vf \"select=eq\\(n\\\\,35\\)\" -frames:v 1 -update 1 renders/v3_f35.jpg)",
+      "Bash(ffmpeg -y -i renders/696ac5d8-e0d0-4a72-80c8-dfff46273fbe.mp4 -vf \"select=eq\\(n\\\\,90\\)\" -frames:v 1 -update 1 renders/v3_f90.jpg)",
+      "Bash(ffmpeg -y -i renders/8e02f9ee-bcb8-4cde-81cf-b4edcb7229ea.mp4 -vf \"select=eq\\(n\\\\,30\\)\" -frames:v 1 -update 1 renders/font_test.jpg)",
+      "Bash(ffmpeg -y -i renders/528b1c2d-928e-4830-830b-24653364469b.mp4 -vf \"select=eq\\(n\\\\,30\\)\" -frames:v 1 -update 1 renders/chinese_test.jpg)",
+      "Bash(echo \"Exit: $?\")",
+      "Bash(echo \"TypeScript exit: $?\")"
     ]
   }
 }

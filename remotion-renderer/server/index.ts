@@ -8,6 +8,22 @@ import { fileURLToPath } from "node:url";
 import fs from "node:fs/promises";
 
 import { renderMedia, selectComposition, getCompositions } from "@remotion/renderer";
+import { generateLayoutFromTopic as generateLayoutFromTopicRule, generateMiniLayout } from "./generator";
+import { generateLayoutFromTopic as generateLayoutFromTopicLLM, generateVideoLayoutFromTopic } from "./llm";
+import type { TimelineLayout } from "../remotion/types";
+import type { VideoLayout } from "../remotion/types";
+
+// ============================================================
+// 统一入参类型（只在边界做一次 Record<string, unknown> 转换）
+// ============================================================
+interface RenderInput {
+  timeline?: TimelineLayout;
+  video?: VideoLayout;
+}
+
+function toUnknownProps(input: RenderInput): Record<string, unknown> {
+  return input as unknown as Record<string, unknown>;
+}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SERVER_DIR = path.resolve(__dirname, "..");
@@ -44,7 +60,7 @@ const RENDER_OPTS = {
 
 async function renderComposition(
   jobId: string,
-  layout: object,
+  layout: TimelineLayout,
   port: number
 ): Promise<void> {
   const outputPath = path.join(RENDER_DIR, `${jobId}.mp4`);
@@ -57,7 +73,8 @@ async function renderComposition(
     const composition = await selectComposition({
       serveUrl: SERVE_URL,
       id: "TimelineFlow",
-      inputProps: layout,
+      // 唯一边界转换点
+      inputProps: toUnknownProps({ timeline: layout }),
     });
 
     console.info(`[render] ${jobId} DEBUG: selectComposition result = ${JSON.stringify(composition ? { id: composition.id, duration: composition.durationInFrames } : null)}`);
@@ -68,8 +85,7 @@ async function renderComposition(
       );
     }
 
-    const layoutObj = layout as { boxes?: Array<{ showFrom: number; durationInFrames: number }> };
-    const lastBoxEnd = (layoutObj.boxes || []).reduce(
+    const lastBoxEnd = (layout.boxes || []).reduce(
       (max: number, box: { showFrom: number; durationInFrames: number }) =>
         Math.max(max, box.showFrom + box.durationInFrames),
       0
@@ -88,9 +104,9 @@ async function renderComposition(
         ...composition,
         durationInFrames,
         fps: 30,
-        props: layout,
+        props: toUnknownProps({ timeline: layout }),
       },
-      inputProps: layout,
+      inputProps: toUnknownProps({ timeline: layout }),
       codec: "h264",
       outputLocation: outputPath,
       onProgress: (progress: { progress: number }) => {
@@ -119,6 +135,71 @@ async function renderComposition(
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);
     console.error(`[render] ${jobId} FAILED:`, error);
+    jobs.set(jobId, { status: "failed", error });
+  }
+}
+
+// VideoFlow 渲染（V6 新元素系统）
+async function renderVideoComposition(
+  jobId: string,
+  layout: VideoLayout,
+  port: number
+): Promise<void> {
+  const outputPath = path.join(RENDER_DIR, `${jobId}.mp4`);
+
+  try {
+    jobs.set(jobId, { status: "rendering", progress: 0, outputPath });
+
+    const composition = await selectComposition({
+      serveUrl: SERVE_URL,
+      id: "VideoFlow",
+      inputProps: toUnknownProps({ video: layout }),
+    });
+
+    if (!composition) {
+      throw new Error(`Composition "VideoFlow" not found.`);
+    }
+
+    // 从 elements 计算总时长
+    const lastEnd = (layout.elements || []).reduce(
+      (max: number, el: { start: number; duration: number }) =>
+        Math.max(max, el.start + el.duration),
+      0
+    );
+    const durationInFrames = Math.max(lastEnd + 60, 300);
+
+    console.info(`[render:v2] ${jobId} VideoFlow render, duration=${durationInFrames} frames`);
+
+    const timeoutMs = 120000;
+    const renderPromise = renderMedia({
+      serveUrl: SERVE_URL,
+      composition: { ...composition, durationInFrames, fps: 30, props: toUnknownProps({ video: layout }) },
+      inputProps: toUnknownProps({ video: layout }),
+      codec: "h264",
+      outputLocation: outputPath,
+      onProgress: (progress: { progress: number }) => {
+        const pct = (progress.progress * 100).toFixed(1);
+        console.info(`[render:v2] ${jobId}: ${pct}%`);
+        jobs.set(jobId, { status: "rendering", progress: progress.progress, outputPath });
+      },
+    });
+
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error(`TIMEOUT after ${timeoutMs}ms`)), timeoutMs);
+    });
+
+    await Promise.race([renderPromise, timeoutPromise]);
+
+    jobs.set(jobId, {
+      status: "completed",
+      outputPath,
+      downloadUrl: `http://localhost:${port}/renders/${jobId}.mp4`,
+    });
+
+    console.info(`[render:v2] ${jobId} COMPLETE: ${outputPath}`);
+  } catch (err) {
+    const error = err instanceof Error ? err.message : String(err);
+    console.error(`[render:v2] ${jobId} FAILED:`, error);
     jobs.set(jobId, { status: "failed", error });
   }
 }
@@ -163,19 +244,82 @@ app.use(express.json({ limit: "50mb" }));
 const serverPORT = Number(process.env.PORT) || 3333;
 
 /**
+ * POST /generate-video
+ * 从主题直接生成并渲染视频（V5 AI导演接口）
+ *
+ * body: { topic: string, mini?: boolean }
+ * - topic: 视频主题，如 "AI副业赚钱"
+ * - mini: true = 迷你测试（3步），false = 完整版（5步+CTA）
+ */
+app.post("/generate-video", async (req, res) => {
+  const { topic, mini } = req.body as { topic?: string; mini?: boolean };
+
+  if (!topic || typeof topic !== "string") {
+    res.status(400).json({ error: "Missing or invalid 'topic' string" });
+    return;
+  }
+
+  // 生成布局（优先 LLM，fallback 规则）
+  const layout = mini
+    ? generateMiniLayout(topic, 3)
+    : await generateLayoutFromTopicLLM(topic);
+
+  const jobId = randomUUID();
+  jobs.set(jobId, { status: "pending", layout });
+
+  console.info(`[server] generate-video job: ${jobId}, topic: "${topic}" (mini=${mini})`);
+  console.info(`[server]   layout: ${layout.boxes.length} boxes, ${layout.arrows.length} arrows, hook="${(layout.boxes[0]?.label ?? "").slice(0, 40)}"`);
+
+  renderComposition(jobId, layout, serverPORT).catch((err) => {
+    console.error(`[server] renderComposition error for ${jobId}:`, err);
+  });
+
+  res.json({ jobId, topic, layout });
+});
+
+/**
+ * POST /generate-video/v2
+ * V6 视频级渲染（elements[] 系统）
+ * 从主题生成 VideoLayout → render VideoFlow
+ */
+app.post("/generate-video/v2", async (req, res) => {
+  const { topic } = req.body as { topic?: string };
+
+  if (!topic || typeof topic !== "string") {
+    res.status(400).json({ error: "Missing or invalid 'topic' string" });
+    return;
+  }
+
+  // LLM 生成 VideoLayout
+  const layout = await generateVideoLayoutFromTopic(topic);
+
+  const jobId = randomUUID();
+  jobs.set(jobId, { status: "pending", layout });
+
+  const firstText = layout.elements.find(e => e.type === "text");
+  console.info(`[server:v2] generate-video/v2 job: ${jobId}, topic: "${topic}"`);
+  console.info(`[server:v2]   elements: ${layout.elements.length}, hook="${((firstText as {text?: string})?.text ?? "").slice(0, 40)}"`);
+
+  renderVideoComposition(jobId, layout, serverPORT).catch((err) => {
+    console.error(`[server:v2] renderVideoComposition error for ${jobId}:`, err);
+  });
+
+  res.json({ jobId, topic, layout });
+});
+
+/**
  * POST /render
  * Start a new render job.
  */
 app.post("/render", async (req, res) => {
-  const { layout } = req.body as { layout?: object };
+  const { layout } = req.body as { layout?: TimelineLayout };
 
   if (!layout) {
     res.status(400).json({ error: "Missing 'layout' in request body" });
     return;
   }
 
-  const layoutObj = layout as { backgroundImage?: string; boxes?: unknown[] };
-  if (!layoutObj.boxes || (layoutObj.boxes as unknown[]).length === 0) {
+  if (!layout.boxes || layout.boxes.length === 0) {
     res.status(400).json({ error: "layout.boxes array cannot be empty" });
     return;
   }
@@ -184,8 +328,8 @@ app.post("/render", async (req, res) => {
   jobs.set(jobId, { status: "pending", layout });
 
   console.info(`[server] New render job: ${jobId}`);
-  console.info(`[server]   background: ${layoutObj.backgroundImage}`);
-  console.info(`[server]   boxes: ${(layoutObj.boxes as unknown[]).length}`);
+  console.info(`[server]   background: ${layout.backgroundImage}`);
+  console.info(`[server]   boxes: ${layout.boxes.length}`);
 
   renderComposition(jobId, layout, serverPORT).catch((err) => {
     console.error(`[server] renderComposition error for ${jobId}:`, err);
