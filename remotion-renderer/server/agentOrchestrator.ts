@@ -28,6 +28,8 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 import fs from "node:fs/promises";
 import pLimit from "p-limit";
+import { evaluateDirector } from "../remotion/directorEval";
+import { beamSearchTransitionPlan, getRewardData } from "../remotion/VideoScene";
 
 // ============================================================
 // FFprobe — 精确时长测量
@@ -498,6 +500,61 @@ async function renderVideo(jobId: string, layout: VideoLayout, outputPath: strin
 }
 
 // ============================================================
+// v18: Reward Data Flush（Server-side MCTS Replay + JSONL Write）
+// ============================================================
+
+/**
+ * v18: 在渲染完成后 replay MCTS + flush reward data 到 JSONL
+ *
+ * 流程：
+ *   renderVideo() 完成后 → layout.shots + layout.director 可用
+ *   → 重建 emotions（用 evaluateDirector）
+ *   → beamSearchTransitionPlan(shots, emotions, fps) 触发 MCTS search
+ *   → getRewardData() 读取 module-level collector
+ *   → appendFileSync → dataset/reward_data.jsonl
+ */
+async function collectRewardData(layout: VideoLayout, jobId: string): Promise<void> {
+  if (!layout.shots || layout.shots.length === 0) {
+    console.info(`[Orchestrator:${jobId}] reward: no shots, skipping`);
+    return;
+  }
+
+  const fps = layout.fps || 30;
+  const durationInFrames = layout.director
+    ? layout.director.scenes[layout.director.scenes.length - 1].end * fps
+    : layout.shots.reduce((sum, s) => sum + s.duration, 0);
+
+  // 重建 emotions（与 VideoScene.tsx 内 useMemo 逻辑一致）
+  const emotions = layout.shots.map((shot) => {
+    const midT = (shot.start + shot.duration / 2) / fps;
+    const duration = durationInFrames / fps;
+    const state = evaluateDirector(layout.director!, midT, duration);
+    return state?.emotion ?? 0.5;
+  });
+
+  // 运行 MCTS（触发 rewardCollector.collect()）
+  try {
+    beamSearchTransitionPlan(layout.shots, emotions, fps);
+  } catch (err) {
+    console.error(`[Orchestrator:${jobId}] MCTS error: ${err}`);
+    return;
+  }
+
+  // 读取并 flush 到 JSONL
+  const jsonl = getRewardData();
+  if (!jsonl.trim()) {
+    console.info(`[Orchestrator:${jobId}] reward: no data collected`);
+    return;
+  }
+
+  const datasetDir = path.join(process.cwd(), "dataset");
+  await fs.mkdir(datasetDir, { recursive: true });
+  const jsonlPath = path.join(datasetDir, "reward_data.jsonl");
+  await fs.appendFile(jsonlPath, jsonl + "\n", "utf-8");
+  console.info(`[Orchestrator:${jobId}] reward: flushed ${jsonl.split("\n").filter(Boolean).length} entries to ${jsonlPath}`);
+}
+
+// ============================================================
 // runAgent v5 — 完整编排入口
 // ============================================================
 
@@ -609,6 +666,9 @@ export async function runAgent(config: OrchestratorConfig): Promise<Orchestrator
     const rendered = await renderVideo(jobId, layout, silentPath);
     if (!rendered) throw new Error("Remotion render failed");
     console.info(`[Orchestrator:${jobId}] 7: rendered → ${rendered}`);
+
+    // Step 7.5: v18 Reward Data Flush（MCTS replay + JSONL write）
+    await collectRewardData(layout, jobId);
 
     // Step 8: 音画合并（无 -shortest）
     let finalVideoPath = rendered;

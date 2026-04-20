@@ -859,7 +859,7 @@ function rolloutEstimate(
  *   Backpropagation | backpropagate() — update visits + Q-values
  *   Value function  | evaluateFullSequence() — 直接复用 v16
  **/
-function beamSearchTransitionPlan(
+export function beamSearchTransitionPlan(
   shots: Shot[],
   emotions: number[],
   fps: number
