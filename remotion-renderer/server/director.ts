@@ -59,9 +59,10 @@ export interface EmphasisPoint {
   action: "zoom-in" | "flash" | "pause" | "slow-down" | "subtitle-pulse" | "voice-up";
 }
 
-/** VTT 解析后，词级绑定的强调点（运行时消费） */
+/** VTT 解析后，词/短语级绑定的强调点（运行时消费） */
 export interface EmphasisPointWord {
-  wordIndex: number;
+  /** 强调的词序号区间（phrase 级，支持多词） */
+  wordIndices: number[];
   type: "visual" | "audio" | "both";
   action: "zoom-in" | "flash" | "pause" | "slow-down" | "subtitle-pulse" | "voice-up";
 }
@@ -301,11 +302,11 @@ export function buildDirector(topic: string, script: VideoScript, subtitleCues?:
  * 把时间区间的 emphasisPoints 绑定到具体词索引（语义驱动核心）
  *
  * 输入：emphasisPoints（时间区间）+ subtitleCues（词级时间戳）
- * 输出：emphasisPointsWord[]（绑定到 wordIndex）
+ * 输出：EmphasisPointWord[]（绑定到 wordIndices[]，phrase 级）
  *
- * 用重叠量选词（而非 find 第一个相交）：
- *   - 选中重叠时间最长的词 = 真正的语义焦点词
- *   - 避免 emphasis 落在词尾"擦边"的情况
+ * 收集所有与 emphasis 区间重叠的词（而非只选一个）：
+ *   - phrase-level 强调支持（"三天赚钱" = 3个词同时高亮）
+ *   - 避免单字词强调时语义不完整
  */
 export function bindEmphasisToWords(
   emphasisPoints: EmphasisPoint[],
@@ -314,38 +315,32 @@ export function bindEmphasisToWords(
   const result: EmphasisPointWord[] = [];
 
   // 展平所有词
-  const allWords: WordCue[] = [];
-  for (const cue of subtitleCues) {
-    for (const w of cue.words) {
-      allWords.push(w);
-    }
-  }
+  const allWords: WordCue[] = buildAllWords(subtitleCues);
 
   for (const ep of emphasisPoints) {
     // 重叠量计算
     const overlap = (wStart: number, wEnd: number) =>
       Math.max(0, Math.min(ep.at[1], wEnd) - Math.max(ep.at[0], wStart));
 
-    // 找重叠量最大的词（可能多个词重叠，取最长的）
-    let best: WordCue | null = null;
-    let bestScore = 0;
+    // 收集所有重叠 > 0 的词（phrase 级）
+    const indices: number[] = [];
     for (const w of allWords) {
-      const score = overlap(w.start, w.end);
-      if (score > bestScore) {
-        bestScore = score;
-        best = w;
+      if (overlap(w.start, w.end) > 0) {
+        indices.push(w.index);
       }
     }
 
-    if (best && bestScore > 0) {
-      result.push({ wordIndex: best.index, type: ep.type, action: ep.action });
+    if (indices.length > 0) {
+      result.push({ wordIndices: indices, type: ep.type, action: ep.action });
     }
   }
+
   return result;
 }
 
 /**
  * 把 subtitleCues 展平为 allWords（一次性，不是每帧）
+ * 按 start 排序（保证二分查找前提）
  */
 export function buildAllWords(subtitleCues: SubtitleCue[]): WordCue[] {
   const out: WordCue[] = [];
@@ -354,6 +349,8 @@ export function buildAllWords(subtitleCues: SubtitleCue[]): WordCue[] {
       out.push(w);
     }
   }
+  // 按 start 严格升序（二分查找的前提保证）
+  out.sort((a, b) => a.start - b.start);
   return out;
 }
 
