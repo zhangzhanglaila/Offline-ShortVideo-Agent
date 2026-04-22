@@ -521,7 +521,7 @@ async function renderVideo(jobId: string, layout: VideoLayout, outputPath: strin
 async function collectRewardData(
   layout: VideoLayout,
   jobId: string,
-  snapshot?: { E_bias: number; Pi_temp: number; J_noise: number; SIMULATION_COUNT?: number },
+  snapshot?: { E_bias: number; Pi_temp: number; J_noise: number; SIMULATION_COUNT?: number; stylePreset?: string; intensity?: number },
 ): Promise<void> {
   if (!layout.shots || layout.shots.length === 0) {
     console.info(`[Orchestrator:${jobId}] reward: no shots, skipping`);
@@ -545,12 +545,13 @@ async function collectRewardData(
 
   // 运行 MCTS（触发 rewardCollector.collect()）
   // (π, E, J) params from frozen snapshot (captured at generation start)
-  const p = snapshot ?? { E_bias: 1.0, Pi_temp: 1.0, J_noise: 0.25 };
+  const p = snapshot ?? { E_bias: 1.0, Pi_temp: 1.0, J_noise: 0.25, intensity: 0.7 };
   try {
     const { stats } = beamSearchWithStats(layout.shots, emotions, fps, p.SIMULATION_COUNT, {
       E_bias: p.E_bias,
       Pi_temp: p.Pi_temp,
       J_noise: p.J_noise,
+      stylePreset: p.stylePreset as "tiktok_fast" | "cinematic" | "glitch_edit" | undefined,
     });
 // Write stats to store for WebSocket broadcast
     mctsStatsStore.set({
@@ -558,11 +559,14 @@ async function collectRewardData(
       timestamp: Date.now(),
       rootChildren: stats.rootChildren,
       piEntropy: stats.piEntropy,
+      selected: stats.selected,
       reward: stats.reward,
       control: {
         E_bias: p.E_bias,
         Pi_temp: p.Pi_temp,
         J_noise: p.J_noise,
+        stylePreset: p.stylePreset,
+        intensity: p.intensity,
       },
     });
     console.info(`[Orchestrator:${jobId}] MCTS stats: pi=[${stats.rootChildren.map(c => c.type + ':' + c.prob.toFixed(2)).join(', ')}] entropy=${stats.piEntropy.toFixed(3)}`);

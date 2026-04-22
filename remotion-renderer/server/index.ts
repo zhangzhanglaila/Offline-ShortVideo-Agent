@@ -391,11 +391,13 @@ wss.on("connection", (ws) => {
     try {
       const msg = JSON.parse(raw.toString());
       if (msg.type === "control_update") {
-        const { E_bias, Pi_temp, J_noise } = msg.params ?? {};
-        const patch: Record<string, number> = {};
+        const { E_bias, Pi_temp, J_noise, stylePreset, intensity } = msg.params ?? {};
+        const patch: Record<string, unknown> = {};
         if (E_bias !== undefined) patch.E_bias = E_bias;
         if (Pi_temp !== undefined) patch.Pi_temp = Pi_temp;
         if (J_noise !== undefined) patch.J_noise = J_noise;
+        if (stylePreset !== undefined) patch.stylePreset = stylePreset;
+        if (intensity !== undefined) patch.intensity = intensity;
         if (Object.keys(patch).length > 0) {
           controlHub.set(patch);
           // Sync to mctsConfig so it takes effect in next MCTS run

@@ -132,6 +132,24 @@
   .cp-name { font-size: 11px; font-weight: 600; color: var(--text); }
   .cp-desc { font-size: 10px; color: var(--muted); flex: 1; }
   .cp-val { font-size: 11px; color: var(--accent); font-weight: 600; min-width: 36px; text-align: right; }
+  .cp-presets { display: flex; gap: 6px; }
+  .cp-preset-btn {
+    flex: 1;
+    padding: 6px 4px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--muted);
+    font-family: var(--font);
+    font-size: 10px;
+    cursor: pointer;
+    text-align: center;
+    transition: all 0.15s;
+  }
+  .cp-preset-btn:hover { border-color: var(--accent); color: var(--text); }
+  .cp-preset-btn.active { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+  .cp-divider { height: 1px; background: var(--border); margin: 2px 0; }
+  .cp-section-label { font-size: 9px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); margin-bottom: 2px; }
   .cp-slider {
     -webkit-appearance: none;
     width: 100%;
@@ -234,11 +252,28 @@
       </div>
     </div>
     <div class="cp-body">
+      <!-- Style presets -->
+      <div class="cp-section-label">style</div>
+      <div class="cp-presets">
+        <button class="cp-preset-btn" data-preset="tiktok_fast">&#x1F525; 卡点</button>
+        <button class="cp-preset-btn" data-preset="cinematic">&#x1F3AC; 电影</button>
+        <button class="cp-preset-btn" data-preset="glitch_edit">&#x26A1; 快剪</button>
+      </div>
+      <!-- Intensity slider -->
+      <div class="cp-param">
+        <div class="cp-label">
+          <span class="cp-name">intensity</span>
+          <span class="cp-val" id="valI">0.70</span>
+        </div>
+        <input type="range" class="cp-slider" id="slI" min="0.1" max="1.0" step="0.05" value="0.7">
+      </div>
+      <div class="cp-divider"></div>
+      <!-- Advanced MCTS params -->
+      <div class="cp-section-label">advanced</div>
       <!-- E_bias -->
       <div class="cp-param">
         <div class="cp-label">
           <span class="cp-name">E_bias</span>
-          <span class="cp-desc">reward weight</span>
           <span class="cp-val" id="valE">1.00</span>
         </div>
         <input type="range" class="cp-slider" id="slE" min="0.1" max="3.0" step="0.05" value="1.0">
@@ -246,8 +281,7 @@
       <!-- Pi_temp -->
       <div class="cp-param">
         <div class="cp-label">
-          <span class="cp-name">Pi_temp</span>
-          <span class="cp-desc">style spread</span>
+          <span class="cp-name">π_temp</span>
           <span class="cp-val" id="valP">1.00</span>
         </div>
         <input type="range" class="cp-slider" id="slP" min="0.2" max="3.0" step="0.05" value="1.0">
@@ -256,7 +290,6 @@
       <div class="cp-param">
         <div class="cp-label">
           <span class="cp-name">J_noise</span>
-          <span class="cp-desc">exploration</span>
           <span class="cp-val" id="valJ">0.25</span>
         </div>
         <input type="range" class="cp-slider" id="slJ" min="0.0" max="1.0" step="0.05" value="0.25">
@@ -276,6 +309,7 @@ const VIDEO_API = 'http://localhost:3333';
 let ws = null;
 let cpJobId = null;
 let cpPoll = null;
+let currentPreset = null; // 'tiktok_fast' | 'cinematic' | 'glitch_edit' | null
 
 // ── WebSocket ───────────────────────────────────────────────────────────────────
 function initControlWS() {
@@ -293,6 +327,13 @@ function initControlWS() {
       document.getElementById('slE').value = msg.E_bias ?? 1;
       document.getElementById('slP').value = msg.Pi_temp ?? 1;
       document.getElementById('slJ').value = msg.J_noise ?? 0.25;
+      document.getElementById('slI').value = msg.intensity ?? 0.7;
+      document.getElementById('valI').textContent = (msg.intensity ?? 0.7).toFixed(2);
+      // Sync preset buttons
+      currentPreset = msg.stylePreset || null;
+      document.querySelectorAll('.cp-preset-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.preset === currentPreset);
+      });
     }
   };
   ws.onclose = () => {
@@ -322,6 +363,28 @@ document.getElementById('slJ').addEventListener('input', (e) => {
   document.getElementById('valJ').textContent = parseFloat(e.target.value).toFixed(2);
   sendUpdate({ J_noise: parseFloat(e.target.value) });
 });
+document.getElementById('slI').addEventListener('input', (e) => {
+  document.getElementById('valI').textContent = parseFloat(e.target.value).toFixed(2);
+  sendUpdate({ intensity: parseFloat(e.target.value) });
+});
+
+// Style preset buttons (mutually exclusive)
+document.querySelectorAll('.cp-preset-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const preset = btn.dataset.preset;
+    if (currentPreset === preset) {
+      // Deselect if clicking same preset
+      currentPreset = null;
+      btn.classList.remove('active');
+      sendUpdate({ stylePreset: null });
+    } else {
+      currentPreset = preset;
+      document.querySelectorAll('.cp-preset-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      sendUpdate({ stylePreset: preset });
+    }
+  });
+});
 
 // ── Stats Fetching ─────────────────────────────────────────────────────────────
 function fetchStats() {
@@ -346,35 +409,47 @@ function fetchStats() {
           '<span class="stat-val">' + ((c.prob || 0) * 100).toFixed(1) + '%</span></div>';
       }).join('');
 
-      // E breakdown — show contribution (weight × feature), not raw feature
+      // E breakdown — contribution + percentage share
       const r = stats.reward || {};
       const contrib = r.contrib || {};
       const W = { energy_alignment: 0.10, entropy: 0.35, pacing_smoothness: 0.20, micro_cut_semantic: 0.10, energy_transition_alignment: 0.25 };
-      const eRows = [
+      const eItems = [
         { key: 'energy_align', val: contrib.energy_alignment ?? 0 },
         { key: 'entropy',     val: contrib.entropy ?? 0 },
         { key: 'pacing',      val: contrib.pacing_smoothness ?? 0 },
         { key: 'micro_cut',   val: contrib.micro_cut_semantic ?? 0 },
         { key: 'transition',   val: contrib.energy_transition_alignment ?? 0 },
-      ].map(item => {
-        const maxVal = 0.35; // max contribution = weight × 1.0
-        const pct = Math.min(100, (Math.abs(item.val) / maxVal) * 100).toFixed(1);
+      ];
+      const E_total = eItems.reduce((s, i) => s + i.val, 0) || 1;
+      const eRows = eItems.map(item => {
+        const share = (item.val / E_total) * 100;
         const sign = item.val >= 0 ? '+' : '';
         return '<div class="stat-row">' +
           '<span class="stat-key" style="font-size:9px">' + item.key + '</span>' +
-          '<div class="bar-bg"><div class="bar-fill" style="width:' + pct + '%"></div></div>' +
-          '<span class="stat-val">' + sign + item.val.toFixed(3) + '</span></div>';
+          '<div class="bar-bg"><div class="bar-fill" style="width:' + share.toFixed(1) + '%"></div></div>' +
+          '<span class="stat-val">' + sign + item.val.toFixed(3) + ' <span style="color:var(--muted);font-size:8px">(' + share.toFixed(0) + '%)</span></span></div>';
       }).join('');
+      // E total score
+      const eTotalRow = '<div class="stat-row" style="margin-top:6px;padding-top:6px;border-top:1px solid var(--border)">' +
+        '<span class="stat-key" style="font-size:9px;color:var(--accent)">E total</span>' +
+        '<div class="bar-bg" style="flex:1"></div>' +
+        '<span class="stat-val" style="color:var(--accent)">' + E_total.toFixed(4) + '</span></div>';
 
-      // π entropy
+      // π entropy with interpretation hint
+      const piEntropy = stats.piEntropy ?? 0;
+      const entropyLabel = piEntropy < 1.0 ? '↓ collapse' : piEntropy > 2.0 ? '↑ explore' : '~ balanced';
       const entropyRow = '<div class="stat-row" style="margin-top:4px">' +
         '<span class="stat-key" style="font-size:9px;color:var(--muted)">π entropy</span>' +
         '<div class="bar-bg" style="flex:1"></div>' +
-        '<span class="stat-val" style="color:var(--accent)">' + (stats.piEntropy ?? 0).toFixed(4) + '</span></div>';
+        '<span class="stat-val" style="color:var(--accent)">' + piEntropy.toFixed(4) + ' <span style="color:var(--muted);font-size:8px">' + entropyLabel + '</span></span></div>';
 
       div.innerHTML =
-        '<div class="stats-section"><div class="stats-label">π distribution (prob)</div>' + piBars + entropyRow + '</div>' +
-        '<div class="stats-section"><div class="stats-label">E contribution (weight×feature)</div>' + eRows + '</div>' +
+        '<div class="stats-section"><div class="stats-label">π distribution</div>' + piBars + entropyRow + '</div>' +
+        '<div class="stats-section"><div class="stats-label">selected action</div>' +
+        '<div class="stat-row" style="margin-top:4px">' +
+          '<span class="stat-key" style="color:var(--accent);font-size:11px">' + (stats.selected || '-') + '</span>' +
+          '<div class="bar-bg" style="flex:1"></div></div></div>' +
+        '<div class="stats-section"><div class="stats-label">E breakdown</div>' + eTotalRow + eRows + '</div>' +
         '<div class="stats-section"><div class="stats-label">params</div>' +
         '<div class="stat-row"><span class="stat-key">E_bias</span><span class="stat-val">' + (stats.control?.E_bias ?? 1).toFixed(2) + '</span></div>' +
         '<div class="stat-row"><span class="stat-key">π_temp</span><span class="stat-val">' + (stats.control?.Pi_temp ?? 1).toFixed(2) + '</span></div>' +

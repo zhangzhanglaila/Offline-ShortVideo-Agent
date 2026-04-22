@@ -29,6 +29,8 @@ export interface NormalizedBeamSearchStats {
   }>;
   /** π entropy: -Σ p·log(p), measures style diversity */
   piEntropy: number;
+  /** The action selected by stochastic sampling */
+  selected: string;
   reward: {
     energy_alignment: number;
     entropy: number;
@@ -71,6 +73,7 @@ export function beamSearchWithStats(
       stats: {
         rootChildren: [],
         piEntropy: 0,
+        selected: 'none',
         reward: { energy_alignment: 0, entropy: 0, pacing_smoothness: 0, micro_cut_semantic: 0, energy_transition_alignment: 0, contrib: { energy_alignment: 0, entropy: 0, pacing_smoothness: 0, micro_cut_semantic: 0, energy_transition_alignment: 0 } },
         control: { E_bias: 1, Pi_temp: 1, J_noise: 0.25 },
       },
@@ -86,6 +89,18 @@ export function beamSearchWithStats(
 
   // π entropy: -Σ p·log(p)
   const piEntropy = probs.reduce((s, p) => s - (p > 0 ? p * Math.log(p) : 0), 0);
+
+  // ── Stochastic sampling: collapse π to one action ───────────────────────
+  const sampledIndex = (() => {
+    const r = Math.random();
+    let acc = 0;
+    for (let i = 0; i < probs.length; i++) {
+      acc += probs[i];
+      if (r <= acc) return i;
+    }
+    return probs.length - 1;
+  })();
+  const selected = String(rawStats.rootChildren[sampledIndex]?.type ?? 'none');
 
   // ── E contribution = weight × feature ────────────────────────────────────
   // Weights from evaluateFullSequence L895-899
@@ -110,6 +125,7 @@ export function beamSearchWithStats(
         modelScore: c.modelScore,
       })),
       piEntropy,
+      selected,
       reward: { ...R, contrib },
       control: {
         E_bias: rawStats.control.E_bias ?? 1,

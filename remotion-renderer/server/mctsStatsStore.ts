@@ -12,6 +12,7 @@ export interface MctsStats {
   timestamp: number;
   rootChildren: Array<{ type: string; score: number; prob: number; visits: number; modelScore: number }>;
   piEntropy: number;
+  selected: string;
   reward: {
     energy_alignment: number;
     entropy: number;
@@ -26,7 +27,7 @@ export interface MctsStats {
       energy_transition_alignment: number;
     };
   };
-  control: { E_bias: number; Pi_temp: number; J_noise: number; SIMULATION_COUNT?: number };
+  control: { E_bias: number; Pi_temp: number; J_noise: number; SIMULATION_COUNT?: number; stylePreset?: string; intensity?: number };
 }
 
 let _latest: MctsStats | null = null;

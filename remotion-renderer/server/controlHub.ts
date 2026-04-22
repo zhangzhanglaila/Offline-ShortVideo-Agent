@@ -20,6 +20,10 @@ export interface ControlParams {
   J_noise: number;
   /** MCTS simulation count（默认 undefined = 5）*/
   SIMULATION_COUNT?: number;
+  /** Creator style preset — overrides E-derived rendering with a fixed style */
+  stylePreset?: "tiktok_fast" | "cinematic" | "glitch_edit";
+  /** Intensity slider 0~1 for style preset (default 0.7) */
+  intensity?: number;
 }
 
 const DEFAULT_PARAMS: ControlParams = {
@@ -27,6 +31,8 @@ const DEFAULT_PARAMS: ControlParams = {
   Pi_temp: 1.0,
   J_noise: 0.25,
   SIMULATION_COUNT: undefined,
+  stylePreset: undefined,
+  intensity: 0.7,
 };
 
 class ControlHubClass {
@@ -40,7 +46,7 @@ class ControlHubClass {
   set(patch: Partial<ControlParams>): void {
     Object.assign(this.params, patch);
     this.version++;
-    console.info(`[ControlHub] updated: E_bias=${this.params.E_bias} Pi_temp=${this.params.Pi_temp} J_noise=${this.params.J_noise} SIM_COUNT=${this.params.SIMULATION_COUNT ?? "default"} (v${this.version})`);
+    console.info(`[ControlHub] updated: E_bias=${this.params.E_bias} Pi_temp=${this.params.Pi_temp} J_noise=${this.params.J_noise} style=${this.params.stylePreset ?? "auto"} intensity=${this.params.intensity} (v${this.version})`);
   }
 
   reset(): void {

@@ -46,6 +46,8 @@ export interface MctsControlParams {
   Pi_temp?: number;
   J_noise?: number;
   SIMULATION_COUNT?: number;
+  /** Style preset — biases render params toward a creator style */
+  stylePreset?: StylePreset;
 }
 
 /** Stats emitted after beam search completes (fed back to UI) */
@@ -105,6 +107,56 @@ function predictInline(xRaw: number[]): number {
 export type TransitionType = "whip" | "fade" | "zoom";
 
 /**
+ * E breakdown → render control vector
+ * E features directly control how the video looks, not just scoring.
+ */
+export interface RenderParams {
+  /** 0~1: higher = more camera shake + faster zoom */
+  motionIntensity: number;
+  /** Controls transition curve and timing feel */
+  transitionStyle: "hard" | "smooth" | "glitch";
+  /** 0~1: higher = more frequent micro-cuts */
+  cutDensity: number;
+  /** Whether this shot qualifies as a highlight burst (viral moment) */
+  isHighlight?: boolean;
+}
+
+/** Style presets — human-readable style buttons for creator UI */
+export type StylePreset = "tiktok_fast" | "cinematic" | "glitch_edit";
+
+/**
+ * Style preset → RenderParams
+ * This is the "human language to machine params" translation layer.
+ * Exposed so the server/UI can pass a preset name instead of raw params.
+ */
+export function styleToRenderParams(
+  preset: StylePreset,
+  /** Intensity slider 0~1, multiplies motionIntensity */
+  intensity = 0.7,
+): RenderParams {
+  switch (preset) {
+    case "tiktok_fast":
+      return {
+        motionIntensity: Math.min(1, 0.6 + intensity * 0.4),
+        transitionStyle: "glitch",
+        cutDensity: Math.min(1, 0.5 + intensity * 0.5),
+      };
+    case "cinematic":
+      return {
+        motionIntensity: Math.min(1, 0.2 + intensity * 0.3),
+        transitionStyle: "smooth",
+        cutDensity: Math.min(1, 0.2 + intensity * 0.3),
+      };
+    case "glitch_edit":
+      return {
+        motionIntensity: Math.min(1, 0.5 + intensity * 0.5),
+        transitionStyle: "glitch",
+        cutDensity: Math.min(1, 0.7 + intensity * 0.3),
+      };
+  }
+}
+
+/**
  * 单个镜头的 transition 决策
  * microCut: shot 内部的 micro-cut（v13 新增，在 shot 60%~62% 处做微冲击）
  */
@@ -115,6 +167,8 @@ export interface TransitionDecision {
   microCutAt?: number;
   /** micro-cut 的强度（0~1） */
   microCutIntensity?: number;
+  /** E breakdown → render control signal */
+  renderParams?: RenderParams;
 }
 
 /**
@@ -1472,6 +1526,68 @@ export function beamSearchTransitionPlan(
     bestPlan, energyCurve, shots, emotions, fps
   );
 
+  // ── E → RenderParams: attach visual control signal to every decision ─────────
+  // If stylePreset is set, use it to override E breakdown (director preset mode).
+  // Otherwise derive from E breakdown (autonomous policy path).
+  let motionIntensity: number;
+  let transitionStyle: "hard" | "smooth" | "glitch";
+  let cutDensity: number;
+
+  if (controlParams?.stylePreset) {
+    const rp = styleToRenderParams(controlParams.stylePreset);
+    motionIntensity = rp.motionIntensity;
+    transitionStyle = rp.transitionStyle;
+    cutDensity = rp.cutDensity;
+  } else {
+    const f = selectedFeatures as unknown as Record<string, number>;
+    motionIntensity = f.energy_alignment ?? 0.5;
+    transitionStyle =
+      (f.pacing_smoothness ?? 0.5) > 0.7 ? "smooth" :
+      (f.pacing_smoothness ?? 0.5) < 0.3 ? "glitch" : "hard";
+    cutDensity = f.micro_cut_semantic ?? 0.5;
+  }
+
+  // ── VisualStyleEngine: non-linear E → render composition ───────────────────
+  // "Highlight burst" detection: energy + low pacing + high micro-cut = viral moment.
+  // This creates non-linear coupling — not a simple linear scaling.
+  const f = selectedFeatures as unknown as Record<string, number>;
+  const isHighlight =
+    (f.energy_alignment ?? 0) > 0.65 &&
+    (f.pacing_smoothness ?? 0.5) < 0.45 &&
+    (f.micro_cut_semantic ?? 0) > 0.55;
+
+  let finalMotion = motionIntensity;
+  let finalCutDensity = cutDensity;
+  let finalTransitionStyle = transitionStyle;
+
+  if (isHighlight) {
+    // Non-linear boost: multiplies create explosive effect beyond linear sum
+    finalMotion = Math.min(1.5, motionIntensity * 1.5);
+    finalCutDensity = Math.min(1.5, cutDensity * 1.8);
+    // At highlight, glitch overrides style — maximizes "shake + fast cut" perception
+    finalTransitionStyle = "glitch";
+  } else {
+    // Subtle coupling: energy × pacing interaction
+    // High energy + high pacing = smooth cinematic feel (reduce motion slightly)
+    finalMotion = motionIntensity * (1 + (f.energy_alignment ?? 0) * 0.4 - (f.pacing_smoothness ?? 0.5) * 0.2);
+    // High energy + low pacing = increase cut density more aggressively
+    if ((f.energy_alignment ?? 0) > 0.6 && (f.pacing_smoothness ?? 0.5) < 0.4) {
+      finalCutDensity = Math.min(1.2, cutDensity * 1.3);
+    }
+  }
+
+  finalMotion = Math.max(0.1, Math.min(1.5, finalMotion));
+  finalCutDensity = Math.max(0.1, Math.min(1.5, finalCutDensity));
+
+  for (const [_shotIdx, decision] of bestPlan) {
+    (decision as TransitionDecision).renderParams = {
+      motionIntensity: finalMotion,
+      transitionStyle: finalTransitionStyle,
+      cutDensity: finalCutDensity,
+      isHighlight,
+    };
+  }
+
   // Emit stats before returning
   if (onComplete) {
     onComplete({
@@ -2193,12 +2309,26 @@ function useShotsAroundFrame(
   const microCutAt = decision?.microCutAt ?? 0.60;
   const microCutIntensity = decision?.microCutIntensity ?? 0.08;
   const nearMicroCut = Math.abs(progressInShot - microCutAt) < 0.025;
-  const microCutScale = nearMicroCut ? 1 + microCutIntensity : 1;
+
+  // ── E → RenderParams: E breakdown controls visual rendering ─────────────
+  const rp = decision?.renderParams;
+  const cutDensity = rp?.cutDensity ?? 0.5;
+  const motionIntensity = rp?.motionIntensity ?? 0.5;
+  const ts = rp?.transitionStyle ?? "hard";
+  const isHighlight = rp?.isHighlight ?? false;
+
+  // microCutScale — highlight gets extra micro-cut burst
+  const microCutBase = nearMicroCut ? 1 + microCutIntensity * (0.5 + cutDensity) : 1;
+  const microCutScale = isHighlight ? microCutBase * 1.4 : microCutBase;
+
+  // transitionStyle drives easing curve
+  const ease = ts === "smooth" ? Easing.inOut(Easing.quad) :
+               ts === "glitch" ? Easing.step0 : Easing.out(Easing.quad);
 
   // ── v10.5: Impact frame — 中间帧微冲击（制造"剪辑点"节奏感）──
-  // 仅 zoom 类型生效，在 t≈0.5 时产生一个 scale spike
+  // Highlight: stronger impact spike
   const isImpact = transitionType === "zoom" && isTransitioning && Math.abs(t - 0.5) < 0.12;
-  const impactScale = isImpact ? 1.08 : 1;
+  const impactScale = isImpact ? (isHighlight ? 1.15 : 1.08) : 1;
 
   // ── v10.4: Direction-aware pan continuity ──────────────────
   // current exit direction
@@ -2226,38 +2356,42 @@ function useShotsAroundFrame(
 
   if (transitionType === "whip") {
     // whip pan：横向甩切（t=0→1，current快速右甩出，next从右滑入）
-    const whipCurrent = isTransitioning ? interpolate(t, [0, 1], [0, 800], { easing: Easing.out(Easing.quad) }) : 0;
-    const whipNext = isTransitioning ? interpolate(t, [0, 1], [200, 0], { easing: Easing.out(Easing.quad) }) : 0;
+    // motionIntensity scales displacement magnitude
+    const mi = 0.5 + motionIntensity;
+    const whipCurrent = isTransitioning ? interpolate(t, [0, 1], [0, 800 * mi], { easing: ease }) : 0;
+    const whipNext = isTransitioning ? interpolate(t, [0, 1], [200 * mi, 0], { easing: ease }) : 0;
     currentTransform = `translateX(${whipCurrent}px) scale(${microCutScale})`;
     nextTransform = `translateX(${whipNext}px)`;
     // whip: 透明度在最后一段才切（不是全程淡）
     const whipCutoff = interpolate(t, [0, 1], [0, 1], { easing: Easing.linear });
     currentOpacity = isTransitioning ? Math.max(0, 1 - whipCutoff * 1.8) : 1;
     nextOpacity = isTransitioning ? Math.min(1, (whipCutoff - 0.3) * 1.5) : 0;
-    // 微噪声
-    const noise = Math.sin(frame * 13.7) * 0.012;
+    // 微噪声 — scales with motionIntensity
+    const noise = Math.sin(frame * 13.7) * 0.012 * mi;
     currentOpacity = Math.max(0, Math.min(1, currentOpacity + noise));
-    nextOpacity = Math.max(0, Math.min(1, nextOpacity + Math.sin(frame * 11.3 + 1.5) * 0.012));
+    nextOpacity = Math.max(0, Math.min(1, nextOpacity + Math.sin(frame * 11.3 + 1.5) * 0.012 * mi));
   } else if (transitionType === "fade") {
     // fade：纯 opacity 渐变，无 scale（适合慢内容）
     currentTransform = `translateX(${exitTranslate * 0.3}px) scale(${microCutScale})`;
     nextTransform = `translateX(${-enterTranslate * 0.3}px)`;
-    const fadeT = isTransitioning ? interpolate(t, [0, 1], [1, 0], { easing: Easing.linear }) : 1;
-    const fadeNext = isTransitioning ? interpolate(t, [0, 1], [0, 1], { easing: Easing.linear }) : 0;
+    const fadeT = isTransitioning ? interpolate(t, [0, 1], [1, 0], { easing: ease }) : 1;
+    const fadeNext = isTransitioning ? interpolate(t, [0, 1], [0, 1], { easing: ease }) : 0;
     const noise = Math.sin(frame * 7.3) * 0.008;
     currentOpacity = Math.max(0, Math.min(1, fadeT + noise));
     nextOpacity = Math.max(0, Math.min(1, fadeNext + Math.sin(frame * 5.9 + 1.5) * 0.008));
   } else {
     // zoom（默认）：cross-zoom + impact frame + pan continuity
-    const exitZoom = isTransitioning ? interpolate(t, [0, 1], [1, 1.2], { easing: Easing.in(Easing.quad) }) : 1;
+    // motionIntensity scales zoom magnitude
+    const mi = 0.5 + motionIntensity;
+    const exitZoom = isTransitioning ? interpolate(t, [0, 1], [1, 1 + 0.2 * mi], { easing: ease }) : 1;
     const exitFade = isTransitioning ? interpolate(t, [0, 1], [1, 0], { easing: Easing.linear }) : 1;
-    const enterZoom = isTransitioning ? interpolate(t, [0, 1], [1.15, 1], { easing: Easing.out(Easing.quad) }) : 1;
+    const enterZoom = isTransitioning ? interpolate(t, [0, 1], [1 + 0.15 * mi, 1], { easing: ease }) : 1;
     const enterFade = isTransitioning ? interpolate(t, [0, 1], [0, 1], { easing: Easing.linear }) : 0;
     // v13 microCutScale: 镜头内部微冲击（叠加在 exitZoom 之上）
     currentTransform = `translateX(${exitTranslate}px) scale(${exitZoom * impactScale * microCutScale})`;
     nextTransform = `translateX(${-enterTranslate}px) scale(${enterZoom})`;
-    const noise = Math.sin(frame * 13.7) * 0.015;
-    const nextNoise = Math.sin(frame * 11.3 + 1.5) * 0.015;
+    const noise = Math.sin(frame * 13.7) * 0.015 * mi;
+    const nextNoise = Math.sin(frame * 11.3 + 1.5) * 0.015 * mi;
     currentOpacity = Math.max(0, Math.min(1, exitFade + noise));
     nextOpacity = Math.max(0, Math.min(1, enterFade + nextNoise));
   }
