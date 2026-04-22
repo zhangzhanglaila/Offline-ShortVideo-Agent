@@ -1,0 +1,1 @@
+import { runAgent } from './server/agentOrchestrator'; runAgent({ topic: '什么是大语言模型', enableTTS: false, enableWordSubtitles: false }).then(r => console.log('DONE', r.success)).catch(e => console.error('ERROR:', e.message));

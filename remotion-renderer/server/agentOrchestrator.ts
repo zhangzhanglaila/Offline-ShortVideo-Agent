@@ -504,20 +504,24 @@ async function renderVideo(jobId: string, layout: VideoLayout, outputPath: strin
 // ============================================================
 
 /**
- * v18: 在渲染完成后 replay MCTS + flush reward data 到 JSONL
+ * v18+v19.6b: Replay MCTS + flush reward data to JSONL
  *
- * 流程：
- *   renderVideo() 完成后 → layout.shots + layout.director 可用
+ * 流程（与渲染完全解耦）：
+ *   VideoLayout 生成后（Step 6）→ layout.shots + layout.director 就可用
  *   → 重建 emotions（用 evaluateDirector）
  *   → beamSearchTransitionPlan(shots, emotions, fps) 触发 MCTS search
  *   → getRewardData() 读取 module-level collector
  *   → appendFileSync → dataset/reward_data.jsonl
+ *
+ * 注意：此函数在 renderVideo 之前调用，渲染失败不影响 reward data 收集
  */
 async function collectRewardData(layout: VideoLayout, jobId: string): Promise<void> {
   if (!layout.shots || layout.shots.length === 0) {
     console.info(`[Orchestrator:${jobId}] reward: no shots, skipping`);
     return;
   }
+
+  console.info(`[Orchestrator:${jobId}] reward: collectRewardData triggered (shots=${layout.shots.length})`);
 
   const fps = layout.fps || 30;
   const durationInFrames = layout.director
@@ -661,35 +665,39 @@ export async function runAgent(config: OrchestratorConfig): Promise<Orchestrator
     const videoDuration = layout.director ? layout.director.scenes[layout.director.scenes.length - 1].end : 0;
     console.info(`[Orchestrator:${jobId}] 6: layout duration=${videoDuration.toFixed(3)}s`);
 
-    // Step 7: 渲染
-    const silentPath = path.join(outputDir, `${jobId}_silent.mp4`);
-    const rendered = await renderVideo(jobId, layout, silentPath);
-    if (!rendered) throw new Error("Remotion render failed");
-    console.info(`[Orchestrator:${jobId}] 7: rendered → ${rendered}`);
-
-    // Step 7.5: v18 Reward Data Flush（MCTS replay + JSONL write）
+    // Step 7: Reward Data Flush（MCTS replay + JSONL write — 不依赖渲染）
+    // collectRewardData 只用 VideoLayout，不走 Remotion renderer
     await collectRewardData(layout, jobId);
 
-    // Step 8: 音画合并（无 -shortest）
-    let finalVideoPath = rendered;
-    if (audioTrack) {
+    // Step 8: 渲染（与 reward data 解耦，渲染失败不影响数据收集）
+    const silentPath = path.join(outputDir, `${jobId}_silent.mp4`);
+    const rendered = await renderVideo(jobId, layout, silentPath);
+    if (!rendered) {
+      console.warn(`[Orchestrator:${jobId}] 7: render failed — reward data already collected`);
+    } else {
+      console.info(`[Orchestrator:${jobId}] 7: rendered → ${rendered}`);
+    }
+
+    // Step 9: 音画合并（无 -shortest，仅在渲染成功时执行）
+    let finalVideoPath = rendered ?? silentPath;
+    if (rendered && audioTrack) {
       finalVideoPath = path.join(outputDir, `${jobId}_final.mp4`);
       const merged = await mergeAudioVideo(rendered, audioTrack.path, finalVideoPath);
       if (merged) {
-        console.info(`[Orchestrator:${jobId}] 8: merged → ${finalVideoPath}`);
+        console.info(`[Orchestrator:${jobId}] 9: merged → ${finalVideoPath}`);
       } else {
         finalVideoPath = rendered;
       }
     }
 
     // 终极验证：FFprobe 最终视频时长
-    const finalDuration = await getAudioDuration(finalVideoPath);
+    const finalDuration = await getAudioDuration(finalVideoPath ?? silentPath);
 
     const totalTime = (Date.now() - startTime) / 1000;
     console.info(`[Orchestrator:${jobId}] DONE in ${totalTime.toFixed(1)}s — final=${finalDuration.toFixed(3)}s`);
 
     return {
-      outputPath: finalVideoPath,
+      outputPath: rendered ?? silentPath,
       topic,
       arc: director.arc,
       totalTimeSeconds: totalTime,

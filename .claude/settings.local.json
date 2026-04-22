@@ -226,7 +226,8 @@
       "Bash(/d/programs/Python/Python310/python -m py_compile dataset/evaluate.py)",
       "Bash(/d/programs/Python/Python310/python -m py_compile dataset/reward_reality_check.py)",
       "Bash(/d/programs/Python/Python310/python:*)",
-      "Bash(git:*)"
+      "Bash(git:*)",
+      "Bash(./node_modules/.bin/tsc --noEmit)"
     ]
   }
 }
