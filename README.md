@@ -122,6 +122,115 @@
 
 ---
 
+## v20 导演系统：RLHF 训练闭环（remotion-renderer/）
+
+### 核心升级：从确定性填空 → 可学习的随机结构生成分布
+
+**v16-v19 问题：**
+
+```
+deterministic rollout → backtrackPlan 永远填充 zoom
+→ 所有 plan 尾部同构（whip-zoom-zoom... / fade-zoom-zoom...）
+→ Q 值 collapse → MCTS 无法区分不同结构
+→ feature variance ≈ 0 → reward model 学不动
+```
+
+**v20 解法：**
+
+```
+Rollout is now a stochastic structured generator, not a deterministic filler.
+```
+
+将 MCTS rollout 从"填空函数"升级为**随机结构生成分布**，引入 latent pattern mode 先验，引导 rollout 产生有意义的节奏结构差异，同时保持局部转移一致性。
+
+---
+
+### 设计原则
+
+**① stochastic rollout（非确定性）**
+
+rollout 尾部的类型填充不是固定的 `zoom`，而是从条件概率分布中采样。每次 rollout 产生不同的结构变体，使 Q 值具有真实的方差。
+
+**② soft pattern bias（软模式，而非硬规则）**
+
+| 实现方式 | 问题 | 结果 |
+|---------|------|------|
+| hard rule（deterministic） | 产生离散簇，reward surface 分峰 | 模型学成"分类器"而非 ranking |
+| soft distribution（概率分布） | 连续 reward 空间，可训练 | 模型学到真实排序能力 |
+
+所有 pattern mode 均以概率分布实现，例如 `alternating` 模式以 85% 概率选相反类型，而非强制交替。
+
+**③ UCT 保持干净（不污染 Q）**
+
+```
+UCT = Q + U
+```
+
+Q 是 reward 的无偏估计，不叠加结构惩罚。结构探索由 rollout 的随机性驱动，而非 UCT 人为整形。
+
+---
+
+### Pattern Mode（潜在节奏模式）
+
+每个 rollout 在填充前采样一个全局 latent mode，然后用该模式的概率分布填充尾部。4 种 mode 均匀采样（uniform），让 reward 函数决定哪种节奏更优。
+
+| Mode | 节奏特点 | 典型结构 |
+|------|---------|---------|
+| `alternating` | 强节奏交替 | whip → zoom → whip → zoom |
+| `burst` | 前慢后爆发 | fade/fade → whip/whip（能量积累后释放） |
+| `smooth` | 平稳推进 | zoom-heavy（85%+ zoom，极少 whip/fade） |
+| `mixed` | 自然混合 | base editorial 分布 |
+
+**注意：** 当前 pattern mode 仍是 hand-crafted latent variable，属于人工先验而非 learned policy。这是 Phase 1（rule-based exploration），下一阶段目标是通过强化学习让 MCTS 自己发现更优的 pattern 结构。
+
+---
+
+### 数据质量目标（训练闭环验证）
+
+训练数据不是越多越好，而是"可学习的"才好。跑 batch 后验证以下指标：
+
+| 指标 | 目标 | 含义 |
+|------|------|------|
+| **Top-1 结构占比** | < 70% | 结构多样性，不存在单结构 dominance |
+| **structurePatternScore variance** | > 0 | 结构特征有真实差异 |
+| **pacing_smoothness variance** | > 0 | 节奏平滑度有区分度 |
+| **reward histogram** | 连续分布（无离散峰） | reward surface 光滑可学习 |
+| **separability** | > 0.7 | 正例对有意义的 reward 差 |
+| **model Spearman** | > 0.8 | 模型学到真实排序能力 |
+
+运行 `python analyze_reward_data.py` 可视化上述指标。
+
+---
+
+### 技术栈
+
+```
+remotion-renderer/
+├── remotion/VideoScene.tsx     # MCTS-UCT + v20 reward
+├── dataset/
+│   ├── train.py                # Reward Model 训练（MLP回归）
+│   ├── model.py                # 模型架构定义
+│   ├── dataset_loader.py       # JSONL 数据加载
+│   └── analyze_reward_data.py  # 数据质量诊断
+└── rewardModel.ts              # MLP 推理（TypeScript）
+```
+
+### 训练 pipeline
+
+```
+batch 运行 → JSONL 数据收集
+    ↓
+analyze_reward_data.py（质量诊断）
+    ↓
+train.py --jsonl dataset/reward_data.jsonl（训练 MLP）
+    ↓
+reward_model.npz（MLP 权重）
+    ↓
+evaluate.py --review（验证模型）
+```
+
+---
+
 ## 快速开始
 
 ### 环境要求
