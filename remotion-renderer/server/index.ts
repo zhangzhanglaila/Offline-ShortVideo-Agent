@@ -6,10 +6,16 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import fs from "node:fs/promises";
+import { createServer } from "node:http";
+import { WebSocketServer, WebSocket } from "ws";
 
 import { renderMedia, selectComposition, getCompositions } from "@remotion/renderer";
 import { generateLayoutFromTopic as generateLayoutFromTopicRule, generateMiniLayout } from "./generator";
 import { generateLayoutFromTopic as generateLayoutFromTopicLLM, generateVideoLayoutFromTopic } from "./llm";
+import { controlHub } from "./controlHub.js";
+import type { ControlParams } from "./controlHub.js";
+import { mctsConfig } from "./mctsConfig.js";
+import { mctsStatsStore } from "./mctsStatsStore.js";
 import type { TimelineLayout } from "@remotion/types";
 import type { VideoLayout } from "@remotion/types";
 
@@ -373,8 +379,99 @@ app.get("/health", (_req, res) => {
   res.json({ ok: true, jobs: jobs.size });
 });
 
-app.listen(serverPORT, () => {
+/* ======================== WebSocket Server ======================== */
+const httpServer = createServer(app);
+const wss = new WebSocketServer({ server: httpServer });
+
+wss.on("connection", (ws) => {
+  // Send current control params on connect
+  ws.send(JSON.stringify({ type: "control_state", ...controlHub.get() }));
+
+  ws.on("message", (raw) => {
+    try {
+      const msg = JSON.parse(raw.toString());
+      if (msg.type === "control_update") {
+        const { E_bias, Pi_temp, J_noise } = msg.params ?? {};
+        const patch: Record<string, number> = {};
+        if (E_bias !== undefined) patch.E_bias = E_bias;
+        if (Pi_temp !== undefined) patch.Pi_temp = Pi_temp;
+        if (J_noise !== undefined) patch.J_noise = J_noise;
+        if (Object.keys(patch).length > 0) {
+          controlHub.set(patch);
+          // Sync to mctsConfig so it takes effect in next MCTS run
+          mctsConfig.set(patch);
+          // Broadcast updated params to all clients
+          const state = controlHub.get();
+          const broadcast = JSON.stringify({ type: "control_state", ...state });
+          for (const client of wss.clients) {
+            if (client.readyState === WebSocket.OPEN) client.send(broadcast);
+          }
+        }
+      }
+      if (msg.type === "control_reset") {
+        controlHub.reset();
+        mctsConfig.reset();
+        const state = controlHub.get();
+        const broadcast = JSON.stringify({ type: "control_state", ...state });
+        for (const client of wss.clients) {
+          if (client.readyState === WebSocket.OPEN) client.send(broadcast);
+        }
+      }
+    } catch { /* ignore malformed */ }
+  });
+});
+
+/* ======================== Stats Endpoint ======================== */
+
+/**
+ * GET /stats/latest
+ * Returns the most recent MCTS (π, E, J) observation stats
+ */
+app.get("/stats/latest", (_req, res) => {
+  const stats = mctsStatsStore.get();
+  if (!stats) {
+    res.status(204).send();
+    return;
+  }
+  res.json(stats);
+});
+
+/* ======================== Control Endpoints ======================== */
+
+/**
+ * GET /control
+ * Returns current (π, E, J) control params
+ */
+app.get("/control", (_req, res) => {
+  res.json(controlHub.get());
+});
+
+/**
+ * POST /control
+ * Update (π, E, J) control params
+ * Body: { E_bias?: number, Pi_temp?: number, J_noise?: number }
+ */
+app.post("/control", (req, res) => {
+  const { E_bias, Pi_temp, J_noise } = req.body as Partial<ControlParams>;
+  const patch: Partial<ControlParams> = {};
+  if (E_bias !== undefined) patch.E_bias = E_bias;
+  if (Pi_temp !== undefined) patch.Pi_temp = Pi_temp;
+  if (J_noise !== undefined) patch.J_noise = J_noise;
+  if (Object.keys(patch).length === 0) {
+    res.status(400).json({ error: "At least one param required" });
+    return;
+  }
+  controlHub.set(patch);
+  mctsConfig.set(patch);
+  res.json(controlHub.get());
+});
+
+/* ======================== Start Server ======================== */
+
+httpServer.listen(serverPORT, () => {
   console.info(`Remotion render server running on http://localhost:${serverPORT}`);
+  console.info(`[ControlHub] WebSocket ready on ws://localhost:${serverPORT}`);
+  console.info(`[ControlHub] Endpoints: GET/POST /control`);
 });
 
 export { app };

@@ -1,0 +1,882 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Agent Time Machine</title>
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --surface: #12121a;
+    --border: #1e1e2e;
+    --text: #e0e0e0;
+    --muted: #666;
+    --accent: #00ff88;
+    --accent-dim: rgba(0,255,136,0.15);
+    --branch-1: #00ff88;
+    --branch-2: #ff3366;
+    --branch-3: #00d4ff;
+    --branch-4: #ffaa00;
+    --dimmed: rgba(255,255,255,0.1);
+    --font: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 13px; height: 100vh; overflow: hidden; }
+  #app { display: grid; grid-template-rows: 56px 1fr; height: 100vh; }
+
+  /* ── Header ─────────────────────────────────────────────── */
+  header { background: var(--surface); border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 16px; padding: 0 20px; }
+  .logo { font-size: 15px; font-weight: 700; letter-spacing: 0.05em; color: var(--accent); text-transform: uppercase; }
+  .logo span { color: var(--muted); font-weight: 400; }
+  .controls { display: flex; gap: 10px; align-items: center; margin-left: auto; }
+  .btn { background: var(--surface); border: 1px solid var(--border); color: var(--text); padding: 6px 14px; border-radius: 4px; cursor: pointer; font-family: var(--font); font-size: 12px; transition: all 0.15s; }
+  .btn:hover { border-color: var(--accent); color: var(--accent); }
+  .btn.primary { background: var(--accent); color: #000; border-color: var(--accent); font-weight: 600; }
+  .btn.primary:hover { opacity: 0.85; }
+  .btn:disabled { opacity: 0.4; cursor: default; }
+  .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  .status-dot.live { background: var(--accent); box-shadow: 0 0 8px var(--accent); animation: pulse 1.5s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+  /* ── Main layout ─────────────────────────────────────────── */
+  main { display: grid; grid-template-columns: 340px 1fr 360px; overflow: hidden; }
+
+  /* ── Left panel: trace list ─────────────────────────────── */
+  .panel-left { border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; }
+  .panel-header { padding: 12px 16px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); border-bottom: 1px solid var(--border); }
+  .trace-list { flex: 1; overflow-y: auto; padding: 8px; }
+  .trace-item { padding: 10px 12px; border-radius: 6px; cursor: pointer; border: 1px solid transparent; transition: all 0.15s; margin-bottom: 4px; }
+  .trace-item:hover { background: var(--surface); border-color: var(--border); }
+  .trace-item.selected { background: var(--accent-dim); border-color: var(--accent); }
+  .trace-item .t-id { color: var(--accent); font-size: 11px; }
+  .trace-item .t-meta { color: var(--muted); font-size: 10px; margin-top: 2px; }
+  .trace-item .t-status { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
+  .empty-state { text-align: center; padding: 40px 20px; color: var(--muted); font-size: 12px; line-height: 1.8; }
+
+  /* ── Center: graph ───────────────────────────────────────── */
+  .panel-center { display: flex; flex-direction: column; overflow: hidden; position: relative; }
+  .graph-header { padding: 10px 16px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 12px; }
+  .branch-legend { display: flex; gap: 8px; align-items: center; margin-left: auto; }
+  .legend-dot { width: 8px; height: 8px; border-radius: 50%; }
+  #graph-container { flex: 1; overflow: hidden; position: relative; }
+  #graph-svg { width: 100%; height: 100%; }
+  .graph-empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 12px; flex-direction: column; gap: 12px; }
+  .graph-empty .icon { font-size: 32px; opacity: 0.3; }
+
+  /* ── Right panel: step detail ───────────────────────────── */
+  .panel-right { border-left: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; }
+  .step-detail { flex: 1; overflow-y: auto; padding: 12px 16px; }
+  .step-detail-empty { text-align: center; padding: 40px 20px; color: var(--muted); font-size: 12px; }
+  .detail-section { margin-bottom: 20px; }
+  .detail-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); margin-bottom: 6px; padding-bottom: 4px; border-bottom: 1px solid var(--border); }
+  .detail-value { font-size: 12px; line-height: 1.7; color: var(--text); white-space: pre-wrap; word-break: break-word; }
+  .detail-tool { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; font-size: 11px; }
+  .detail-tool .tool-name { color: var(--accent); font-weight: 600; }
+  .detail-tool .tool-args { color: var(--muted); margin-top: 4px; font-size: 10px; }
+  .detail-tool .tool-result { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); color: #a0e8a0; font-size: 11px; max-height: 120px; overflow-y: auto; }
+  .branch-badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 600; text-transform: uppercase; }
+  .modify-box { background: rgba(255,170,0,0.1); border: 1px solid rgba(255,170,0,0.3); border-radius: 6px; padding: 12px; margin-top: 10px; }
+  .modify-box h4 { color: #ffaa00; font-size: 11px; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.1em; }
+  .modify-textarea { width: 100%; background: var(--bg); border: 1px solid var(--border); color: var(--text); font-family: var(--font); font-size: 11px; padding: 8px; border-radius: 4px; resize: vertical; min-height: 60px; margin-bottom: 8px; }
+  .modify-textarea:focus { outline: none; border-color: #ffaa00; }
+
+  /* ── SVG node styles ────────────────────────────────────── */
+  .node circle { stroke-width: 2; cursor: pointer; transition: all 0.2s; }
+  .node circle:hover { filter: brightness(1.3); }
+  .node text { font-family: var(--font); font-size: 10px; fill: #888; pointer-events: none; }
+  .node .step-num { font-size: 9px; fill: #555; }
+  .link { stroke-opacity: 0.4; fill: none; transition: all 0.3s; }
+  .link.main { stroke: #333; stroke-width: 1.5; }
+  .link.branch { stroke-width: 1.5; }
+  .link.fade { stroke-opacity: 0.15; }
+  .node.dimmed circle { opacity: 0.2; }
+  .node.dimmed text { opacity: 0.2; }
+  .node.active circle { stroke: #fff; stroke-width: 2.5; }
+
+  /* ── Tool call badge ─────────────────────────────────────── */
+  .tool-badge { position: absolute; background: rgba(0,255,136,0.15); border: 1px solid rgba(0,255,136,0.4); color: var(--accent); padding: 2px 7px; border-radius: 10px; font-size: 10px; font-family: var(--font); white-space: nowrap; }
+
+  /* ── Branch annotation ───────────────────────────────────── */
+  .branch-label { font-family: var(--font); font-size: 9px; fill: #888; }
+  .fork-node circle { stroke-dasharray: 3 2; }
+
+  /* ── Control Panel ────────────────────────────────────────── */
+  #controlPanel {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    width: 340px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    z-index: 1000;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+    overflow: hidden;
+  }
+  .cp-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    background: rgba(0,255,136,0.05);
+  }
+  .cp-title { font-size: 12px; font-weight: 700; color: var(--accent); letter-spacing: 0.05em; }
+  .cp-conn { display: flex; align-items: center; gap: 5px; font-size: 10px; color: var(--muted); }
+  .cp-conn .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); }
+  .cp-conn.connected .dot { background: var(--accent); box-shadow: 0 0 6px var(--accent); }
+  .cp-conn.connected { color: var(--accent); }
+  .cp-body { padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
+  .cp-param { display: flex; flex-direction: column; gap: 4px; }
+  .cp-label { display: flex; align-items: baseline; gap: 6px; }
+  .cp-name { font-size: 11px; font-weight: 600; color: var(--text); }
+  .cp-desc { font-size: 10px; color: var(--muted); flex: 1; }
+  .cp-val { font-size: 11px; color: var(--accent); font-weight: 600; min-width: 36px; text-align: right; }
+  .cp-slider {
+    -webkit-appearance: none;
+    width: 100%;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--border);
+    outline: none;
+  }
+  .cp-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+    box-shadow: 0 0 6px rgba(0,255,136,0.4);
+  }
+  .cp-footer { padding: 10px 14px; border-top: 1px solid var(--border); display: flex; gap: 8px; align-items: center; }
+  .cp-topic {
+    flex: 1;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 11px;
+    padding: 5px 8px;
+    border-radius: 4px;
+    outline: none;
+  }
+  .cp-topic:focus { border-color: var(--accent); }
+  .cp-result { padding: 6px 14px 10px; font-size: 10px; color: var(--muted); }
+  .cp-result a { color: var(--accent); text-decoration: none; }
+  .cp-result a:hover { text-decoration: underline; }
+  #btnGenerate { white-space: nowrap; font-size: 11px; padding: 6px 12px; }
+
+  /* ── Stats Panel ─────────────────────────────────────────────── */
+  .cp-stats { padding: 8px 14px 10px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 8px; }
+  .stats-section { display: flex; flex-direction: column; gap: 3px; }
+  .stats-label { font-size: 9px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); margin-bottom: 2px; }
+  .stat-row { display: flex; align-items: center; gap: 6px; }
+  .stat-key { font-size: 10px; color: var(--text); min-width: 80px; }
+  .stat-val { font-size: 10px; color: var(--accent); font-weight: 600; min-width: 36px; text-align: right; }
+  .bar-bg { flex: 1; height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
+  .bar-fill { height: 100%; background: var(--accent); border-radius: 2px; transition: width 0.3s; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="logo">&#x23F1; Time Machine <span>/ AI Agent Debugger</span></div>
+    <div class="controls">
+      <div class="status-dot" id="statusDot"></div>
+      <span id="statusText" style="font-size:11px;color:var(--muted)">idle</span>
+      <button class="btn primary" id="btnRun">&#x25B6; Run Agent</button>
+      <button class="btn" id="btnPause" disabled>&#x23F8; Pause</button>
+      <button class="btn" id="btnResume" disabled>&#x23F5; Resume</button>
+      <button class="btn" id="btnClear" style="color:var(--muted)">Clear</button>
+    </div>
+  </header>
+
+  <main>
+    <!-- Left: trace list -->
+    <div class="panel-left">
+      <div class="panel-header">Traces</div>
+      <div class="trace-list" id="traceList">
+        <div class="empty-state">No traces yet.<br>Click <strong>Run Agent</strong> to start.</div>
+      </div>
+    </div>
+
+    <!-- Center: graph -->
+    <div class="panel-center">
+      <div class="graph-header">
+        <span>Trace Graph</span>
+        <div class="branch-legend" id="branchLegend"></div>
+      </div>
+      <div id="graph-container">
+        <svg id="graphSvg"></svg>
+        <div class="graph-empty" id="graphEmpty">
+          <div class="icon">&#x1F300;</div>
+          <div>Run an agent to see its trace graph</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right: step detail -->
+    <div class="panel-right">
+      <div class="panel-header">Step Detail</div>
+      <div class="step-detail" id="stepDetail">
+        <div class="step-detail-empty">Select a step node to inspect it</div>
+      </div>
+    </div>
+</main>
+
+  <!-- ── (π, E, J) Control Panel ──────────────────────────────────── -->
+  <div id="controlPanel">
+    <div class="cp-header">
+      <span class="cp-title">&#x03C0; E J Control</span>
+      <div class="cp-conn" id="cpConn">
+        <span class="dot"></span><span id="cpConnText">connecting</span>
+      </div>
+    </div>
+    <div class="cp-body">
+      <!-- E_bias -->
+      <div class="cp-param">
+        <div class="cp-label">
+          <span class="cp-name">E_bias</span>
+          <span class="cp-desc">reward weight</span>
+          <span class="cp-val" id="valE">1.00</span>
+        </div>
+        <input type="range" class="cp-slider" id="slE" min="0.1" max="3.0" step="0.05" value="1.0">
+      </div>
+      <!-- Pi_temp -->
+      <div class="cp-param">
+        <div class="cp-label">
+          <span class="cp-name">Pi_temp</span>
+          <span class="cp-desc">style spread</span>
+          <span class="cp-val" id="valP">1.00</span>
+        </div>
+        <input type="range" class="cp-slider" id="slP" min="0.2" max="3.0" step="0.05" value="1.0">
+      </div>
+      <!-- J_noise -->
+      <div class="cp-param">
+        <div class="cp-label">
+          <span class="cp-name">J_noise</span>
+          <span class="cp-desc">exploration</span>
+          <span class="cp-val" id="valJ">0.25</span>
+        </div>
+        <input type="range" class="cp-slider" id="slJ" min="0.0" max="1.0" step="0.05" value="0.25">
+      </div>
+    </div>
+    <div class="cp-footer">
+      <input type="text" id="cpTopic" class="cp-topic" placeholder="video topic, e.g. AI副业赚钱" value="大学生如何用AI副业赚钱">
+      <button class="btn primary" id="btnGenerate">▶ Generate</button>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+// ── (π, E, J) Control Panel ────────────────────────────────────────────────────
+const VIDEO_API = 'http://localhost:3333';
+
+let ws = null;
+let cpJobId = null;
+let cpPoll = null;
+
+// ── WebSocket ───────────────────────────────────────────────────────────────────
+function initControlWS() {
+  ws = new WebSocket('ws://localhost:3333');
+  ws.onopen = () => {
+    document.getElementById('cpConn').classList.add('connected');
+    document.getElementById('cpConnText').textContent = 'connected';
+  };
+  ws.onmessage = (evt) => {
+    const msg = JSON.parse(evt.data);
+    if (msg.type === 'control_state') {
+      document.getElementById('valE').textContent = (msg.E_bias ?? 1).toFixed(2);
+      document.getElementById('valP').textContent = (msg.Pi_temp ?? 1).toFixed(2);
+      document.getElementById('valJ').textContent = (msg.J_noise ?? 0.25).toFixed(2);
+      document.getElementById('slE').value = msg.E_bias ?? 1;
+      document.getElementById('slP').value = msg.Pi_temp ?? 1;
+      document.getElementById('slJ').value = msg.J_noise ?? 0.25;
+    }
+  };
+  ws.onclose = () => {
+    document.getElementById('cpConn').classList.remove('connected');
+    document.getElementById('cpConnText').textContent = 'reconnecting...';
+    setTimeout(initControlWS, 2000);
+  };
+  ws.onerror = () => ws.close();
+}
+initControlWS();
+
+function sendUpdate(patch) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: 'control_update', params: patch }));
+  }
+}
+
+document.getElementById('slE').addEventListener('input', (e) => {
+  document.getElementById('valE').textContent = parseFloat(e.target.value).toFixed(2);
+  sendUpdate({ E_bias: parseFloat(e.target.value) });
+});
+document.getElementById('slP').addEventListener('input', (e) => {
+  document.getElementById('valP').textContent = parseFloat(e.target.value).toFixed(2);
+  sendUpdate({ Pi_temp: parseFloat(e.target.value) });
+});
+document.getElementById('slJ').addEventListener('input', (e) => {
+  document.getElementById('valJ').textContent = parseFloat(e.target.value).toFixed(2);
+  sendUpdate({ J_noise: parseFloat(e.target.value) });
+});
+
+// ── Stats Fetching ─────────────────────────────────────────────────────────────
+function fetchStats() {
+  fetch(VIDEO_API + '/stats/latest')
+    .then(r => r.ok ? r.json() : null)
+    .then(stats => {
+      if (!stats) return;
+      const old = document.getElementById('cpStats');
+      if (old) old.remove();
+      const div = document.createElement('div');
+      div.id = 'cpStats';
+      div.className = 'cp-stats';
+
+      // π distribution — use prob (softmax), not raw score
+      const children = stats.rootChildren || [];
+      const totalProb = children.reduce((s, c) => s + (c.prob || 0), 0) || 1;
+      const piBars = children.map(c => {
+        const pct = ((c.prob || 0) / totalProb * 100).toFixed(1);
+        return '<div class="stat-row">' +
+          '<span class="stat-key">' + (c.type || '?') + '</span>' +
+          '<div class="bar-bg"><div class="bar-fill" style="width:' + pct + '%"></div></div>' +
+          '<span class="stat-val">' + ((c.prob || 0) * 100).toFixed(1) + '%</span></div>';
+      }).join('');
+
+      // E breakdown — show contribution (weight × feature), not raw feature
+      const r = stats.reward || {};
+      const contrib = r.contrib || {};
+      const W = { energy_alignment: 0.10, entropy: 0.35, pacing_smoothness: 0.20, micro_cut_semantic: 0.10, energy_transition_alignment: 0.25 };
+      const eRows = [
+        { key: 'energy_align', val: contrib.energy_alignment ?? 0 },
+        { key: 'entropy',     val: contrib.entropy ?? 0 },
+        { key: 'pacing',      val: contrib.pacing_smoothness ?? 0 },
+        { key: 'micro_cut',   val: contrib.micro_cut_semantic ?? 0 },
+        { key: 'transition',   val: contrib.energy_transition_alignment ?? 0 },
+      ].map(item => {
+        const maxVal = 0.35; // max contribution = weight × 1.0
+        const pct = Math.min(100, (Math.abs(item.val) / maxVal) * 100).toFixed(1);
+        const sign = item.val >= 0 ? '+' : '';
+        return '<div class="stat-row">' +
+          '<span class="stat-key" style="font-size:9px">' + item.key + '</span>' +
+          '<div class="bar-bg"><div class="bar-fill" style="width:' + pct + '%"></div></div>' +
+          '<span class="stat-val">' + sign + item.val.toFixed(3) + '</span></div>';
+      }).join('');
+
+      // π entropy
+      const entropyRow = '<div class="stat-row" style="margin-top:4px">' +
+        '<span class="stat-key" style="font-size:9px;color:var(--muted)">π entropy</span>' +
+        '<div class="bar-bg" style="flex:1"></div>' +
+        '<span class="stat-val" style="color:var(--accent)">' + (stats.piEntropy ?? 0).toFixed(4) + '</span></div>';
+
+      div.innerHTML =
+        '<div class="stats-section"><div class="stats-label">π distribution (prob)</div>' + piBars + entropyRow + '</div>' +
+        '<div class="stats-section"><div class="stats-label">E contribution (weight×feature)</div>' + eRows + '</div>' +
+        '<div class="stats-section"><div class="stats-label">params</div>' +
+        '<div class="stat-row"><span class="stat-key">E_bias</span><span class="stat-val">' + (stats.control?.E_bias ?? 1).toFixed(2) + '</span></div>' +
+        '<div class="stat-row"><span class="stat-key">π_temp</span><span class="stat-val">' + (stats.control?.Pi_temp ?? 1).toFixed(2) + '</span></div>' +
+        '<div class="stat-row"><span class="stat-key">J_noise</span><span class="stat-val">' + (stats.control?.J_noise ?? 0.25).toFixed(2) + '</span></div>' +
+        '</div>';
+      document.getElementById('controlPanel').appendChild(div);
+    })
+    .catch(() => {});
+}
+
+// ── Generate ───────────────────────────────────────────────────────────────────
+document.getElementById('btnGenerate').addEventListener('click', async () => {
+  const topic = document.getElementById('cpTopic').value.trim();
+  if (!topic) return;
+  const btn = document.getElementById('btnGenerate');
+  btn.disabled = true;
+  btn.textContent = 'generating...';
+
+  const oldResult = document.getElementById('cpResult');
+  if (oldResult) oldResult.remove();
+  const oldStats = document.getElementById('cpStats');
+  if (oldStats) oldStats.remove();
+
+  try {
+    const res = await fetch(VIDEO_API + '/generate-video/v2', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ topic }),
+    });
+    const data = await res.json();
+    cpJobId = data.jobId;
+
+    function pollStatus() {
+      fetch(VIDEO_API + '/status/' + cpJobId)
+        .then(r => r.json())
+        .then(job => {
+          if (job.status === 'rendering') {
+            btn.textContent = Math.round((job.progress || 0) * 100) + '%';
+            cpPoll = setTimeout(pollStatus, 500);
+          } else if (job.status === 'completed') {
+            btn.disabled = false;
+            btn.textContent = '▶ Generate';
+            const resultDiv = document.createElement('div');
+            resultDiv.id = 'cpResult';
+            resultDiv.className = 'cp-result';
+            resultDiv.innerHTML = 'video: <a href="' + job.downloadUrl + '" target="_blank">' + job.downloadUrl + '</a>';
+            document.getElementById('controlPanel').appendChild(resultDiv);
+            setTimeout(fetchStats, 500);
+          } else if (job.status === 'failed') {
+            btn.disabled = false;
+            btn.textContent = '▶ Generate';
+            const resultDiv = document.createElement('div');
+            resultDiv.id = 'cpResult';
+            resultDiv.className = 'cp-result';
+            resultDiv.innerHTML = 'error: ' + (job.error || 'unknown');
+            document.getElementById('controlPanel').appendChild(resultDiv);
+          }
+        })
+        .catch(() => { cpPoll = setTimeout(pollStatus, 1000); });
+    }
+    pollStatus();
+  } catch(e) {
+    btn.disabled = false;
+    btn.textContent = '▶ Generate';
+  }
+});
+
+// ── Agent Debugger State ───────────────────────────────────────────────────────
+const SSE_POLL = 200;
+const API = 'http://localhost:3333';
+
+let currentTraceId = null;
+let currentBranchId = null;
+let selectedStepIdx = null;
+let traces = [];
+let branches = [];
+
+// ── Agent Debugger Buttons
+
+const btnRun    = document.getElementById('btnRun');
+const btnPause  = document.getElementById('btnPause');
+const btnResume = document.getElementById('btnResume');
+const btnClear  = document.getElementById('btnClear');
+const statusDot = document.getElementById('statusDot');
+const statusText = document.getElementById('statusText');
+const traceList  = document.getElementById('traceList');
+const graphSvg   = document.getElementById('graphSvg');
+const graphEmpty = document.getElementById('graphEmpty');
+const stepDetail = document.getElementById('stepDetail');
+const branchLegend = document.getElementById('branchLegend');
+
+// ── Actions ───────────────────────────────────────────────────────────────────
+btnRun.addEventListener('click', async () => {
+  const task = prompt('Enter agent task:', 'Analyze this task and produce a multi-step reasoning response');
+  if (!task) return;
+  btnRun.disabled = true;
+  setStatus('running', 'starting...');
+  try {
+    const res = await fetch(`${API}/run`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ task }),
+    });
+    const data = await res.json();
+    currentTraceId = data.traceId;
+    currentBranchId = 'main';
+    await loadTrace(currentTraceId, currentBranchId);
+    startPolling(currentTraceId);
+  } catch(e) {
+    alert('Failed: ' + e.message);
+    btnRun.disabled = false;
+  }
+});
+
+btnPause.addEventListener('click', async () => {
+  if (!currentTraceId) return;
+  await fetch(`${API}/pause/${currentTraceId}`, { method: 'POST' });
+  setStatus('paused', 'paused');
+  btnPause.disabled = true;
+  btnResume.disabled = false;
+});
+
+btnResume.addEventListener('click', async () => {
+  if (!currentTraceId) return;
+  await fetch(`${API}/resume/${currentTraceId}`, { method: 'POST' });
+  setStatus('running', 'resumed');
+  btnPause.disabled = false;
+  btnResume.disabled = true;
+});
+
+btnClear.addEventListener('click', () => {
+  stopPolling();
+  traces = [];
+  currentTraceId = null;
+  currentBranchId = null;
+  renderTraceList();
+  renderGraph([], null);
+  stepDetail.innerHTML = '<div class="step-detail-empty">Select a step node to inspect it</div>';
+  btnRun.disabled = false;
+  btnPause.disabled = true;
+  btnResume.disabled = true;
+  setStatus('idle', 'idle');
+});
+
+// ── Status ────────────────────────────────────────────────────────────────────
+function setStatus(mode, text) {
+  statusText.textContent = text;
+  statusDot.className = 'status-dot' + (mode === 'running' ? ' live' : '');
+}
+
+// ── Polling ───────────────────────────────────────────────────────────────────
+function startPolling(traceId) {
+  stopPolling();
+  pollInterval = setInterval(() => pollTrace(traceId), SSE_POLL);
+}
+
+function stopPolling() {
+  if (pollInterval) { clearInterval(pollInterval); pollInterval = null; }
+}
+
+async function pollTrace(traceId) {
+  try {
+    const res = await fetch(`${API}/trace/${traceId}/${currentBranchId}`);
+    if (!res.ok) return;
+    const data = await res.json();
+    // Update traces state
+    const existing = traces.find(t => t.traceId === traceId && t.branchId === currentBranchId);
+    if (existing) {
+      existing.steps = data.steps;
+      existing.status = data.status;
+      existing.currentStep = data.currentStep;
+    } else {
+      traces.push(data);
+    }
+    branches = data.branches || [];
+    renderTraceList();
+    if (traces.length > 0) renderGraph(traces, currentTraceId);
+    if (data.status === 'done' || data.status === 'error') {
+      stopPolling();
+      setStatus('done', data.status);
+      btnRun.disabled = false;
+    }
+  } catch(e) { /* ignore */ }
+}
+
+// ── Load trace ────────────────────────────────────────────────────────────────
+async function loadTrace(traceId, branchId) {
+  try {
+    const res = await fetch(`${API}/trace/${traceId}/${branchId}`);
+    const data = await res.json();
+    const existing = traces.findIndex(t => t.traceId === traceId && t.branchId === branchId);
+    if (existing >= 0) traces[existing] = data;
+    else traces.push(data);
+    branches = data.branches || [];
+    currentBranchId = branchId;
+    renderTraceList();
+    renderGraph(traces, traceId);
+    // Enable controls
+    btnPause.disabled = false;
+    btnResume.disabled = data.status === 'paused' ? false : true;
+    setStatus(data.status === 'running' ? 'running' : 'done', `${data.steps?.length ?? 0} steps`);
+  } catch(e) {
+    console.error('loadTrace error', e);
+  }
+}
+
+// ── Modify step ────────────────────────────────────────────────────────────────
+async function modifyStep(stepIdx, modifyType, newData) {
+  if (!currentTraceId) return;
+  const res = await fetch(`${API}/branch/${currentTraceId}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ branchId: currentBranchId, stepIndex: stepIdx, modifyType, newData }),
+  });
+  const data = await res.json();
+  const newBranchId = data.branchId;
+  // Reload trace to show new branch
+  await loadTrace(currentTraceId, currentBranchId);
+  // Highlight the fork visually
+  animateFork(newBranchId);
+}
+
+// ── Render: trace list ────────────────────────────────────────────────────────
+function renderTraceList() {
+  if (traces.length === 0) {
+    traceList.innerHTML = '<div class="empty-state">No traces yet.<br>Click <strong>Run Agent</strong> to start.</div>';
+    return;
+  }
+  traceList.innerHTML = traces.map(t => {
+    const isSelected = t.traceId === currentTraceId && t.branchId === currentBranchId;
+    const statusIcon = t.status === 'done' ? '&#x2713;' : t.status === 'running' ? '&#x25B6;' : t.status === 'paused' ? '&#x23F8;' : '?';
+    const branchIdx = branches.findIndex(b => b.id === t.branchId);
+    const color = branchColor(branchIdx);
+    return `<div class="trace-item ${isSelected ? 'selected' : ''}" onclick="selectTrace('${t.traceId}','${t.branchId}')">
+      <div class="t-id">${t.traceId} / ${t.branchId}</div>
+      <div class="t-meta">${t.steps?.length ?? 0} steps</div>
+      <div class="t-status">
+        <span style="color:${color}">${statusIcon}</span>
+        <span style="font-size:10px;color:var(--muted)">${t.status}</span>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ── Render: graph ─────────────────────────────────────────────────────────────
+function renderGraph(allTraces, mainTraceId) {
+  if (!allTraces || allTraces.length === 0) {
+    graphEmpty.style.display = 'flex';
+    return;
+  }
+  graphEmpty.style.display = 'none';
+
+  // Use the main trace for layout
+  const mainTrace = allTraces.find(t => t.traceId === mainTraceId && t.branchId === 'main') || allTraces[0];
+  const steps = mainTrace.steps || [];
+
+  // Build SVG layout
+  const svg = d3.select('#graphSvg');
+  svg.selectAll('*').remove();
+
+  const rect = graphSvg.getBoundingClientRect();
+  const W = rect.width || 800;
+  const H = rect.height || 500;
+  const PAD = 40;
+  const NODE_R = 18;
+  const COL_W = (W - PAD * 2) / Math.max(steps.length - 1, 1);
+
+  // Compute branch structure
+  const branchNodes = new Map(); // key: `${traceId}_${branchId}_${step}` → node
+  const links = [];
+  const allBranches = mainTrace.branches || [{ id: 'main', parentId: null, color: COLORS[0] }];
+
+  // Layout nodes
+  allTraces.forEach(trace => {
+    const tSteps = trace.steps || [];
+    const tBranches = trace.branches || allBranches;
+    const branchIdx = tBranches.findIndex(b => b.id === trace.branchId);
+    const color = branchColor(branchIdx);
+
+    tSteps.forEach((step, i) => {
+      const x = PAD + i * COL_W;
+      // Offset branches slightly to the right
+      const branchOffset = branchIdx * 15;
+      const y = PAD + 60 + branchOffset;
+
+      const node = {
+        id: `${trace.traceId}_${trace.branchId}_${i}`,
+        stepIdx: i,
+        traceId: trace.traceId,
+        branchId: trace.branchId,
+        branchIdx,
+        color,
+        x, y,
+        step,
+        isMain: trace.branchId === 'main',
+      };
+      branchNodes.set(node.id, node);
+    });
+
+    // Links within trace
+    for (let i = 0; i < tSteps.length - 1; i++) {
+      links.push({
+        source: `${trace.traceId}_${trace.branchId}_${i}`,
+        target: `${trace.traceId}_${trace.branchId}_${i + 1}`,
+        color,
+        width: trace.branchId === 'main' ? 2 : 1.5,
+        opacity: trace.branchId === 'main' ? 0.5 : 0.7,
+      });
+    }
+  });
+
+  // Cross-branch links (from parent step to branch root)
+  allTraces.forEach(trace => {
+    if (trace.branchId === 'main') return;
+    const parent = allTraces.find(t => t.branchId === trace.parentBranchId);
+    if (!parent) return;
+    const parentLastStep = (parent.steps?.length ?? 1) - 1;
+    const sourceId = `${parent.traceId}_${parent.branchId}_${parentLastStep}`;
+    const targetId = `${trace.traceId}_${trace.branchId}_0`;
+    const branchIdx = (trace.branches || allBranches).findIndex(b => b.id === trace.branchId);
+    links.push({
+      source: sourceId,
+      target: targetId,
+      color: branchColor(branchIdx),
+      width: 1.5,
+      opacity: 0.8,
+      isFork: true,
+    });
+  });
+
+  // Draw links
+  links.forEach(link => {
+    const src = branchNodes.get(link.source);
+    const tgt = branchNodes.get(link.target);
+    if (!src || !tgt) return;
+
+    if (link.isFork) {
+      // Curved fork line
+      const midX = (src.x + tgt.x) / 2;
+      const d = `M${src.x},${src.y} Q${midX},${src.y} ${midX},${(src.y+tgt.y)/2} T${tgt.x},${tgt.y}`;
+      svg.append('path').attr('d', d).attr('stroke', link.color)
+        .attr('stroke-width', link.width).attr('fill', 'none')
+        .attr('stroke-opacity', link.opacity).attr('stroke-dasharray', '4 3');
+    } else {
+      svg.append('line')
+        .attr('x1', src.x).attr('y1', src.y)
+        .attr('x2', tgt.x).attr('y2', tgt.y)
+        .attr('stroke', link.color)
+        .attr('stroke-width', link.width)
+        .attr('stroke-opacity', link.opacity)
+        .attr('class', 'link');
+    }
+  });
+
+  // Draw nodes
+  branchNodes.forEach((node, id) => {
+    const g = svg.append('g')
+      .attr('class', 'node')
+      .attr('transform', `translate(${node.x},${node.y})`)
+      .style('cursor', 'pointer')
+      .on('click', () => selectStep(node.stepIdx, node));
+
+    // Outer ring for tool calls
+    if (node.step.toolName) {
+      g.append('circle').attr('r', NODE_R + 4)
+        .attr('fill', 'none').attr('stroke', node.color)
+        .attr('stroke-width', 1.5).attr('stroke-opacity', 0.4);
+    }
+
+    // Main circle
+    g.append('circle')
+      .attr('r', NODE_R)
+      .attr('fill', node.isMain ? '#12121a' : '#12121a')
+      .attr('stroke', node.color)
+      .attr('stroke-width', 2);
+
+    // Step number
+    g.append('text')
+      .attr('text-anchor', 'middle').attr('dy', '0.35em')
+      .attr('fill', node.color).attr('font-size', '10px').attr('font-weight', '600')
+      .text(node.stepIdx + 1);
+
+    // Tool name badge below
+    if (node.step.toolName) {
+      g.append('text')
+        .attr('text-anchor', 'middle').attr('dy', NODE_R + 14)
+        .attr('fill', node.color).attr('font-size', '9px')
+        .attr('opacity', 0.7)
+        .text(node.step.toolName);
+    }
+  });
+
+  // Branch legend
+  branchLegend.innerHTML = allBranches.map((b, i) =>
+    `<span style="display:flex;align-items:center;gap:5px;">
+      <span class="legend-dot" style="background:${branchColor(i)}"></span>
+      <span style="font-size:10px;color:#888">${b.id}</span>
+    </span>`
+  ).join('');
+}
+
+// ── Select step ────────────────────────────────────────────────────────────────
+window.selectStep = function(stepIdx, node) {
+  selectedStepIdx = stepIdx;
+  const step = node.step;
+  const color = node.color;
+
+  let html = `
+    <div class="detail-section">
+      <div class="detail-label">Step ${stepIdx + 1} <span class="branch-badge" style="background:${color}22;color:${color};border:1px solid ${color}44">${node.branchId}</span></div>
+      <div class="detail-value">${escapeHtml(step.reasoning || '—')}</div>
+    </div>`;
+
+  if (step.toolName) {
+    html += `
+    <div class="detail-section">
+      <div class="detail-label">Tool Call</div>
+      <div class="detail-tool">
+        <span class="tool-name">${step.toolName}</span>
+        ${step.toolArgs ? `<div class="tool-args">${jsonPretty(step.toolArgs)}</div>` : ''}
+        ${step.toolResult !== undefined ? `<div class="tool-result"><strong>Result:</strong> ${jsonPretty(step.toolResult)}</div>` : ''}
+        ${step.toolError ? `<div class="tool-result" style="color:#ff6b6b"><strong>Error:</strong> ${escapeHtml(step.toolError)}</div>` : ''}
+      </div>
+    </div>`;
+
+    // Modify box
+    const defaultResult = typeof step.toolResult === 'object'
+      ? JSON.stringify(step.toolResult, null, 2)
+      : String(step.toolResult ?? '');
+    html += `
+    <div class="modify-box">
+      <h4>&#x270E; Modify Tool Result → Branch</h4>
+      <textarea class="modify-textarea" id="modText" placeholder="Enter new tool result JSON...">${escapeHtml(defaultResult)}</textarea>
+      <button class="btn" onclick="submitModification(${stepIdx})" style="width:100%;background:rgba(255,170,0,0.15);border-color:rgba(255,170,0,0.4);color:#ffaa00">
+        Fork at Step ${stepIdx + 1} with New Result
+      </button>
+    </div>`;
+  }
+
+  stepDetail.innerHTML = html;
+
+  // Highlight node
+  d3.selectAll('.node circle').attr('stroke-width', 2);
+  d3.selectAll('.node').filter((d, i, nodes) => {
+    const el = nodes[i];
+    const transform = d3.select(el).attr('transform');
+    const match = transform && transform.match(/translate\(([^,]+),([^)]+)\)/);
+    return false;
+  });
+};
+
+// ── Submit modification ─────────────────────────────────────────────────────────
+window.submitModification = async function(stepIdx) {
+  const textarea = document.getElementById('modText');
+  if (!textarea) return;
+  let newResult;
+  try {
+    newResult = JSON.parse(textarea.value);
+  } catch {
+    newResult = textarea.value;
+  }
+  await modifyStep(stepIdx, 'tool_result', { result: newResult });
+};
+
+// ── Select trace ───────────────────────────────────────────────────────────────
+window.selectTrace = function(traceId, branchId) {
+  loadTrace(traceId, branchId);
+};
+
+// ── Animate fork ─────────────────────────────────────────────────────────────
+function animateFork(newBranchId) {
+  // Flash animation on the new branch
+  const nodes = d3.selectAll('.node').nodes();
+  // Pulse effect done via CSS transition
+}
+
+// ── D3 setup ──────────────────────────────────────────────────────────────────
+// (d3 loaded via CDN in HTML)
+const d3 = window.d3;
+
+// ── Helpers ────────────────────────────────────────────────────────────────────
+function escapeHtml(s) {
+  if (typeof s !== 'string') s = String(s);
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function jsonPretty(obj) {
+  try {
+    const s = typeof obj === 'string' ? obj : JSON.stringify(obj, null, 2);
+    return escapeHtml(s).replace(/\n/g, '<br>');
+  } catch { return escapeHtml(String(obj)); }
+}
+
+// ── Resize handler ────────────────────────────────────────────────────────────
+window.addEventListener('resize', () => {
+  if (traces.length > 0) renderGraph(traces, currentTraceId);
+});
+
+// ── Initial render ─────────────────────────────────────────────────────────────
+renderTraceList();
+renderGraph([], null);
+</script>
+<script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+</body>
+</html>

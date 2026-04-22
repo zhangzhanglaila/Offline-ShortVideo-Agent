@@ -29,7 +29,10 @@ import path from "node:path";
 import fs from "node:fs/promises";
 import pLimit from "p-limit";
 import { evaluateDirector } from "../remotion/directorEval";
-import { beamSearchTransitionPlan, getRewardData } from "../remotion/VideoScene";
+import { getRewardData } from "../remotion/VideoScene";
+import { beamSearchWithStats } from "./beamSearchWithStats.js";
+import { controlHub } from "./controlHub.js";
+import { mctsStatsStore } from "./mctsStatsStore.js";
 
 // ============================================================
 // FFprobe — 精确时长测量
@@ -515,7 +518,11 @@ async function renderVideo(jobId: string, layout: VideoLayout, outputPath: strin
  *
  * 注意：此函数在 renderVideo 之前调用，渲染失败不影响 reward data 收集
  */
-async function collectRewardData(layout: VideoLayout, jobId: string): Promise<void> {
+async function collectRewardData(
+  layout: VideoLayout,
+  jobId: string,
+  snapshot?: { E_bias: number; Pi_temp: number; J_noise: number; SIMULATION_COUNT?: number },
+): Promise<void> {
   if (!layout.shots || layout.shots.length === 0) {
     console.info(`[Orchestrator:${jobId}] reward: no shots, skipping`);
     return;
@@ -534,11 +541,31 @@ async function collectRewardData(layout: VideoLayout, jobId: string): Promise<vo
     const duration = durationInFrames / fps;
     const state = evaluateDirector(layout.director!, midT, duration);
     return state?.emotion ?? 0.5;
-  });
+});
 
   // 运行 MCTS（触发 rewardCollector.collect()）
+  // (π, E, J) params from frozen snapshot (captured at generation start)
+  const p = snapshot ?? { E_bias: 1.0, Pi_temp: 1.0, J_noise: 0.25 };
   try {
-    beamSearchTransitionPlan(layout.shots, emotions, fps);
+    const { stats } = beamSearchWithStats(layout.shots, emotions, fps, p.SIMULATION_COUNT, {
+      E_bias: p.E_bias,
+      Pi_temp: p.Pi_temp,
+      J_noise: p.J_noise,
+    });
+// Write stats to store for WebSocket broadcast
+    mctsStatsStore.set({
+      jobId,
+      timestamp: Date.now(),
+      rootChildren: stats.rootChildren,
+      piEntropy: stats.piEntropy,
+      reward: stats.reward,
+      control: {
+        E_bias: p.E_bias,
+        Pi_temp: p.Pi_temp,
+        J_noise: p.J_noise,
+      },
+    });
+    console.info(`[Orchestrator:${jobId}] MCTS stats: pi=[${stats.rootChildren.map(c => c.type + ':' + c.prob.toFixed(2)).join(', ')}] entropy=${stats.piEntropy.toFixed(3)}`);
   } catch (err) {
     console.error(`[Orchestrator:${jobId}] MCTS error: ${err}`);
     return;
@@ -666,8 +693,9 @@ export async function runAgent(config: OrchestratorConfig): Promise<Orchestrator
     console.info(`[Orchestrator:${jobId}] 6: layout duration=${videoDuration.toFixed(3)}s`);
 
     // Step 7: Reward Data Flush（MCTS replay + JSONL write — 不依赖渲染）
-    // collectRewardData 只用 VideoLayout，不走 Remotion renderer
-    await collectRewardData(layout, jobId);
+    // Freeze control params snapshot at generation start (prevents mid-run slider changes)
+    const controlSnapshot = controlHub.get();
+    await collectRewardData(layout, jobId, controlSnapshot);
 
     // Step 8: 渲染（与 reward data 解耦，渲染失败不影响数据收集）
     const silentPath = path.join(outputDir, `${jobId}_silent.mp4`);

@@ -33,6 +33,42 @@ import type { VideoLayout, VideoElement, TextElement, ImageElement, StickerEleme
 import { evaluateDirector, type DirectorState } from "./directorEval";
 import { buildFeatureVector, w0, b0, w1, b1, w2, b2, norm_X_mean, norm_X_std, norm_y_mean, norm_y_std } from "./rewardModel";
 
+/**
+ * (π, E, J) — MCTS runtime control params
+ *
+ *   E_bias      → reward shaping 乘子（默认 1.0）
+ *   Pi_temp     → softmax 温度（默认 1.0）
+ *   J_noise     → Dirichlet 噪声 ε（默认 0.25）
+ *   SIMULATION_COUNT → MCTS rollouts（默认 5）
+ */
+export interface MctsControlParams {
+  E_bias?: number;
+  Pi_temp?: number;
+  J_noise?: number;
+  SIMULATION_COUNT?: number;
+}
+
+/** Stats emitted after beam search completes (fed back to UI) */
+export interface BeamSearchStats {
+  /** Root-level transition candidates with normalized scores */
+  rootChildren: Array<{
+    type: TransitionType;
+    score: number;
+    visits: number;
+    modelScore: number;
+  }>;
+  /** Rule-based reward breakdown */
+  reward: {
+    energy_alignment: number;
+    entropy: number;
+    pacing_smoothness: number;
+    micro_cut_semantic: number;
+    energy_transition_alignment: number;
+  };
+  /** Control params used for this run */
+  control: MctsControlParams;
+}
+
 function _relu(x: number): number { return x > 0 ? x : 0; }
 function _sigmoid(x: number): number { return x >= 0 ? 1/(1+Math.exp(-x)) : Math.exp(x)/(1+Math.exp(x)); }
 
@@ -1145,7 +1181,9 @@ export function beamSearchTransitionPlan(
   shots: Shot[],
   emotions: number[],
   fps: number,
-  simCountOverride?: number
+  simCountOverride?: number,
+  controlParams?: MctsControlParams,
+  onComplete?: (stats: BeamSearchStats) => void,
 ): TransitionPlan {
   const energyCurve = buildGlobalEnergyCurve(shots, emotions, fps);
 
@@ -1177,7 +1215,7 @@ export function beamSearchTransitionPlan(
 
 // ── Step 2: MCTS-UCT 主循环 ───────────────────────────────
   // BETA=0.3: visit bonus regularizes Q-noise; β=0.1 made separability worse.
-  const SIMULATION_COUNT = simCountOverride ?? 5;  // v20 fix: 3→5, noisy Q requires more rollouts for stability
+  const SIMULATION_COUNT = controlParams?.SIMULATION_COUNT ?? simCountOverride ?? 5;  // v20 fix: 3→5, noisy Q requires more rollouts for stability
   const EXPLORATION_CONSTANT = 1.0;  // v20 fix: 2.0→1.0, reduce noise-driven exploration
   // v20 fix: progressive widening — expand actions only when visit count is low.
   // |A(s)| = 1 + floor(expansionCount^0.5). Early: few children (explore).
@@ -1345,7 +1383,7 @@ export function beamSearchTransitionPlan(
     return u.map(v => v / sum);
   }
 
-  const EPS_DIR = 0.25;
+  const EPS_DIR = controlParams?.J_noise ?? 0.25;
   const ALPHA_DIR = 0.7;
 
   function softmaxSampleWithDirichlet(nodes: MctsNode[], epsilon: number, alpha: number, temperature: number = 1.0): MctsNode {
@@ -1379,16 +1417,19 @@ export function beamSearchTransitionPlan(
     return nodes[nodes.length - 1];
   }
 
-  const bestRootChild = softmaxSampleWithDirichlet(root.children, EPS_DIR, ALPHA_DIR, 1.0);
+  const bestRootChild = softmaxSampleWithDirichlet(root.children, EPS_DIR, ALPHA_DIR, controlParams?.Pi_temp ?? 1.0);
 
   // v20 FIX: argmax(reward) replaces softmax(Q) — Q is noisy, use real reward for selection
   if (root.children.length === 0) {
-    return fallbackGreedyPlan(shots, emotions, fps, energyCurve);
+    const fallback = fallbackGreedyPlan(shots, emotions, fps, energyCurve);
+    if (onComplete) onComplete({ rootChildren: [], reward: { energy_alignment: 0, entropy: 0, pacing_smoothness: 0, micro_cut_semantic: 0, energy_transition_alignment: 0 }, control: controlParams ?? {} });
+    return fallback;
   }
 
   // Evaluate ALL root children with pure rule reward, pick the best
   // Model score is computed for logging only — NOT used in argmax (avoids distribution shift)
-  const childRewards = [];
+  // Collect root child stats for feedback + move to function scope
+  const childRewards: Array<{ child: MctsNode; plan: TransitionPlan; score: number; modelScore: number }> = [];
   for (let ci = 0; ci < root.children.length; ci++) {
     const child = root.children[ci];
     const childPlan = backtrackPlan(child, shots);
@@ -1404,11 +1445,15 @@ export function beamSearchTransitionPlan(
     const ctx = { shot_count, fps, duration_frames, emotion_histogram: emotionHist, energy_histogram: energyHist };
     const x = buildFeatureVector(childFeatures as RewardFeatures, ctx);
     const rModel = predictInline(x);
-    childRewards.push({ child, plan: childPlan, score: childRuleScore, modelScore: rModel });
+    // E_bias: reward shaping — scales the rule score before argmax selection
+    const scoredRule = (controlParams?.E_bias ?? 1.0) * childRuleScore;
+    childRewards.push({ child, plan: childPlan, score: scoredRule, modelScore: rModel });
   }
 
   if (childRewards.length === 0) {
-    return fallbackGreedyPlan(shots, emotions, fps, energyCurve);
+    const fallback = fallbackGreedyPlan(shots, emotions, fps, energyCurve);
+    if (onComplete) onComplete({ rootChildren: [], reward: { energy_alignment: 0, entropy: 0, pacing_smoothness: 0, micro_cut_semantic: 0, energy_transition_alignment: 0 }, control: controlParams ?? {} });
+    return fallback;
   }
 
   // argmax(reward) — NOT softmax(Q)
@@ -1426,6 +1471,26 @@ export function beamSearchTransitionPlan(
   const { features: selectedFeatures, score: selectedScore } = computeRewardFeatures(
     bestPlan, energyCurve, shots, emotions, fps
   );
+
+  // Emit stats before returning
+  if (onComplete) {
+    onComplete({
+      rootChildren: childRewards.map(cr => ({
+        type: cr.child.type as TransitionType,
+        score: cr.score,
+        visits: cr.child.visits,
+        modelScore: cr.modelScore,
+      })),
+      reward: {
+        energy_alignment: (selectedFeatures as any).energy_alignment ?? 0,
+        entropy: (selectedFeatures as any).entropy ?? 0,
+        pacing_smoothness: (selectedFeatures as any).pacing_smoothness ?? 0,
+        micro_cut_semantic: (selectedFeatures as any).micro_cut_semantic ?? 0,
+        energy_transition_alignment: (selectedFeatures as any).energy_transition_alignment ?? 0,
+      },
+      control: controlParams ?? {},
+    });
+  }
 
   const alternatives = [];
   for (const cr of childRewards) {
