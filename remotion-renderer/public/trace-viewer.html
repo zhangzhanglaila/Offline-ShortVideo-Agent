@@ -1,0 +1,1443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Trace Replay — Director Edition</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: #0a0a0f;
+    color: #e0e0e0;
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  #root {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+  }
+
+  /* ── Header ── */
+  .header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 10px 16px;
+    background: #111118;
+    border-bottom: 1px solid #222;
+    flex-shrink: 0;
+  }
+  .header-title { font-size: 13px; font-weight: 600; color: #a0d8ff; letter-spacing: 0.05em; }
+  .header-graph { font-size: 12px; color: #666; }
+  .header-stat  { font-size: 11px; color: #555; margin-left: auto; }
+
+  /* ── Input bar ── */
+  .input-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    background: #0d0d14;
+    border-bottom: 1px solid #1a1a24;
+    flex-shrink: 0;
+  }
+  .input-bar input {
+    flex: 1; background: #111120; border: 1px solid #2a2a3a;
+    color: #ccc; font-size: 12px; padding: 6px 10px; border-radius: 6px;
+    font-family: inherit; outline: none;
+  }
+  .input-bar input:focus { border-color: #44aaff; }
+  .input-bar button {
+    background: #1a2a40; border: 1px solid #2a4a70; color: #44aaff;
+    font-size: 12px; padding: 6px 16px; border-radius: 6px; cursor: pointer;
+    font-family: inherit; transition: background 0.15s;
+  }
+  .input-bar button:hover { background: #1e3050; }
+  .input-bar button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* ── Main area ── */
+  .main {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  /* ── DAG panel ── */
+  .dag-panel {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+  }
+  .dag-controls {
+    position: absolute; top: 10px; left: 10px; z-index: 10;
+    display: flex; gap: 6px;
+  }
+  .dag-controls button {
+    background: #1c1c28; border: 1px solid #333; color: #aaa;
+    font-size: 11px; padding: 4px 10px; border-radius: 4px;
+    cursor: pointer; font-family: inherit; transition: background 0.15s;
+  }
+  .dag-controls button:hover { background: #2a2a3a; }
+
+  .dag-info {
+    position: absolute; top: 10px; right: 10px; z-index: 10;
+    background: rgba(10,10,15,0.85); border: 1px solid #222;
+    border-radius: 6px; padding: 8px 12px; font-size: 11px; min-width: 140px;
+  }
+  .dag-info-row {
+    display: flex; justify-content: space-between; gap: 16px; line-height: 1.8;
+  }
+  .dag-info-label { color: #555; }
+  .dag-info-val   { color: #ccc; font-weight: 600; }
+
+  /* ── Node styles ── */
+  .node {
+    padding: 8px 14px; border-radius: 8px; border: 2px solid transparent;
+    font-size: 12px; font-family: inherit; min-width: 100px; text-align: center;
+    cursor: default; user-select: none;
+    transition: background 0.35s ease, border-color 0.35s ease,
+                box-shadow 0.35s ease, transform 0.25s cubic-bezier(0.34,1.56,0.64,1);
+  }
+  .node.blocked  { background: #1e1e2a; border-color: #3a3a4a; color: #555; }
+  .node.waiting  { background: #2a2000; border-color: #6b5000; color: #f0c040; }
+  .node.active   { background: #001a30; border-color: #0088cc; color: #44aaff;
+                   box-shadow: 0 0 20px rgba(0,136,204,0.45); transform: scale(1.08); }
+  .node.completed { background: #002200; border-color: #00aa44; color: #44ff88; }
+  .node.failed   { background: #300010; border-color: #aa0033; color: #ff4466; }
+
+  .node-label { font-size: 11px; color: inherit; white-space: nowrap;
+                overflow: hidden; text-overflow: ellipsis; max-width: 160px; }
+  .node-wid   { font-size: 10px; color: #555; margin-top: 2px; white-space: nowrap; }
+
+  .node.pulse  { animation: node-pulse 0.6s ease-out; }
+  .node.shake  { animation: node-shake 0.4s ease-in-out; }
+  @keyframes node-pulse {
+    0%   { box-shadow: 0 0 0   0   rgba(0,136,204,0.6); }
+    50%  { box-shadow: 0 0 0   12px rgba(0,136,204,0); }
+    100% { box-shadow: 0 0 0   0   rgba(0,136,204,0); }
+  }
+  @keyframes node-shake {
+    0%,100% { transform: translateX(0) scale(1.08); }
+    20%     { transform: translateX(-5px) scale(1.08); }
+    40%     { transform: translateX(5px)  scale(1.08); }
+    60%     { transform: translateX(-3px) scale(1.08); }
+    80%     { transform: translateX(3px)  scale(1.08); }
+  }
+
+  /* ── Event log panel ── */
+  .event-panel {
+    width: 260px; border-left: 1px solid #1e1e28;
+    display: flex; flex-direction: column; overflow: hidden; flex-shrink: 0;
+  }
+  .event-panel-header {
+    padding: 8px 12px; font-size: 11px; color: #555;
+    border-bottom: 1px solid #1a1a24; flex-shrink: 0; letter-spacing: 0.06em;
+  }
+  .event-list { flex: 1; overflow-y: auto; padding: 4px 0; }
+  .event-list::-webkit-scrollbar { width: 4px; }
+  .event-list::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
+
+  .event-item {
+    padding: 4px 12px; font-size: 11px; line-height: 1.5;
+    display: flex; gap: 8px; align-items: flex-start;
+    border-left: 2px solid transparent;
+    transition: background 0.15s; cursor: default;
+  }
+  .event-item.current { background: #1a2030; }
+  .event-item .etime { color: #444; flex-shrink: 0; width: 36px; }
+  .event-item .etype { flex-shrink: 0; width: 88px; font-weight: 600; }
+  .event-item .ejob  { color: #888; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .event-CREATED   .etype { color: #555; }
+  .event-CLAIMED   .etype { color: #44aaff; }
+  .event-HEARTBEAT .etype { color: #55bbaa; }
+  .event-COMPLETED .etype { color: #44ff88; }
+  .event-FAILED    .etype { color: #ff4466; }
+  .event-RETRY     .etype { color: #f0c040; }
+  .event-UNBLOCKED .etype { color: #f0c040; }
+  .event-POISON_PILL .etype { color: #ff2244; }
+
+  .event-item-CLAIMED    { border-left-color: #0088cc; }
+  .event-item-COMPLETED  { border-left-color: #00aa44; }
+  .event-item-UNBLOCKED  { border-left-color: #6b5000; }
+  .event-item-FAILED    { border-left-color: #aa0033; }
+  .event-item-RETRY      { border-left-color: #6b5000; }
+  .event-item-POISON_PILL { border-left-color: #ff0033; }
+
+  /* ── Timeline player ── */
+  .timeline {
+    background: #0f0f16; border-top: 1px solid #1e1e28;
+    padding: 10px 16px; display: flex; flex-direction: column; gap: 8px; flex-shrink: 0;
+  }
+  .timeline-controls {
+    display: flex; align-items: center; gap: 12px;
+  }
+  .play-btn {
+    background: #1a2a40; border: 1px solid #2a4a70; color: #44aaff;
+    font-size: 12px; padding: 5px 16px; border-radius: 6px; cursor: pointer;
+    font-family: inherit; transition: background 0.15s; min-width: 64px; text-align: center;
+  }
+  .play-btn:hover { background: #1e3050; }
+  .play-btn.playing { background: #0a2040; border-color: #44aaff; }
+
+  .speed-select {
+    background: #161620; border: 1px solid #2a2a3a; color: #888;
+    font-size: 11px; padding: 4px 8px; border-radius: 4px;
+    cursor: pointer; font-family: inherit;
+  }
+
+  .scrubber-wrap {
+    position: relative; height: 20px; cursor: pointer; flex: 1;
+  }
+  .scrubber-bg {
+    position: absolute; top: 8px; left: 0; right: 0; height: 4px;
+    background: #1e1e2a; border-radius: 2px;
+  }
+  .scrubber-fill {
+    position: absolute; top: 8px; left: 0; height: 4px;
+    background: linear-gradient(90deg, #0066bb, #44aaff);
+    border-radius: 2px; pointer-events: none;
+  }
+  .scrubber-thumb {
+    position: absolute; top: 4px; width: 12px; height: 12px;
+    background: #44aaff; border-radius: 50%;
+    transform: translateX(-50%); box-shadow: 0 0 8px rgba(68,170,255,0.6);
+    pointer-events: none;
+  }
+.time-display { font-size: 11px; color: #444; min-width: 90px; text-align: right; }
+
+  /* ── Quality Panel ── */
+  .quality-panel {
+    display: flex; align-items: center; gap: 8px;
+    margin-left: auto; padding: 0 12px;
+  }
+  .qpanel-label {
+    font-size: 9px; letter-spacing: 0.1em; color: #555; font-weight: 600;
+  }
+  .qpanel-val { font-size: 10px; color: #44aaff; min-width: 32px; text-align: right; font-variant-numeric: tabular-nums; }
+  .quality-panel input[type="range"] { width: 64px; height: 3px; accent-color: #44aaff; cursor: pointer; }
+  .preset-btn {
+    background: #1a1a24; border: 1px solid #2a2a3a; border-radius: 4px;
+    color: #555; font-size: 9px; letter-spacing: 0.08em; padding: 2px 7px;
+    cursor: pointer; transition: all 0.15s;
+  }
+  .preset-btn:hover { border-color: #44aaff; color: #44aaff; background: #1a2030; }
+
+  /* ── Empty state ── */
+  .empty-state {
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: center; height: 100%; gap: 12px; color: #333; font-size: 13px;
+  }
+
+  /* ── Screen flash ── */
+  .screen-flash {
+    position: fixed; inset: 0; pointer-events: none; z-index: 999;
+    opacity: 0; transition: opacity 0.08s ease-out;
+  }
+  .screen-flash.active { opacity: 1; transition: none; }
+
+  /* ── Cut overlay ── */
+  .cut-overlay {
+    position: fixed; inset: 0; background: #0a0a0f;
+    pointer-events: none; z-index: 998; opacity: 0; transition: opacity 0.12s ease;
+  }
+  .cut-overlay.active { opacity: 1; transition: none; }
+
+  /* ── Director label ── */
+  .director-label {
+    position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%);
+    background: rgba(10,10,15,0.85); border: 1px solid #222;
+    border-radius: 4px; padding: 3px 10px; font-size: 10px; color: #555;
+    letter-spacing: 0.05em; pointer-events: none; z-index: 10;
+    white-space: nowrap; opacity: 0; transition: opacity 0.3s;
+  }
+  .director-label.visible { opacity: 1; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@xyflow/react@12/dist/xyflow.umd.production.min.js"></script>
+<script src="https://unpkg.com/dagre@0.8.5/dist/dagre.min.js"></script>
+<script>
+/* ─────────────────────────────────────────────────────────────────────────────
+   Trace Replay — Director Layer Edition
+   1. Time normalization: easeInOutCubic on (ts - startTs) / duration
+   2. Camera follow: focusNode() on CLAIMED / UNBLOCKED / COMPLETED / FAILED
+   3. Cut points: UNBLOCKED/POISON_PILL trigger brief black flash + zoom
+   4. Montage detection: parallel CLAIMEDs within 3% of timeline → zoom-out shot
+   ───────────────────────────────────────────────────────────────────────────── */
+
+const { React, ReactDOM } = window;
+const { useState, useEffect, useRef, useCallback, useMemo } = React;
+const { ReactFlow, Background, MiniMap, useNodesState, useEdgesState,
+        useReactFlow, MarkerType } = window.XyFlow;
+const { dagre } = window;
+
+// ── Math helpers ─────────────────────────────────────────────────────────────
+
+function lerp(a, b, t) { return a + (b - a) * t; }
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+function easeInOutCubic(t) {
+  return t < 0.5 ? 4*t*t*t : 1 - Math.pow(-2*t+2, 3)/2;
+}
+function easeOutQuad(t) { return 1 - (1-t)*(1-t); }
+
+/** Map real ts → normalized [0,1] with easing applied */
+function normPos(ts, startTs, endTs) {
+  const raw = (ts - startTs) / (endTs - startTs || 1);
+  return clamp(easeInOutCubic(clamp(raw, 0, 1)), 0, 1);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LAYER 1 — Semantic Context Builder
+// Builds ctx from trace (pure world state, no decisions).
+// All fields are causal (computed from past events only).
+// ─────────────────────────────────────────────────────────────────────────────
+
+function buildCtx(events, i, startTs, endTs, jobDeps) {
+  const ev    = events[i];
+  const prev  = i > 0 ? events[i - 1] : null;
+  const next  = i < events.length - 1 ? events[i + 1] : null;
+
+  // Parallel burst detection (same type, close in normalized time)
+  const THR = 0.03;
+  let pS = i;
+  while (pS > 0 && normPos(ev.ts, startTs, endTs) - normPos(events[pS-1].ts, startTs, endTs) < THR
+         && events[pS-1].type === ev.type) pS--;
+  let pE = i;
+  while (pE < events.length - 1
+         && normPos(events[pE+1].ts, startTs, endTs) - normPos(ev.ts, startTs, endTs) < THR
+         && events[pE+1].type === ev.type) pE++;
+  const pSize = pE - pS + 1;
+  const isMontage = pSize > 1;
+
+  // Same-type neighbours
+  let prevSame = null, nextSame = null;
+  for (let k = i-1; k >= 0; k--)   { if (events[k].type === ev.type) { prevSame = events[k]; break; } }
+  for (let k = i+1; k < events.length; k++) { if (events[k].type === ev.type) { nextSame = events[k]; break; } }
+
+  // Retry storm: consecutive RETRYs ending at this position
+  let retryRun = 0;
+  for (let k = i; k >= 0 && events[k].type === 'RETRY'; k--) retryRun++;
+
+  // Cascade detection: consecutive FAIL/POISON ending at this position
+  let failCascade = 0;
+  for (let k = i; k >= 0 && (events[k].type === 'FAILED' || events[k].type === 'POISON_PILL'); k--) failCascade++;
+
+  // Past CLAIMED count (causal — only looks backward)
+  let pastClaimed = 0;
+  for (let k = 0; k < i; k++) { if (events[k].type === 'CLAIMED') pastClaimed++; }
+
+  const deps   = jobDeps[ev.jobId] || [];
+  const normHere = normPos(ev.ts, startTs, endTs);
+  const gapPrev  = prev ? normHere - normPos(prev.ts, startTs, endTs) : 1;
+  const gapNext  = next ? normPos(next.ts, startTs, endTs) - normHere : 1;
+
+  return {
+    index: i,
+    totalEvents: events.length,
+    prevEvent: prev, nextEvent: next,
+    prevSameType: prevSame, nextSameType: nextSame,
+    isMontage, isFirstInMontage: isMontage && pS === i, isLastInMontage: isMontage && pE === i,
+    parallelBurstSize: pSize,
+    isRetryStorm: retryRun >= 3,
+    isCascade: failCascade >= 2,
+    pastClaimed,
+    gapPrev, gapNext,
+    jobDegree: deps.length,
+    isOnCriticalPath: deps.length <= 1,
+    isFirstEvent: i === 0,
+    isLastEvent: i === events.length - 1,
+    prevType: prev ? prev.type : null,
+    nextType: next ? next.type : null,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LAYER 2 — Semantic Intent (DIRECTOR_PLAN)
+// Each event type returns ONLY semantic tags.
+// No camera, no flash, no rhythm — pure "what does this mean".
+// ─────────────────────────────────────────────────────────────────────────────
+
+const DIRECTOR_PLAN = {
+
+  CLAIMED: (ctx) => {
+    const tags = ['claimed'];
+    if (ctx.isMontage) {
+      ctx.isFirstInMontage ? tags.push('montage-first') : tags.push('montage');
+    } else if (ctx.isOnCriticalPath) {
+      tags.push('critical');
+    }
+    if (ctx.isFirstEvent) tags.push('first-event');
+    return { tags };
+  },
+
+  UNBLOCKED: (ctx) => {
+    const tags = ['unblocked', 'accent-beat'];
+    if (ctx.gapPrev < 0.01) tags.push('rapid-succession');
+    return { tags };
+  },
+
+  COMPLETED: (ctx) => {
+    if (ctx.nextSameType && ctx.nextSameType.type === 'COMPLETED') {
+      return { tags: ['absorb'] };   // absorbed into the next COMPLETED
+    }
+    const tags = ['completed'];
+    if (ctx.isFirstEvent) tags.push('first-event');
+    return { tags };
+  },
+
+  FAILED: (ctx) => {
+    const tags = ['failed'];
+    if (ctx.isCascade) tags.push('cascade');
+    if (ctx.isOnCriticalPath) tags.push('critical');
+    return { tags };
+  },
+
+  RETRY: (ctx) => {
+    if (ctx.isRetryStorm) return { tags: ['retry', 'retry-storm', 'absorb'] };
+    return { tags: ['retry'] };
+  },
+
+  POISON_PILL: (ctx) => ({
+    tags: ['poison-pill', 'accent-beat', 'cascade-start'],
+  }),
+
+  HEARTBEAT: () => ({ tags: ['absorb'] }),   // no visual, absorbed into next
+  CREATED:   () => ({ tags: ['absorb'] }),
+  PROGRESS:  () => ({ tags: ['absorb'] }),
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LAYER 3 — Visual Mapping (统一解释层)
+// resolveVisual: tags → camera + flash + visual spec
+// resolveRhythm: tags → hold + merge + accent
+// All visual decisions live here. Rule functions never return camera/flash/rhythm.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function resolveVisual(tags) {
+  const cam  = { zoom: 1.0, move: false, cutSnap: false, duration: 0 };
+  const fl   = { color: null, duration: 0 };
+  const vis  = { glow: false, edgeColor: null, edgeWidth: null, labelDelay: 0, shake: false, pulse: false };
+
+  if      (tags.includes('claimed') && tags.includes('montage-first')) {
+    Object.assign(cam,  { zoom: 0.75, move: true, cutSnap: true,  duration: 400 });
+    Object.assign(fl,   { color: '#0088cc', duration: 80 });
+    Object.assign(vis,  { glow: true, labelDelay: 0.75 });
+  }
+  else if (tags.includes('claimed') && tags.includes('montage')) {
+    Object.assign(cam,  { zoom: 1.5,  move: true, cutSnap: true,  duration: 80 });
+    Object.assign(fl,   { color: '#0088cc', duration: 60 });
+    Object.assign(vis,  { glow: true, labelDelay: 0.75 });
+  }
+  else if (tags.includes('claimed') && tags.includes('critical')) {
+    Object.assign(cam,  { zoom: 1.5, move: true, cutSnap: false, duration: 350 });
+    Object.assign(fl,   { color: '#0088cc', duration: 90 });
+    Object.assign(vis,  { glow: true, labelDelay: 0.70 });
+  }
+  else if (tags.includes('claimed')) {
+    Object.assign(cam,  { zoom: 1.4, move: true, cutSnap: false, duration: 320 });
+    Object.assign(fl,   { color: '#0088cc', duration: 80 });
+    Object.assign(vis,  { glow: true, labelDelay: 0.75 });
+  }
+  else if (tags.includes('unblocked')) {
+    Object.assign(cam,  { zoom: 1.1, move: true, cutSnap: true,  duration: 380 });
+    Object.assign(fl,   { color: '#6b5000', duration: 80 });
+    Object.assign(vis,  { glow: true, edgeColor: '#f0c040', edgeWidth: 2.5, labelDelay: 0.70 });
+  }
+  else if (tags.includes('completed')) {
+    Object.assign(fl,   { color: '#00aa44', duration: 60 });
+    Object.assign(vis,  { glow: true, edgeColor: '#00aa44', edgeWidth: 2.0, labelDelay: 0.70 });
+  }
+  else if (tags.includes('failed') && tags.includes('cascade')) {
+    Object.assign(cam,  { zoom: 1.3, move: true, cutSnap: false, duration: 400 });
+    Object.assign(fl,   { color: '#aa0033', duration: 130 });
+    Object.assign(vis,  { glow: true, edgeColor: '#aa0033', edgeWidth: 2.5, labelDelay: 0.60 });
+  }
+  else if (tags.includes('failed')) {
+    Object.assign(cam,  { zoom: 1.2, move: true, cutSnap: false, duration: 350 });
+    Object.assign(fl,   { color: '#aa0033', duration: 100 });
+    Object.assign(vis,  { glow: true, edgeColor: '#aa0033', edgeWidth: 2.0, labelDelay: 0.65 });
+  }
+  else if (tags.includes('retry') && !tags.includes('retry-storm')) {
+    Object.assign(fl,   { color: '#6b5000', duration: 80 });
+    Object.assign(vis,  { shake: true, labelDelay: 0.70 });
+  }
+  else if (tags.includes('retry-storm')) {
+    Object.assign(fl,   { color: '#6b5000', duration: 60 });
+    Object.assign(vis,  { shake: true, labelDelay: 0.80 });
+  }
+  else if (tags.includes('poison-pill')) {
+    Object.assign(cam,  { zoom: 1.1, move: true, cutSnap: true,  duration: 380 });
+    Object.assign(fl,   { color: '#ff0033', duration: 120 });
+    Object.assign(vis,  { glow: true, edgeColor: '#ff0033', edgeWidth: 2.5, labelDelay: 0.50 });
+  }
+
+  return { cam, fl, vis };
+}
+
+function resolveRhythm(tags) {
+  let hold = 0.03, merge = false, accent = false;
+
+  if      (tags.includes('claimed') && tags.includes('montage-first')) { hold = 0.05; accent = true; }
+  else if (tags.includes('claimed') && tags.includes('montage'))        { hold = 0.02; accent = true; }
+  else if (tags.includes('claimed') && tags.includes('critical'))     { hold = 0.05; accent = true; }
+  else if (tags.includes('claimed'))                                   { hold = 0.04; }
+  else if (tags.includes('unblocked'))                                  { hold = 0.05; accent = true; }
+  else if (tags.includes('completed'))                                  { hold = 0.03; }
+  else if (tags.includes('failed') && tags.includes('cascade'))        { hold = 0.06; accent = true; }
+  else if (tags.includes('failed'))                                    { hold = 0.05; }
+  else if (tags.includes('retry-storm'))                               { hold = 0.02; merge = true; }
+  else if (tags.includes('retry'))                                     { hold = 0.03; }
+  else if (tags.includes('poison-pill'))                               { hold = 0.06; accent = true; }
+  else if (tags.includes('absorb'))                                     { hold = 0; merge = true; }
+
+  return { hold, merge, accent };
+}
+
+function resolveEmphasis(tags) {
+  if (tags.includes('claimed') || tags.includes('poison-pill')) return 'strong';
+  if (tags.includes('unblocked') || tags.includes('completed') || tags.includes('failed')) return 'medium';
+  if (tags.includes('retry')) return 'weak';
+  return 'none';
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LAYER 4 — Timeline Engine
+// Consumes ctx + tags + visual/rhythm resolves.
+// Produces final segments. Only place where segment structure is modified.
+// merge: 'absorb' segments are merged into the next strong segment.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const RHYTHM = {
+  MIN_HOLD:    0.018,
+  MIN_GAP:     0.004,
+  TOTAL_DUR:   12000,
+  ACCENT_DURATION_MULT: 1.35,
+  MIN_SEG_DURATION: 0.008,
+};
+
+// ── Dagre layout ─────────────────────────────────────────────────────────────
+
+function computeLayout(jobs) {
+  const g = new dagre.graphlib.Graph();
+  g.setGraph({ rankdir: 'TB', nodesep: 60, ranksep: 70, marginx: 40, marginy: 40 });
+  g.setDefaultEdgeLabel(() => ({}));
+  jobs.forEach(j => g.setNode(j.id, { label: j.name, width: 150, height: 48 }));
+  jobs.forEach(j => (j.dependsOn || []).forEach(dep => {
+    try { g.setEdge(dep, j.id); } catch (_) {}
+  }));
+  dagre.layout(g);
+  return jobs.map(j => {
+    const pos = g.node(j.id) || { x: 0, y: 0 };
+    return { ...j, x: pos.x, y: pos.y };
+  });
+}
+
+// ── Director layer builder (v2 — ctx-aware + merge + accent) ─────────────────
+
+function buildDirector(trace) {
+  const { events, startTs, endTs, jobs } = trace;
+  if (!events.length) return [];
+
+  const jobDeps = {};
+  (jobs || []).forEach(j => { jobDeps[j.id] = j.dependsOn || []; });
+
+  // ── Pass 1: ctx → tags → visual/rhythm resolves → raw segments ───────────────
+  const rawSegs = [];
+
+  events.forEach((ev, i) => {
+    const fn = DIRECTOR_PLAN[ev.type];
+    if (!fn) return;
+
+    const ctx    = buildCtx(events, i, startTs, endTs, jobDeps);
+    const { tags } = fn(ctx);
+
+    // 'absorb' tags → no visual segment (state only)
+    if (tags.includes('absorb')) return;
+
+    const start   = normPos(ev.ts, startTs, endTs);
+    const nextTs  = i < events.length - 1 ? events[i + 1].ts : ev.ts + 300;
+    const end     = normPos(nextTs, startTs, endTs);
+
+    const { cam, fl, vis } = resolveVisual(tags);
+    const rhythm = resolveRhythm(tags);
+    const emphasis = resolveEmphasis(tags);
+
+    let duration = Math.max(end - start, rhythm.hold || RHYTHM.MIN_SEG_DURATION);
+    if (rhythm.accent) duration *= RHYTHM.ACCENT_DURATION_MULT;
+
+    rawSegs.push({
+      ...ev,
+      ctx, tags, emphasis,
+      start, end, duration,
+      origDuration: end - start,
+      camZoom:   cam.zoom,
+      camMove:   cam.move,
+      camCutSnap: cam.cutSnap,
+      camDur:    cam.duration,
+      flashColor: fl.color,
+      flashDur:  fl.duration,
+      glow:      vis.glow,
+      edgeColor: vis.edgeColor,
+      edgeWidth: vis.edgeWidth,
+      labelDelay: vis.labelDelay,
+      shake:     vis.shake,
+      pulse:     vis.pulse,
+      merge:     rhythm.merge,
+      accent:    rhythm.accent,
+      merged:    false,
+    });
+  });
+
+  if (!rawSegs.length) return [];
+
+  // ── Pass 2: Execute MERGE ─────────────────────────────────────────────────────
+  // 'merge' segments are absorbed into the NEXT strong segment.
+  // Absorbed segments' state effects are preserved via stateEffects[].
+
+  const mergedSegs = [];
+  let i = 0;
+  while (i < rawSegs.length) {
+    const seg = rawSegs[i];
+
+    if (seg.merge && i + 1 < rawSegs.length) {
+      const nextSeg = rawSegs[i + 1];
+      // Expand nextSeg's start to cover absorbed range
+      nextSeg.start    = clamp(seg.start, 0, 1);
+      nextSeg.duration = clamp(nextSeg.end - nextSeg.start, RHYTHM.MIN_SEG_DURATION, 1);
+      if (!nextSeg.stateEffects) nextSeg.stateEffects = [];
+      nextSeg.stateEffects.push({ jobId: seg.jobId, type: seg.type });
+      seg.merged = true;
+      i++;
+      continue;
+    }
+
+    // Absorb any already-merged segments that follow
+    let j = i + 1;
+    while (j < rawSegs.length && rawSegs[j].merged) j++;
+    if (j > i + 1) {
+      const lastIncluded = rawSegs[j - 1];
+      seg.end     = clamp(lastIncluded.end, seg.start, 1);
+      seg.duration = clamp(seg.end - seg.start, RHYTHM.MIN_SEG_DURATION, 1);
+    }
+
+    mergedSegs.push(seg);
+    i++;
+  }
+
+  // ── Pass 3: MIN_HOLD — stretch undersized segments ─────────────────────────
+  mergedSegs.forEach(seg => {
+    if (seg.duration < RHYTHM.MIN_HOLD) {
+      const pad = (RHYTHM.MIN_HOLD - seg.duration) / 2;
+      seg.start = Math.max(0, seg.start - pad);
+      seg.end   = Math.min(1, seg.end   + pad);
+      seg.duration = seg.end - seg.start;
+    }
+  });
+
+  // ── Pass 4: MIN_GAP — enforce minimum gap between segments ───────────────────
+  for (let i = 1; i < mergedSegs.length; i++) {
+    const prev = mergedSegs[i - 1];
+    const curr = mergedSegs[i];
+    const gap = curr.start - prev.end;
+    if (gap < RHYTHM.MIN_GAP) {
+      const adj = (RHYTHM.MIN_GAP - gap) / 2;
+      curr.start = clamp(curr.start + adj, 0, 1);
+      prev.end   = clamp(prev.end   - adj, 0, 1);
+      curr.duration = clamp(curr.end - curr.start, RHYTHM.MIN_SEG_DURATION, 1);
+      prev.duration = clamp(prev.end - prev.start, RHYTHM.MIN_SEG_DURATION, 1);
+    }
+  }
+
+  // Clamp
+  mergedSegs.forEach(seg => {
+    seg.start   = clamp(seg.start, 0, 1);
+    seg.end     = clamp(seg.end,   0, 1);
+    seg.duration = clamp(seg.end - seg.start, RHYTHM.MIN_SEG_DURATION, 1);
+  });
+
+  return mergedSegs;
+}
+
+// ── Node component ───────────────────────────────────────────────────────────
+
+const GLOW_MAP = {
+  CLAIMED: '#0088cc', COMPLETED: '#00aa44', UNBLOCKED: '#6b5000',
+  FAILED: '#aa0033', RETRY: '#6b5000', POISON_PILL: '#ff0033', HEARTBEAT: '#55bbaa',
+};
+const STATUS_COLORS_NODE = {
+  blocked:   { bg: '#1e1e2a', border: '#3a3a4a', text: '#555' },
+  waiting:   { bg: '#2a2000', border: '#6b5000', text: '#f0c040' },
+  active:    { bg: '#001a30', border: '#0088cc', text: '#44aaff' },
+  completed: { bg: '#002200', border: '#00aa44', text: '#44ff88' },
+  failed:    { bg: '#300010', border: '#aa0033', text: '#ff4466' },
+};
+
+const JobNode = ({ id, data }) => {
+  const { name, status, workerId, highlighted, shaking, pulse, glowT } = data;
+  const colors = STATUS_COLORS_NODE[status] || STATUS_COLORS_NODE.blocked;
+
+  const glowColor = highlighted ? (GLOW_MAP[highlighted] || colors.border) : null;
+  const glowAmt = glowColor ? clamp(0.1 + (glowT || 0) * 0.9, 0, 1) : 0;
+  const hexAlpha = Math.round(glowAmt * 99).toString(16).padStart(2, '0');
+
+  let cls = `node ${status}`;
+  if (shaking) cls += ' shake';
+  else if (pulse) cls += ' pulse';
+
+  return React.createElement('div', {
+    className: cls,
+    style: {
+      background: colors.bg,
+      border: `2px solid ${colors.border}`,
+      borderRadius: 8, padding: '8px 14px', minWidth: 100, textAlign: 'center',
+      fontSize: 12, fontFamily: 'inherit', color: colors.text,
+      boxShadow: glowAmt > 0.05
+        ? `0 0 ${Math.round(glowAmt * 24)}px ${glowColor}${hexAlpha}, 0 0 ${Math.round(glowAmt * 8)}px ${glowColor}40`
+        : undefined,
+      cursor: 'default', userSelect: 'none',
+    }
+  },
+    React.createElement('div', {
+      style: { fontSize: 11, color: 'inherit', whiteSpace: 'nowrap',
+                overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 160 }
+    }, name),
+    workerId ? React.createElement('div', { style: { fontSize: 10, color: '#555', marginTop: 2 } }, workerId) : null
+  );
+};
+
+const nodeTypes = { job: JobNode };
+
+// ── Main App ────────────────────────────────────────────────────────────────
+
+function App() {
+  const [graphId, setGraphId]     = useState('video-pipeline');
+  const [inputVal, setInputVal]   = useState('video-pipeline');
+  const [trace, setTrace]         = useState(null);
+  const [loading, setLoading]     = useState(false);
+  const [error, setError]         = useState(null);
+
+  // Playback
+  const [playing, setPlaying]     = useState(false);
+  const [currentSeg, setCurrentSeg] = useState(-1);
+  const [progress, setProgress]   = useState(0);
+  const [speed, setSpeed]         = useState(1);
+
+  // ── Quality modifiers ────────────────────────────────────────────────────
+  // Pacing: [0.5, 2.0] — hold duration multiplier (higher = faster cuts)
+  // Motion:  [0, 1]    — camera activity (0 = static, 1 = full)
+  // Stability:[0, 1]    — smoothness vs snappiness (1 = smooth, 0 = snappy)
+  const [pacing, setPacing]     = useState(1.0);
+  const [motion, setMotion]     = useState(0.6);
+  const [stability, setStability] = useState(0.7);
+
+  // Refs so callbacks don't need quality params in dependency arrays
+  const qualityRef = useRef({ pacing: 1.0, motion: 0.6, stability: 0.7 });
+  useEffect(() => { qualityRef.current = { pacing, motion, stability }; },
+    [pacing, motion, stability]);
+
+  /**
+   * Apply current quality modifiers to a segment's resolved values.
+   * Three orthogonal axes:
+   *   1️⃣ Tempo    — pacing  → holdAdj     (time density)
+   *   2️⃣ Camera Energy — motion → camZoomAdj + camMoveAdj  (lens only)
+   *   3️⃣ Visual Noise  — noise(=1-stab) → shakeAdj + flashDurAdj + glowAdj
+   *
+   * Called once at segment entry — results stored on seg for playback.
+   */
+  const applyModifiers = useCallback((seg) => {
+    const { pacing: pac, motion: mot, stability: stab } = qualityRef.current;
+
+    // 1️⃣ Tempo — hold duration (inverse relationship: higher pac = faster cuts)
+    seg.holdAdj = seg.hold * (1.0 / pac);
+
+    // 2️⃣ Camera Energy — zoom + move only (does NOT touch glow)
+    seg.camZoomAdj    = (seg.camZoom || 1.0) * (1.0 + mot * 0.5);
+    seg.camMoveAdj    = mot > 0.25 && seg.camMove;
+    seg.camCutSnapAdj = stab < 0.6 && seg.camCutSnap;
+
+    // 3️⃣ Visual Noise — shake + flash + glow (inverted: high stab = clean)
+    const noise = 1.0 - stab;
+    seg.shakeAdj    = noise > 0.2 && seg.shake;
+    seg.flashDurAdj = seg.flashDur * (0.5 + noise * 0.5);
+    seg.glowAdj     = noise * mot;   // noise controls glow intensity; motion scales it
+
+    return seg;
+  }, []);
+
+  // Director output
+  const [director, setDirector]   = useState([]);
+
+  // Node state
+  const [nodeState, setNodeState] = useState({});
+
+  // Effects
+  const [flashColor, setFlashColor]     = useState(null);
+  const [flashActive, setFlashActive]   = useState(false);
+  const [cutActive, setCutActive]       = useState(false);
+  const [directorLabel, setDirectorLabel] = useState('');
+
+  const rafRef        = useRef(null);
+  const playingRef    = useRef(false);
+  const progressRef   = useRef(0);
+  const lastTickRef   = useRef(null);
+  const lastSegRef    = useRef(-1);
+  const reactFlowInst = useReactFlow ? useReactFlow() : null;
+  const rfInstance    = reactFlowInst;
+
+  // ── Camera lerp state ────────────────────────────────────────────────────
+  // Stored in ref to avoid re-renders on every frame
+  const camRef = useRef({
+    x: 0, y: 0, zoom: 1.0,
+    tx: 0, ty: 0, tzoom: 1.0,
+    active: false,  // true when a smooth move is in progress
+    finished: true,
+  });
+
+  // ── Segment boundary state (prev / current for cut detection) ────────────
+  const prevSegRef = useRef(null);
+
+  // Director debug panel state
+  const [debugSeg, setDebugSeg] = useState(null);
+
+  // Layout
+  const layoutJobs = useMemo(() => trace ? computeLayout(trace.jobs) : [], [trace]);
+
+  const { initNodes, initEdges } = useMemo(() => {
+    if (!layoutJobs.length) return { initNodes: [], initEdges: [] };
+    const nodes = layoutJobs.map(j => ({
+      id: j.id, type: 'job', position: { x: j.x, y: j.y },
+      data: { name: j.name, status: j.status, workerId: null,
+              highlighted: null, shaking: false, pulse: false },
+    }));
+    const edges = [];
+    layoutJobs.forEach(j => (j.dependsOn || []).forEach(dep => {
+      edges.push({
+        id: `${dep}->${j.id}`, source: dep, target: j.id,
+        type: 'smoothstep', animated: false,
+        style: { stroke: '#2a2a3a', strokeWidth: 1.5 },
+        markerEnd: { type: MarkerType.ArrowClosed, color: '#2a2a3a' },
+      });
+    }));
+    return { initNodes: nodes, initEdges: edges };
+  }, [layoutJobs]);
+
+  const [nodes, setNodes, onNodesChange] = useNodesState(initNodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState(initEdges);
+
+  // Sync nodeState → React Flow nodes
+  useEffect(() => {
+    if (!Object.keys(nodeState).length) return;
+    setNodes(nds => nds.map(n => ({ ...n, data: { ...n.data, ...(nodeState[n.id] || {}) } })));
+  }, [nodeState, setNodes]);
+
+  // ── Helpers ──────────────────────────────────────────────────────────────
+
+  const getNodePos = useCallback((nodeId) => {
+    if (!rfInstance) return null;
+    return nodes.find(n => n.id === nodeId)?.position ?? null;
+  }, [nodes, rfInstance]);
+
+  const labelText = (type, jobName) => ({
+    CLAIMED: `▶ ${jobName}`, COMPLETED: `✓ ${jobName}`, FAILED: `✗ ${jobName}`,
+    UNBLOCKED: `⬇ UNBLOCKED`, RETRY: `↻ RETRY`, POISON_PILL: `☠ POISON_PILL`,
+    HEARTBEAT: `♦`, CREATED: `·`, PROGRESS: `…`,
+  }[type] || type);
+
+  // ── Cut transition ───────────────────────────────────────────────────────
+
+  const triggerCut = useCallback(() => {
+    setCutActive(true);
+    setTimeout(() => setCutActive(false), 120);
+  }, []);
+
+  const showLabel = useCallback((text) => {
+    setDirectorLabel(text);
+    setTimeout(() => setDirectorLabel(''), 1200);
+  }, []);
+
+  const showFlash = useCallback((color, ms = 80) => {
+    setFlashColor(color);
+    setFlashActive(true);
+    setTimeout(() => setFlashActive(false), ms);
+  }, []);
+
+  // ── Continuous camera lerp ──────────────────────────────────────────────
+
+  // Smooth camera: update rfInstance viewport every frame via setViewport
+  const updateCameraLerp = useCallback((dt) => {
+    if (!rfInstance) return;
+    const cam = camRef.current;
+    if (!cam.active) return;
+
+    // Ease towards target
+    const lerpSpeed = 6; // higher = snappier
+    const t = 1 - Math.exp(-lerpSpeed * dt / 1000);
+
+    cam.x = lerp(cam.x, cam.tx, t);
+    cam.y = lerp(cam.y, cam.ty, t);
+    cam.zoom = lerp(cam.zoom, cam.tzoom, t);
+
+    const dx = Math.abs(cam.x - cam.tx);
+    const dy = Math.abs(cam.y - cam.ty);
+    const dz = Math.abs(cam.zoom - cam.tzoom);
+
+    if (dx < 0.5 && dy < 0.5 && dz < 0.005) {
+      cam.x = cam.tx; cam.y = cam.ty; cam.zoom = cam.tzoom;
+      cam.active = false;
+    }
+
+    try {
+      rfInstance.setViewport({ x: -cam.x + window.innerWidth / 2, y: -cam.y + window.innerHeight / 2, zoom: cam.zoom }, { duration: 0 });
+    } catch (_) {}
+  }, [rfInstance]);
+
+  const setCameraTarget = useCallback((nodeId, zoom, isCut) => {
+    if (!rfInstance) return;
+    const pos = getNodePos(nodeId);
+    if (!pos) return;
+    const cx = window.innerWidth / 2;
+    const cy = window.innerHeight / 2;
+    camRef.current.tx = pos.x;
+    camRef.current.ty = pos.y;
+    camRef.current.tzoom = zoom || 1.2;
+    camRef.current.active = true;
+    if (isCut) {
+      // Instant snap on cut
+      camRef.current.x = pos.x;
+      camRef.current.y = pos.y;
+      camRef.current.zoom = zoom || 1.2;
+      camRef.current.active = false;
+      try {
+        rfInstance.setViewport({ x: cx - pos.x, y: cy - pos.y, zoom: zoom || 1.2 }, { duration: 0 });
+      } catch (_) {}
+    }
+  }, [rfInstance, getNodePos]);
+
+  // ── Apply segment at localT ∈ [0,1] (continuous interpolation) ─────────────
+  // All visual fields are pre-resolved and stored flat on seg.
+
+  const STATUS_MAP = {
+    CLAIMED: 'active', COMPLETED: 'completed', FAILED: 'failed',
+    UNBLOCKED: 'waiting', RETRY: 'waiting', POISON_PILL: 'failed',
+  };
+  const LABEL_MAP = {
+    CLAIMED: '▶', COMPLETED: '✓', FAILED: '✗',
+    UNBLOCKED: '⬇', RETRY: '↻', POISON_PILL: '☠',
+  };
+
+  const applySegAtT = useCallback((seg, localT) => {
+    const t = easeOutQuad(clamp(localT, 0, 1));
+
+    const newStatus = STATUS_MAP[seg.type] || 'blocked';
+    const glowActive = seg.glow;
+    const glowIntensity = glowActive ? (seg.glowAdj || 0) * t : 0;
+
+    setNodeState(prev => {
+      const n = JSON.parse(JSON.stringify(prev));
+      if (!n[seg.jobId]) {
+        n[seg.jobId] = { status: 'blocked', workerId: null, highlighted: null, shaking: false, pulse: false, glowT: 0 };
+      }
+      const p = n[seg.jobId];
+      n[seg.jobId] = {
+        ...p,
+        status: newStatus,
+        workerId: seg.type === 'CLAIMED' ? seg.workerId : p.workerId,
+        highlighted: glowActive ? seg.type : null,
+        glowT: glowIntensity,
+        shaking: seg.shakeAdj ? (t > 0.08 && t < 0.92) : false,
+        pulse: !!seg.pulse,
+      };
+      return n;
+    });
+
+    // Edge highlight — edgeColor is non-null when set
+    if (seg.edgeColor) {
+      setEdges(eds => eds.map(e => {
+        const match = (seg.type === 'COMPLETED' || seg.type === 'POISON_PILL')
+          ? e.source === seg.jobId
+          : e.target === seg.jobId;
+        if (!match) return e;
+        const ew = seg.edgeWidth || 2;
+        return {
+          ...e,
+          style: {
+            ...e.style,
+            stroke: lerp('#2a2a3a', seg.edgeColor, t),
+            strokeWidth: lerp(1.5, ew, t),
+          },
+        };
+      }));
+    }
+
+    // Label — labelDelay is 0 when suppressed
+    if (seg.labelDelay && localT >= seg.labelDelay) {
+      const prefix = LABEL_MAP[seg.type] || '';
+      showLabel(`${prefix} ${seg.jobName}`);
+    }
+
+  }, [setEdges, showLabel]);
+
+  // ── Segment entry (fires once per segment boundary) ─────────────────────────
+
+  const enterSegment = useCallback((seg) => {
+    prevSegRef.current = seg;
+
+    // Apply quality modifiers (computed once per segment, stored on seg)
+    applyModifiers(seg);
+
+    // Update Director Debug Panel — show base + adjusted values
+    setDebugSeg({
+      type: seg.type,
+      jobId: seg.jobId,
+      tags: seg.tags,
+      emphasis: seg.emphasis,
+      camZoom: `${seg.camZoom || 1.0} → ${seg.camZoomAdj?.toFixed(2)}`,
+      camMove: `${seg.camMove} → ${seg.camMoveAdj}`,
+      camCutSnap: `${seg.camCutSnap} → ${seg.camCutSnapAdj}`,
+      flashColor: seg.flashColor,
+      flashDur: `${seg.flashDur}ms → ${Math.round(seg.flashDurAdj)}ms`,
+      glow: seg.glow,
+      edgeColor: seg.edgeColor,
+      merge: seg.merge,
+      accent: seg.accent,
+      isMontage: seg.isMontage,
+      paceHold: `×${seg.holdAdj?.toFixed(2)}`,
+      motionScale: qualityRef.current.motion.toFixed(1),
+      ctx: seg.ctx,
+    });
+
+    // Flash — use adjusted duration
+    if (seg.flashColor) {
+      showFlash(seg.flashColor, Math.round(seg.flashDurAdj || 80));
+    }
+
+    // Cut transition — use adjusted cutSnap
+    if (seg.camCutSnapAdj) {
+      triggerCut();
+    }
+
+    // Camera move — use adjusted zoom and cutSnap
+    if (seg.camMoveAdj && seg.camZoomAdj) {
+      setCameraTarget(seg.jobId, seg.camZoomAdj, seg.camCutSnapAdj);
+    }
+  }, [triggerCut, showFlash, setCameraTarget, applyModifiers]);
+
+  // ── Playback loop (progress-driven, continuous) ───────────────────────────
+
+  const TOTAL = RHYTHM.TOTAL_DUR; // 12s base playback duration
+
+  const tick = useCallback((ts) => {
+    if (!playingRef.current) return;
+    if (lastTickRef.current === null) lastTickRef.current = ts;
+    const dt = ts - lastTickRef.current;
+    lastTickRef.current = ts;
+
+    // Advance progress
+    const newProg = Math.min(1, progressRef.current + (dt / TOTAL) * speed);
+    progressRef.current = newProg;
+    setProgress(newProg);
+
+    if (!director.length) { cancelAnimationFrame(rafRef.current); return; }
+
+    // Find current segment
+    let sIdx = -1;
+    for (let i = 0; i < director.length; i++) {
+      if (director[i].start <= newProg) sIdx = i;
+      else break;
+    }
+
+    const seg = director[sIdx];
+    if (!seg) { rafRef.current = requestAnimationFrame(tick); return; }
+
+    // ── Segment entry (once, on first frame of segment) ──────────────────
+    if (sIdx !== lastSegRef.current) {
+      for (let k = (lastSegRef.current < 0 ? 0 : lastSegRef.current + 1); k <= sIdx; k++) {
+        enterSegment(director[k]);
+      }
+      lastSegRef.current = sIdx;
+      setCurrentSeg(sIdx);
+    }
+
+    // ── Continuous interpolation within segment ────────────────────────────
+    const localT = sIdx >= 0
+      ? clamp((newProg - seg.start) / (seg.duration || 0.001), 0, 1)
+      : 0;
+
+    applySegAtT(seg, localT);
+
+    // ── Camera lerp (every frame, not just on segment entry) ─────────────
+    updateCameraLerp(dt);
+
+    if (newProg >= 1) {
+      setPlaying(false);
+      playingRef.current = false;
+      return;
+    }
+
+    rafRef.current = requestAnimationFrame(tick);
+  }, [director, speed, applySegAtT, enterSegment, updateCameraLerp]);
+
+  useEffect(() => {
+    if (playing) {
+      playingRef.current = true;
+      lastTickRef.current = null;
+      rafRef.current = requestAnimationFrame(tick);
+    } else {
+      playingRef.current = false;
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    }
+    return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
+  }, [playing, tick]);
+
+  // ── Controls ─────────────────────────────────────────────────────────────
+
+  const reset = useCallback(() => {
+    setPlaying(false);
+    setProgress(0);
+    setCurrentSeg(-1);
+    setNodeState({});
+    lastSegRef.current = -1;
+    prevSegRef.current = null;
+    progressRef.current = 0;
+    playingRef.current = false;
+    camRef.current = { x: 0, y: 0, zoom: 1.0, tx: 0, ty: 0, tzoom: 1.0, active: false, finished: true };
+    setNodes(initNodes.map(n => ({ ...n, data: { ...n.data, highlighted: null, shaking: false, pulse: false } })));
+    setEdges(initEdges.map(e => ({ ...e, style: { stroke: '#2a2a3a', strokeWidth: 1.5 } })));
+  }, [initNodes, initEdges, setNodes, setEdges]);
+
+  const togglePlay = () => {
+    if (!trace) return;
+    if (playing) { setPlaying(false); return; }
+    if (progress >= 1 || currentSeg >= director.length - 1) {
+      reset();
+      setTimeout(() => setPlaying(true), 80);
+      return;
+    }
+    setPlaying(true);
+  };
+
+  const onScrub = (e) => {
+    if (!director.length) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    setPlaying(false);
+    setProgress(ratio);
+    progressRef.current = ratio;
+
+    let sIdx = -1;
+    for (let i = 0; i < director.length; i++) {
+      if (director[i].start <= ratio) sIdx = i;
+      else break;
+    }
+    setCurrentSeg(sIdx);
+    lastSegRef.current = sIdx;
+
+    // Rebuild state at scrub point (apply all segments with localT=1)
+    const snap = {};
+    for (let k = 0; k <= sIdx; k++) {
+      const seg = director[k];
+      if (seg.type === 'CLAIMED') snap[seg.jobId] = { status: 'active', workerId: seg.workerId, highlighted: null, shaking: false, pulse: false };
+      else if (seg.type === 'COMPLETED') snap[seg.jobId] = { status: 'completed', highlighted: null, shaking: false, pulse: false };
+      else if (seg.type === 'FAILED') snap[seg.jobId] = { status: 'failed', highlighted: null, shaking: false, pulse: false };
+      else if (['UNBLOCKED','RETRY'].includes(seg.type)) snap[seg.jobId] = { status: 'waiting', highlighted: null, shaking: false, pulse: false };
+      else if (seg.type === 'POISON_PILL') snap[seg.jobId] = { status: 'failed', highlighted: null, shaking: false, pulse: false };
+    }
+    setNodeState(snap);
+  };
+
+  // Load
+  const loadTrace = useCallback(async (gid) => {
+    reset();
+    setTrace(null);
+    setDirector([]);
+    setLoading(true);
+    setError(null);
+    try {
+      const r = await fetch(`/trace/${encodeURIComponent(gid)}`);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const data = await r.json();
+      setTrace(data);
+      setDirector(buildDirector(data));
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [reset]);
+
+  useEffect(() => { loadTrace(graphId); }, []);
+
+  const ETYPE_COLOR = {
+    CREATED:'#555', CLAIMED:'#44aaff', HEARTBEAT:'#55bbaa', PROGRESS:'#666',
+    COMPLETED:'#44ff88', FAILED:'#ff4466', RETRY:'#f0c040',
+    UNBLOCKED:'#f0c040', POISON_PILL:'#ff2244',
+  };
+
+  return React.createElement(React.Fragment, null,
+
+    // Screen flash
+    React.createElement('div', {
+      className: 'screen-flash' + (flashActive ? ' active' : ''),
+      style: {
+        background: flashColor
+          ? `radial-gradient(ellipse at center, ${flashColor}28 0%, transparent 70%)`
+          : 'transparent',
+      }
+    }),
+
+    // Cut overlay
+    React.createElement('div', { className: 'cut-overlay' + (cutActive ? ' active' : '') }),
+
+    // Input bar
+    React.createElement('div', { className: 'input-bar' },
+      React.createElement('input', {
+        value: inputVal,
+        onChange: e => setInputVal(e.target.value),
+        onKeyDown: e => { if (e.key === 'Enter') setGraphId(inputVal); },
+        placeholder: 'graphId (e.g. video-pipeline)',
+      }),
+      React.createElement('button', {
+        onClick: () => setGraphId(inputVal),
+        disabled: loading,
+      }, loading ? 'Loading…' : 'Load')
+    ),
+
+    // Header
+    trace ? React.createElement('div', { className: 'header' },
+      React.createElement('span', { className: 'header-title' }, 'DIRECTOR REPLAY'),
+      React.createElement('span', { className: 'header-graph' }, trace.graphId),
+      React.createElement('span', { className: 'header-stat' },
+        `${trace.jobs.length} jobs · ${trace.events.length} events · ${director.length} segments`)
+    ) : null,
+
+    // Main area
+    trace ? React.createElement('div', { className: 'main' },
+
+      React.createElement('div', { className: 'dag-panel' },
+        React.createElement('div', { className: 'dag-controls' },
+          React.createElement('button', {
+            onClick: () => rfInstance && rfInstance.fitView({ padding: 0.2 })
+          }, 'Reset view')
+        ),
+
+        React.createElement('div', { className: 'dag-info' },
+          ['Jobs','Events','Segments'].map((label, k) =>
+            React.createElement('div', { key: label, className: 'dag-info-row' },
+              React.createElement('span', { className: 'dag-info-label' }, label),
+              React.createElement('span', { className: 'dag-info-val' },
+                [trace.jobs.length, trace.events.length, director.length][k]
+              )
+            )
+          )
+        ),
+
+        // Director Debug Panel — shows rule decisions for current segment
+        debugSeg ? React.createElement('div', {
+          style: {
+            position: 'absolute', bottom: 40, right: 10, zIndex: 10,
+            background: 'rgba(10,10,15,0.92)', border: '1px solid #2a2a3a',
+            borderRadius: 6, padding: '8px 12px', fontSize: 10,
+            minWidth: 180, color: '#666', fontFamily: 'inherit',
+          }
+        },
+          React.createElement('div', {
+            style: { color: '#444', letterSpacing: '0.08em', marginBottom: 6 }
+          }, 'DIRECTOR RULE'),
+
+          // Event type with emphasis badge
+          React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 } },
+            React.createElement('span', {
+              style: {
+                background: 'rgba(0,136,204,0.15)', border: '1px solid rgba(0,136,204,0.4)',
+                borderRadius: 3, padding: '1px 6px', fontSize: 10, color: '#44aaff', fontWeight: 700,
+              }
+            }, debugSeg.type),
+            React.createElement('span', {
+              style: {
+                fontSize: 9, color: '#555',
+                background: '#1a1a24', borderRadius: 3, padding: '1px 5px',
+              }
+            }, debugSeg.emphasis.toUpperCase())
+          ),
+
+          React.createElement('div', { style: { color: '#333', marginBottom: 4 } }, debugSeg.jobId),
+
+          // Tags
+          React.createElement('div', { style: { display: 'flex', flexWrap: 'wrap', gap: 3, marginBottom: 6 } },
+            (debugSeg.tags || []).map(tag =>
+              React.createElement('span', {
+                key: tag,
+                style: {
+                  background: 'rgba(0,136,204,0.12)', border: '1px solid rgba(0,136,204,0.3)',
+                  borderRadius: 3, padding: '1px 5px', fontSize: 9, color: '#5599cc',
+                }
+              }, tag)
+            )
+          ),
+
+          // Resolved decisions
+          [
+            ['cam',    debugSeg.camMove ? `zoom ${debugSeg.camZoom}` : '—'],
+            ['flash',  debugSeg.flashColor ? `${debugSeg.flashDur || 0}ms` : '—'],
+            ['glow',   debugSeg.glow ? '✓' : '—'],
+            ['edge',   debugSeg.edgeColor || '—'],
+            ['merge',  debugSeg.merge ? '✓' : '—'],
+            ['accent', debugSeg.accent ? '✓' : '—'],
+          ].map(([k, v]) =>
+            React.createElement('div', {
+              key: k, style: { display: 'flex', justifyContent: 'space-between', gap: 8, lineHeight: 1.7 }
+            },
+              React.createElement('span', { style: { color: '#3a3a4a' } }, k),
+              React.createElement('span', {
+                style: { color: v === '—' ? '#444' : '#7a9aaa' }
+              }, v)
+            )
+          )
+        ) : null,
+
+        React.createElement(ReactFlow, {
+          nodes, edges, onNodesChange, onEdgesChange,
+          nodeTypes, fitView: true, fitViewOptions: { padding: 0.2 },
+          style: { background: '#0a0a0f' },
+          proOptions: { hideAttribution: true },
+        },
+          React.createElement(Background, { gap: 20, color: '#1a1a24' }),
+          React.createElement(MiniMap, {
+            nodeColor: n => ({
+              blocked:'#3a3a4a', waiting:'#6b5000', active:'#0088cc',
+              completed:'#00aa44', failed:'#aa0033',
+            }[n.data?.status] || '#333'),
+            style: { background: '#111118', border: '1px solid #222' },
+          })
+        ),
+
+        // Director label
+        React.createElement('div', {
+          className: 'director-label' + (directorLabel ? ' visible' : ''),
+        }, directorLabel)
+      ),
+
+      // Event panel
+      React.createElement('div', { className: 'event-panel' },
+        React.createElement('div', { className: 'event-panel-header' }, 'EVENT LOG'),
+        React.createElement('div', { className: 'event-list' },
+          trace.events.map((ev, i) =>
+            React.createElement('div', {
+              key: i,
+              className: `event-item event-${ev.type}` + (i === currentSeg ? ' current' : ''),
+            },
+              React.createElement('span', { className: 'etime' },
+                trace.duration > 0 ? ((ev.ts - trace.startTs) / 1000).toFixed(2) + 's' : '0s'
+              ),
+              React.createElement('span', {
+                className: 'etype',
+                style: { color: ETYPE_COLOR[ev.type] || '#888' }
+              }, ev.type),
+              React.createElement('span', { className: 'ejob' }, ev.jobName || ev.jobId)
+            )
+          )
+        )
+      )
+    ) : React.createElement('div', { className: 'empty-state' },
+      error
+        ? React.createElement('span', { style: { color: '#ff4466' } }, 'Error: ' + error)
+        : React.createElement('span', null, 'Enter a graphId and press Load')
+    ),
+
+    // Timeline
+    trace ? React.createElement('div', { className: 'timeline' },
+      React.createElement('div', { className: 'timeline-controls' },
+        React.createElement('button', {
+          className: 'play-btn' + (playing ? ' playing' : ''),
+          onClick: togglePlay
+        }, playing ? '⏸ Pause' : (progress >= 1 ? '↺ Replay' : '▶ Play')),
+
+        React.createElement('select', {
+          className: 'speed-select',
+          value: speed,
+          onChange: e => setSpeed(Number(e.target.value)),
+        },
+          [0.5, 1, 2, 4, 8].map(s =>
+            React.createElement('option', { key: s, value: s }, `${s}×`)
+          )
+        ),
+
+        React.createElement('div', { className: 'scrubber-wrap', onClick: onScrub },
+          React.createElement('div', { className: 'scrubber-bg' }),
+          React.createElement('div', { className: 'scrubber-fill', style: { width: (progress * 100) + '%' } }),
+          React.createElement('div', { className: 'scrubber-thumb', style: { left: (progress * 100) + '%' } })
+        ),
+
+        React.createElement('span', { className: 'time-display' },
+          `${(progress * 12 / speed).toFixed(1)}s / 12.0s`
+        ),
+
+React.createElement('span', { className: 'header-stat' },
+          `${currentSeg + 1}/${director.length}`
+        ),
+
+        // Quality Panel
+        React.createElement('div', { className: 'quality-panel' },
+          React.createElement('span', { className: 'qpanel-label' }, 'PACE'),
+          React.createElement('input', {
+            type: 'range', min: '0.5', max: '2.0', step: '0.05',
+            value: pacing,
+            onChange: e => setPacing(Number(e.target.value))
+          }),
+          React.createElement('span', { className: 'qpanel-val' }, pacing.toFixed(2)),
+
+          React.createElement('span', { className: 'qpanel-label' }, 'MOT'),
+          React.createElement('input', {
+            type: 'range', min: '0', max: '1', step: '0.05',
+            value: motion,
+            onChange: e => setMotion(Number(e.target.value))
+          }),
+          React.createElement('span', { className: 'qpanel-val' }, motion.toFixed(2)),
+
+          React.createElement('span', { className: 'qpanel-label' }, 'STAB'),
+          React.createElement('input', {
+            type: 'range', min: '0', max: '1', step: '0.05',
+            value: stability,
+            onChange: e => setStability(Number(e.target.value))
+          }),
+          React.createElement('span', { className: 'qpanel-val' }, stability.toFixed(2)),
+
+          // Presets — click applies three values at once
+          ...[
+            { label: 'TikTok',  pac: 1.8, mot: 0.9, stab: 0.2 },
+            { label: 'Cinema',   pac: 0.7, mot: 0.3, stab: 0.9 },
+            { label: 'Glitch',   pac: 1.4, mot: 0.8, stab: 0.1 },
+          ].flatMap(p =>
+            React.createElement('button', {
+              key: p.label,
+              className: 'preset-btn',
+              onClick: () => { setPacing(p.pac); setMotion(p.mot); setStability(p.stab); }
+            }, p.label)
+          )
+        ),
+
+        React.createElement('span', { className: 'header-stat' },
+          `${currentSeg + 1}/${director.length}`
+        )
+      )
+    ) : null
+  );
+}
+
+// Mount
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(React.createElement(App));
+</script>
+</body>
+</html>

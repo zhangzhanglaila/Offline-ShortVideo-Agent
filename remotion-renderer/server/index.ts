@@ -8,8 +8,10 @@ import { fileURLToPath } from "node:url";
 import fs from "node:fs/promises";
 import { createServer } from "node:http";
 import { WebSocketServer, WebSocket } from "ws";
+import { getJobQueue } from "./queue-sqlite.js";
+import { getRenderPool } from "./render-pool.js";
 
-import { renderMedia, selectComposition, getCompositions } from "@remotion/renderer";
+import { selectComposition, getCompositions } from "@remotion/renderer";
 import { generateLayoutFromTopic as generateLayoutFromTopicRule, generateMiniLayout } from "./generator";
 import { generateLayoutFromTopic as generateLayoutFromTopicLLM, generateVideoLayoutFromTopic } from "./llm";
 import { controlHub } from "./controlHub.js";
@@ -45,7 +47,7 @@ fs.mkdir(RENDER_DIR, { recursive: true }).catch(console.error);
 /* ======================== Job State ======================== */
 
 type JobStatus =
-  | { status: "pending"; layout: object }
+  | { status: "pending"; layout: VideoLayout | TimelineLayout }
   | { status: "rendering"; progress: number; outputPath: string }
   | { status: "completed"; outputPath: string; downloadUrl: string }
   | { status: "failed"; error: string };
@@ -276,12 +278,100 @@ app.post("/generate-video", async (req, res) => {
   console.info(`[server] generate-video job: ${jobId}, topic: "${topic}" (mini=${mini})`);
   console.info(`[server]   layout: ${layout.boxes.length} boxes, ${layout.arrows.length} arrows, hook="${(layout.boxes[0]?.label ?? "").slice(0, 40)}"`);
 
-  renderComposition(jobId, layout, serverPORT).catch((err) => {
-    console.error(`[server] renderComposition error for ${jobId}:`, err);
-  });
+  enqueueRender(jobId, layout, "TimelineFlow");
 
   res.json({ jobId, topic, layout });
 });
+
+/**
+ * 验证并兜底图片 URL
+ * - HEAD 请求检查图片是否可达
+ * - 不可达则替换为与背景渐变色一致的纯色 rect 元素
+ */
+async function validateImageUrls(layout: VideoLayout): Promise<VideoLayout> {
+  const bgEl = layout.elements.find(e => e.type === "background");
+  const fallbackColor = (bgEl as {gradient?: string})?.gradient
+    ? "#1a2a3a"
+    : "#0f2027";
+
+  const imageEls = layout.elements.filter(e => e.type === "image");
+  const results = await Promise.all(
+    imageEls.map(async (el) => {
+      try {
+        const src = (el as {src?: string}).src;
+        if (!src) return { el, ok: false };
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 3000);
+        const res = await fetch(src, { method: "HEAD", signal: controller.signal });
+        clearTimeout(timeout);
+        return { el, ok: res.ok };
+      } catch {
+        return { el, ok: false };
+      }
+    })
+  );
+
+  const failedCount = results.filter(r => !r.ok).length;
+  if (failedCount > 0) {
+    console.info(`[image-validate] ${failedCount}/${imageEls.length} images failed, replacing with gradient`);
+  }
+
+  // 替换失败的图片元素为渐变色 shape
+  const failedElements = results.filter(r => !r.ok).map(r => r.el);
+  const elements = layout.elements.filter(e => !failedElements.includes(e));
+  failedElements.forEach(el => {
+    const id = (el as {id?: string}).id || "img";
+    const x = (el as {x?: number}).x ?? 0;
+    const y = (el as {y?: number}).y ?? 0;
+    const w = (el as {width?: number}).width ?? 1080;
+    const h = (el as {height?: number}).height ?? 600;
+    const start = (el as {start?: number}).start ?? 0;
+    const dur = (el as {duration?: number}).duration ?? 100;
+    const z = (el as {zIndex?: number}).zIndex ?? 1;
+    elements.push({
+      id: id + "_fallback",
+      type: "shape",
+      shape: "rect",
+      x, y, width: w, height: h,
+      color: fallbackColor,
+      fillColor: fallbackColor,
+      borderRadius: 0,
+      start,
+      duration: dur,
+      zIndex: z,
+      animation: el.animation || { enter: "fade", duration: 20 },
+    });
+  });
+
+  return { ...layout, elements };
+}
+
+// ── Render Pool（Worker Pool 调度）───────────────────────
+
+/**
+ * 通过 Worker Pool 调度渲染任务
+ * 替代原来的 spawn-per-job 模式，避免高并发时资源爆炸
+ */
+/**
+ * 通过 SQLite 持久化队列调度渲染任务
+ * job 写入 SQLite，worker pool 消费队列（poll 模式）
+ * server 重启不丢任务，worker 崩溃 job 回到 waiting 状态
+ */
+async function enqueueRender(jobId: string, layout: VideoLayout | TimelineLayout, compositionId: string): Promise<void> {
+  const queue = getJobQueue();
+  await queue.add("render", {
+    jobId,
+    layout: layout as Record<string, unknown>,
+    compositionId,
+    port: serverPORT,
+  }, {
+    attempts: 3,
+    backoff: { type: "exponential", delay: 5000 },
+    jobId,
+  });
+  jobs.set(jobId, { status: "rendering", progress: 0, outputPath: "" });
+  console.info(`[server] enqueued job ${jobId} (queue: ${JSON.stringify(queue.getStats())})`);
+}
 
 /**
  * POST /generate-video/v2
@@ -299,18 +389,19 @@ app.post("/generate-video/v2", async (req, res) => {
   // LLM 生成 VideoLayout
   const layout = await generateVideoLayoutFromTopic(topic);
 
+  // 图片兜底验证（防止 CDN 不可达导致渲染崩溃）
+  const safeLayout = await validateImageUrls(layout);
+
   const jobId = randomUUID();
-  jobs.set(jobId, { status: "pending", layout });
+  jobs.set(jobId, { status: "pending", layout: safeLayout });
 
-  const firstText = layout.elements.find(e => e.type === "text");
+  const firstText = safeLayout.elements.find(e => e.type === "text");
   console.info(`[server:v2] generate-video/v2 job: ${jobId}, topic: "${topic}"`);
-  console.info(`[server:v2]   elements: ${layout.elements.length}, hook="${((firstText as {text?: string})?.text ?? "").slice(0, 40)}"`);
+  console.info(`[server:v2]   elements: ${safeLayout.elements.length}, hook="${((firstText as {text?: string})?.text ?? "").slice(0, 40)}"`);
 
-  renderVideoComposition(jobId, layout, serverPORT).catch((err) => {
-    console.error(`[server:v2] renderVideoComposition error for ${jobId}:`, err);
-  });
+  enqueueRender(jobId, safeLayout, "VideoFlow");
 
-  res.json({ jobId, topic, layout });
+  res.json({ jobId, topic, layout: safeLayout });
 });
 
 /**
@@ -337,9 +428,7 @@ app.post("/render", async (req, res) => {
   console.info(`[server]   background: ${layout.backgroundImage}`);
   console.info(`[server]   boxes: ${layout.boxes.length}`);
 
-  renderComposition(jobId, layout, serverPORT).catch((err) => {
-    console.error(`[server] renderComposition error for ${jobId}:`, err);
-  });
+  enqueueRender(jobId, layout, "TimelineFlow");
 
   res.json({ jobId });
 });
@@ -438,6 +527,24 @@ app.get("/stats/latest", (_req, res) => {
   res.json(stats);
 });
 
+/* ======================== Trace / Event Sourcing ======================== */
+
+/**
+ * GET /trace/:graphId
+ * Returns the full event trace for a DAG execution graph.
+ * Used for replay and visualization.
+ */
+app.get("/trace/:graphId", async (req, res) => {
+  const { graphId } = req.params;
+  const queue = getJobQueue();
+  const trace = await queue.getTrace(graphId);
+  if (!trace.events.length && !trace.jobs.length) {
+    res.status(404).json({ error: "Trace not found" });
+    return;
+  }
+  res.json(trace);
+});
+
 /* ======================== Control Endpoints ======================== */
 
 /**
@@ -474,6 +581,10 @@ httpServer.listen(serverPORT, () => {
   console.info(`Remotion render server running on http://localhost:${serverPORT}`);
   console.info(`[ControlHub] WebSocket ready on ws://localhost:${serverPORT}`);
   console.info(`[ControlHub] Endpoints: GET/POST /control`);
+  // Worker pool + watchdog start lazily on first use
+  getRenderPool();
+  getJobQueue();
+  console.info(`[RenderPool] Persistent workers initialized`);
 });
 
 export { app };

@@ -1,69 +1,70 @@
 /**
  * llm.ts - LLM 驱动的内容生成
  *
- * 核心：generateScriptFromTopic → 真实 AI 生成（Claude API）
- * 规则版本作为 fallback
+ * 支持: DeepSeek (优先) / Anthropic (MiniMax relay) / 规则 fallback
  */
 
-import { ruleBasedScript, generateLayoutFromScript, generateVideoLayoutFromScript, preResolveAllImages } from "./generator";
+import { ruleBasedScript, generateLayoutFromScript, generateVideoLayoutFromScript, preResolveAllImages, enrichStep } from "./generator";
 import type { VideoScript } from "./generator";
 import type { TimelineLayout, VideoLayout } from "@remotion/types";
 import { buildDirector, type DirectorIntent } from "./director";
 
 // ============================================================
-// Anthropic Claude API 调用
+// API 配置 (支持 DeepSeek / Anthropic)
 // ============================================================
 
-const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
-const CLAUDE_MODEL = "claude-sonnet-4-20250514";
-
-interface ClaudeMessage {
-  role: "user" | "assistant";
-  content: string;
+function getLlmConfig() {
+  // DeepSeek (OpenAI-compatible)
+  if (process.env.OPENAI_API_KEY && process.env.OPENAI_API_BASE?.includes("deepseek")) {
+    return {
+      provider: "deepseek",
+      url: `${process.env.OPENAI_API_BASE}/chat/completions`,
+      model: process.env.OPENAI_API_MODEL || "deepseek-chat",
+      apiKey: process.env.OPENAI_API_KEY,
+    };
+  }
+  // Anthropic via MiniMax relay
+  if (process.env.ANTHROPIC_API_KEY && process.env.ANTHROPIC_BASE_URL) {
+    return {
+      provider: "anthropic",
+      url: `${process.env.ANTHROPIC_BASE_URL}/v1/messages`,
+      model: "claude-sonnet-4-20250514",
+      apiKey: process.env.ANTHROPIC_API_KEY,
+    };
+  }
+  return null;
 }
 
 function buildScriptPrompt(topic: string): string {
-  return `你是一个短视频爆款编剧，擅长写有感染力、有节奏感的短视频脚本。
+  return `你是一个科普视频导演。你的任务是让一个完全不懂这个概念的人，通过你的视频真正理解它。
 
-请根据以下主题，生成一个适合抖音/短视频平台的内容脚本：
+【主题】
+${topic}
 
-主题：${topic}
+【硬性要求】
+1. Hook：用一个生活中熟悉的例子或反直觉的事实开场，让人"啊原来是这样"
+2. 核心解释：必须用一句话讲清楚本质，不能用术语解释术语
+3. 类比：至少有一个生活中的类比（越日常越好）
+4. 真实例子：至少一个大家知道的实际应用
+5. CTA：引导思考或讨论，不要"关注我"这种营销话术（例如："想深入了解可以搜XXX"）
+6. 每个step要同时回答"What" + "为什么这很重要"
 
-要求：
-1. 开头必须有强钩子（一句话抓住注意力，让人想看下去）
-2. 内容要具体、有干货，不要空话套话
-3. 控制在3-5个核心步骤
-4. 每个步骤要有"what" + "why"（做什么 + 为什么重要）
-5. 结尾必须有行动引导（CTA），引导评论/关注/领取
-6. 选合适的emoji图标
-
-输出纯JSON格式（不要任何其他文字）：
-
+【输出格式】（纯JSON，不要任何解释）
 {
-  "hook": {
-    "text": "钩子文案（15-30字，有冲击力）",
-    "icon": "emoji",
-    "color": "#hex颜色码"
-  },
+  "hook": { "text": "钩子（15-25字）", "icon": "emoji", "color": "#hex" },
   "steps": [
-    { "title": "步骤标题", "desc": "一句话说明", "icon": "emoji" },
+    { "title": "核心概念名", "desc": "一句话类比或解释", "icon": "emoji" },
     ...
   ],
-  "cta": {
-    "text": "行动引导文案",
-    "icon": "emoji"
-  }
+  "cta": { "text": "引导思考的结尾语", "icon": "emoji" }
 }
 
-颜色主题选择：
-- 副业/赚钱类 → #FFD700（金色）
-- AI/科技类 → #4EC9B0（青色）
-- 英语/语言类 → #569CD6（蓝色）
-- 健身/健康类 → #FF6B6B（红色）
-- 学习/成长类 → #569CD6（蓝色）
-- 创作/内容类 → #DCDCAA（黄色）
-- 情感/恋爱类 → #FF6B9D（粉色）
-- 职场/创业类 → #CE9178（橙色）
+【颜色主题】
+- AI/科技 → #4EC9B0（青色）
+- 学习/认知 → #569CD6（蓝色）
+- 健康/身体 → #FF6B6B（红色）
+- 商业/经济 → #CE9178（橙色）
+- 情感/心理 → #FF6B9D（粉色）
 
 只输出JSON，不要任何解释。`;
 }
@@ -88,11 +89,13 @@ function parseScriptResponse(raw: string): VideoScript | null {
         icon: String(parsed.hook.icon || "💡"),
         color: String(parsed.hook.color || "#4EC9B0"),
       },
-      steps: parsed.steps.slice(0, 5).map((s: Record<string, unknown>) => ({
-        title: String(s.title || "").slice(0, 50),
-        desc: String(s.desc || "").slice(0, 80),
-        icon: String(s.icon || "👉"),
-      })),
+      steps: parsed.steps.slice(0, 5).map((s: Record<string, unknown>, i: number) =>
+        enrichStep({
+          title: String(s.title || "").slice(0, 50),
+          desc: String(s.desc || "").slice(0, 80),
+          icon: String(s.icon || "👉"),
+        }, i)
+      ),
       cta: {
         text: String(parsed.cta.text).slice(0, 60),
         icon: String(parsed.cta.icon || "👉"),
@@ -109,39 +112,64 @@ function parseScriptResponse(raw: string): VideoScript | null {
 // ============================================================
 
 export async function generateScriptFromTopic(topic: string): Promise<VideoScript> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const cfg = getLlmConfig();
 
-  if (!apiKey) {
-    console.info(`[llm] 无 ANTHROPIC_API_KEY，使用规则生成: "${topic}"`);
+  if (!cfg) {
+    console.info(`[llm] 无有效 LLM API 配置，使用规则生成: "${topic}"`);
     return ruleBasedScript(topic);
   }
 
   try {
-    console.info(`[llm] 调用 Claude API 生成脚本: "${topic}"`);
+    console.info(`[llm] 调用 ${cfg.provider} API 生成脚本: "${topic}"`);
 
-    const response = await fetch(ANTHROPIC_API_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-        "anthropic-dangerous-direct-browser-access": "true",
-      },
-      body: JSON.stringify({
-        model: CLAUDE_MODEL,
-        max_tokens: 1024,
-        messages: [{ role: "user", content: buildScriptPrompt(topic) }],
-      }),
-    });
+    const prompt = buildScriptPrompt(topic);
 
-    if (!response.ok) {
-      const errText = await response.text();
-      console.error(`[llm] API 错误 ${response.status}:`, errText.slice(0, 200));
-      return ruleBasedScript(topic);
+    let text: string;
+    if (cfg.provider === "deepseek") {
+      // OpenAI-compatible format
+      const response = await fetch(cfg.url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${cfg.apiKey}`,
+        },
+        body: JSON.stringify({
+          model: cfg.model,
+          max_tokens: 1024,
+          messages: [{ role: "user", content: prompt }],
+        }),
+      });
+      if (!response.ok) {
+        const errText = await response.text();
+        console.error(`[llm] DeepSeek API 错误 ${response.status}:`, errText.slice(0, 200));
+        return ruleBasedScript(topic);
+      }
+      const data = await response.json() as { choices?: { message?: { content?: string } }[] };
+      text = data.choices?.[0]?.message?.content ?? "";
+    } else {
+      // Anthropic format
+      const response = await fetch(cfg.url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": cfg.apiKey,
+          "anthropic-version": "2023-06-01",
+          "anthropic-dangerous-direct-browser-access": "true",
+        },
+        body: JSON.stringify({
+          model: cfg.model,
+          max_tokens: 1024,
+          messages: [{ role: "user", content: prompt }],
+        }),
+      });
+      if (!response.ok) {
+        const errText = await response.text();
+        console.error(`[llm] Anthropic API 错误 ${response.status}:`, errText.slice(0, 200));
+        return ruleBasedScript(topic);
+      }
+      const data = await response.json() as { content?: { content?: string }[] };
+      text = data.content?.[0]?.content ?? "";
     }
-
-    const data = (await response.json()) as { content?: ClaudeMessage[] };
-    const text = data.content?.[0]?.content ?? "";
 
     if (!text) {
       return ruleBasedScript(topic);

@@ -1247,7 +1247,7 @@ export function generateMiniLayout(label: string, count = 3): TimelineLayout {
 const LAYOUT_TYPES: StepLayoutType[] = ["full-image", "split", "cinematic", "text-only"];
 
 // 为单个 step 注入 imageKeyword 和 layoutType
-function enrichStep(step: { title: string; desc: string; icon: string }, i: number) {
+export function enrichStep(step: { title: string; desc: string; icon: string }, i: number) {
   // 图片关键词：取标题前20字转英文
   const kw = step.title.replace(/[^\u4e00-\u9fa5a-zA-Z0-9]/g, " ").trim().slice(0, 25);
   return {

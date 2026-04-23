@@ -11,7 +11,6 @@
  */
 import React from "react";
 import { Composition } from "remotion";
-import "./fonts.css";
 import { VideoComposition, videoLayoutSchema } from "./Composition";
 
 export const RemotionRoot: React.FC = () => {

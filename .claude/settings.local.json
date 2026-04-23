@@ -229,7 +229,17 @@
       "Bash(git:*)",
       "Bash(./node_modules/.bin/tsc --noEmit)",
       "Bash(where npx:*)",
-      "Bash(echo \"EXIT=$?\")"
+      "Bash(echo \"EXIT=$?\")",
+      "Bash(npm start:*)",
+      "Bash(taskkill /F /PID 29752)",
+      "Bash(pkill -f \"node.*server\")",
+      "Bash(taskkill //F //PID 26420)",
+      "Bash(taskkill //F //PID 14220)",
+      "Bash(xargs -I{} taskkill //F //PID {})",
+      "Bash(echo \"worker PID: $!\")",
+      "Bash(where chromium:*)",
+      "Bash(where chrome:*)",
+      "Read(//c/Users/H/AppData/Local/**)"
     ]
   }
 }

@@ -117,8 +117,6 @@ export interface RenderParams {
   transitionStyle: "hard" | "smooth" | "glitch";
   /** 0~1: higher = more frequent micro-cuts */
   cutDensity: number;
-  /** Whether this shot qualifies as a highlight burst (viral moment) */
-  isHighlight?: boolean;
 }
 
 /** Style presets — human-readable style buttons for creator UI */
@@ -169,6 +167,8 @@ export interface TransitionDecision {
   microCutIntensity?: number;
   /** E breakdown → render control signal */
   renderParams?: RenderParams;
+  /** Temporal highlight: this shot is in a rhythm peak zone (from TemporalHighlightPlanner) */
+  isHighlight?: boolean;
 }
 
 /**
@@ -1021,6 +1021,77 @@ function postProcessPlan(
 }
 
 /**
+ * TemporalHighlightPlanner — rhythm-aware highlight placement
+ *
+ * Short-form video rhythm pattern (TikTok/YouTube Shorts structure):
+ *   0%----15%----35%----55%----70%----85%----100%
+ *   INTRO   BUILD    PEAK1   MID    PEAK2   OUTRO
+ *
+ * Budget controller prevents highlight spam:
+ *   - At most 1 main climax in peak1 (energy > 0.55)
+ *   - At most 1 secondary peak in peak2 (energy > 0.65)
+ *   - At most 1 build-up burst (energy > 0.75, position 15-35%)
+ *   - Intro (0-15%) and outro (80-100%) never highlight
+ *
+ * If multiple candidates exist in a zone, only the highest-energy shot highlights.
+ * This creates a curated narrative arc, not an "effects montage".
+ */
+function planHighlightPositions(
+  plan: TransitionPlan,
+  shots: Shot[],
+  emotions: number[],
+): void {
+  const n = shots.length;
+  if (n < 2) return;
+
+  // First pass: gather all candidate positions per zone
+  const candidates: Array<{ shotIdx: number; pos: number; energy: number; zone: "peak1" | "peak2" | "build" }> = [];
+
+  for (let i = 0; i < n - 1; i++) {
+    const pos = i / (n - 1);
+    const energy = emotions[i] ?? 0.5;
+
+    if (pos >= 0.35 && pos <= 0.55 && energy > 0.55) {
+      candidates.push({ shotIdx: i, pos, energy, zone: "peak1" });
+    } else if (pos >= 0.65 && pos <= 0.80 && energy > 0.65) {
+      candidates.push({ shotIdx: i, pos, energy, zone: "peak2" });
+    } else if (pos >= 0.15 && pos < 0.35 && energy > 0.75) {
+      candidates.push({ shotIdx: i, pos, energy, zone: "build" });
+    }
+  }
+
+  // Budget enforcement: zone priority peak1 > peak2 > build
+  // Within each zone, keep only the highest-energy candidate
+  const budget: Record<string, { shotIdx: number; energy: number } | null> = {
+    peak1: null,
+    peak2: null,
+    build: null,
+  };
+
+  for (const c of candidates) {
+    const slot = budget[c.zone];
+    if (!slot || c.energy > slot.energy) {
+      budget[c.zone] = { shotIdx: c.shotIdx, energy: c.energy };
+    }
+  }
+
+  // Second pass: mark only budget-approved shots as highlights
+  const highlightShotIdx = new Set<number>();
+  for (const [zone, slot] of Object.entries(budget)) {
+    if (slot) highlightShotIdx.add(slot.shotIdx);
+  }
+
+  // Third pass: apply to plan
+  for (let i = 0; i < n - 1; i++) {
+    const existing = plan.get(i);
+    if (existing) {
+      const isHL = highlightShotIdx.has(i);
+      plan.set(i, { ...existing, isHighlight: isHL });
+    }
+  }
+}
+
+/**
  * v18: Backtrack full plan from any MCTS child node
  * 用于从 partial node 重建完整 transition plan
  */
@@ -1526,65 +1597,60 @@ export function beamSearchTransitionPlan(
     bestPlan, energyCurve, shots, emotions, fps
   );
 
-  // ── E → RenderParams: attach visual control signal to every decision ─────────
-  // If stylePreset is set, use it to override E breakdown (director preset mode).
-  // Otherwise derive from E breakdown (autonomous policy path).
-  let motionIntensity: number;
-  let transitionStyle: "hard" | "smooth" | "glitch";
-  let cutDensity: number;
+  // ── E → RenderParams: base values ───────────────────────────────────────────────
+  let baseMotion: number;
+  let baseTransitionStyle: "hard" | "smooth" | "glitch";
+  let baseCutDensity: number;
 
   if (controlParams?.stylePreset) {
     const rp = styleToRenderParams(controlParams.stylePreset);
-    motionIntensity = rp.motionIntensity;
-    transitionStyle = rp.transitionStyle;
-    cutDensity = rp.cutDensity;
+    baseMotion = rp.motionIntensity;
+    baseTransitionStyle = rp.transitionStyle;
+    baseCutDensity = rp.cutDensity;
   } else {
     const f = selectedFeatures as unknown as Record<string, number>;
-    motionIntensity = f.energy_alignment ?? 0.5;
-    transitionStyle =
+    baseMotion = f.energy_alignment ?? 0.5;
+    baseTransitionStyle =
       (f.pacing_smoothness ?? 0.5) > 0.7 ? "smooth" :
       (f.pacing_smoothness ?? 0.5) < 0.3 ? "glitch" : "hard";
-    cutDensity = f.micro_cut_semantic ?? 0.5;
+    baseCutDensity = f.micro_cut_semantic ?? 0.5;
   }
 
-  // ── VisualStyleEngine: non-linear E → render composition ───────────────────
-  // "Highlight burst" detection: energy + low pacing + high micro-cut = viral moment.
-  // This creates non-linear coupling — not a simple linear scaling.
+  // ── TemporalHighlightPlanner: per-shot highlight placement ────────────────────
+  // Rhythm zones: 0-15% intro, 15-35% buildup, 35-55% peak1, 55-65% mid, 65-80% peak2, 80-100% outro.
+  // Highlights placed at emotional peaks within peak zones.
+  planHighlightPositions(bestPlan, shots, emotions);
+
+  // ── VisualStyleEngine: per-shot nonlinear coupling ───────────────────────────
+  // Applies E-breakdown coupling on top of highlight positions.
   const f = selectedFeatures as unknown as Record<string, number>;
-  const isHighlight =
-    (f.energy_alignment ?? 0) > 0.65 &&
-    (f.pacing_smoothness ?? 0.5) < 0.45 &&
-    (f.micro_cut_semantic ?? 0) > 0.55;
-
-  let finalMotion = motionIntensity;
-  let finalCutDensity = cutDensity;
-  let finalTransitionStyle = transitionStyle;
-
-  if (isHighlight) {
-    // Non-linear boost: multiplies create explosive effect beyond linear sum
-    finalMotion = Math.min(1.5, motionIntensity * 1.5);
-    finalCutDensity = Math.min(1.5, cutDensity * 1.8);
-    // At highlight, glitch overrides style — maximizes "shake + fast cut" perception
-    finalTransitionStyle = "glitch";
-  } else {
-    // Subtle coupling: energy × pacing interaction
-    // High energy + high pacing = smooth cinematic feel (reduce motion slightly)
-    finalMotion = motionIntensity * (1 + (f.energy_alignment ?? 0) * 0.4 - (f.pacing_smoothness ?? 0.5) * 0.2);
-    // High energy + low pacing = increase cut density more aggressively
-    if ((f.energy_alignment ?? 0) > 0.6 && (f.pacing_smoothness ?? 0.5) < 0.4) {
-      finalCutDensity = Math.min(1.2, cutDensity * 1.3);
-    }
-  }
-
-  finalMotion = Math.max(0.1, Math.min(1.5, finalMotion));
-  finalCutDensity = Math.max(0.1, Math.min(1.5, finalCutDensity));
 
   for (const [_shotIdx, decision] of bestPlan) {
+    const isHL = (decision as TransitionDecision).isHighlight ?? false;
+    let mi = baseMotion;
+    let ts = baseTransitionStyle;
+    let cd = baseCutDensity;
+
+    if (isHL) {
+      // Highlight burst: nonlinear boost beyond linear E sum
+      mi = Math.min(1.5, baseMotion * 1.5);
+      cd = Math.min(1.5, baseCutDensity * 1.8);
+      ts = "glitch";
+    } else {
+      // Subtle coupling: high energy × high pacing = smooth cinematic (reduce motion)
+      mi = baseMotion * (1 + (f.energy_alignment ?? 0) * 0.4 - (f.pacing_smoothness ?? 0.5) * 0.2);
+      if ((f.energy_alignment ?? 0) > 0.6 && (f.pacing_smoothness ?? 0.5) < 0.4) {
+        cd = Math.min(1.2, baseCutDensity * 1.3);
+      }
+    }
+
+    mi = Math.max(0.1, Math.min(1.5, mi));
+    cd = Math.max(0.1, Math.min(1.5, cd));
+
     (decision as TransitionDecision).renderParams = {
-      motionIntensity: finalMotion,
-      transitionStyle: finalTransitionStyle,
-      cutDensity: finalCutDensity,
-      isHighlight,
+      motionIntensity: mi,
+      transitionStyle: ts,
+      cutDensity: cd,
     };
   }
 
@@ -2315,7 +2381,7 @@ function useShotsAroundFrame(
   const cutDensity = rp?.cutDensity ?? 0.5;
   const motionIntensity = rp?.motionIntensity ?? 0.5;
   const ts = rp?.transitionStyle ?? "hard";
-  const isHighlight = rp?.isHighlight ?? false;
+  const isHighlight = (decision as TransitionDecision)?.isHighlight ?? false;
 
   // microCutScale — highlight gets extra micro-cut burst
   const microCutBase = nearMicroCut ? 1 + microCutIntensity * (0.5 + cutDensity) : 1;
@@ -2512,9 +2578,23 @@ function getShotTransform(
 // 场景渲染
 // ============================================================
 
+// Handle Remotion merging: inputProps.video may be set by Remotion's prop merge
+// We support both direct layout.elements and layout.video.elements
+type VideoLayoutInput = VideoLayout | { video?: VideoLayout };
+function getElements(layout: VideoLayoutInput): VideoElement[] {
+  if (Array.isArray((layout as VideoLayout).elements)) {
+    return (layout as VideoLayout).elements;
+  }
+  if ((layout as { video?: VideoLayout }).video) {
+    return (layout as { video: VideoLayout }).video.elements;
+  }
+  return [];
+}
+
 export const VideoScene: React.FC<{ layout: VideoLayout }> = ({ layout }) => {
   const frame = useCurrentFrame();
-  const { width, height, background, elements } = layout;
+  const { width, height, background } = layout;
+  const elements = getElements(layout);
 
   // 按 zIndex 排序
   const sortedElements = [...elements].sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0));
