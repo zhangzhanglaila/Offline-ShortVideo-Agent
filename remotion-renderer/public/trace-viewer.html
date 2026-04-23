@@ -228,6 +228,7 @@
     cursor: pointer; transition: all 0.15s;
   }
   .preset-btn:hover { border-color: #44aaff; color: #44aaff; background: #1a2030; }
+  .preset-btn.active { border-color: #44aaff; color: #44aaff; background: #1a2030; font-weight: 600; }
 
   /* ── Empty state ── */
   .empty-state {
@@ -424,33 +425,109 @@ const DIRECTOR_PLAN = {
 // All visual decisions live here. Rule functions never return camera/flash/rhythm.
 // ─────────────────────────────────────────────────────────────────────────────
 
-function resolveVisual(tags) {
+// ─────────────────────────────────────────────────────────────────────────────
+// LAYER 3b — Director Mode (discrete style decisions)
+// The mode is the PRIMARY control: it overrides base decisions with intent.
+// Persistence (hysteresis) prevents flicker: a mode must "win" for a minimum
+// number of consecutive segments before it can change — the director has memory.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Minimum segments a mode must hold before releasing
+const MODE_STICKINESS = {
+  chaos:  2,   // retry storm is sticky — hard to exit once in
+  burst:  3,   // burst window needs a few beats to establish
+  focus:  2,   // focus punches in and holds
+  linger: 2,   // linger needs a beat to settle
+  normal: 1,   // normal is the fallback, easy to leave
+};
+
+
+// Higher-order resolveMode that tracks consecutive wins across segments
+function makeModeResolver() {
+  let prevMode = 'normal';
+  let consecutive = 0;
+  const STICK = { chaos: 2, burst: 3, focus: 2, linger: 2, normal: 1 };
+
+  return function resolveModePersisted(tags, ctx) {
+    let candidate;
+    if      (tags.includes('retry-storm')) candidate = 'chaos';
+    else if (ctx.parallelBurstSize > 3)   candidate = 'burst';
+    else if (tags.includes('critical'))    candidate = 'focus';
+    else if (ctx.gapPrev > 0.3)           candidate = 'linger';
+    else                                   candidate = 'normal';
+
+    if (candidate === prevMode) {
+      consecutive = 0; // reset counter on stable mode
+      return prevMode;
+    }
+
+    // Candidate differs — need STICK consecutive appearances before switching
+    consecutive++;
+    if (consecutive >= STICK[prevMode]) {
+      prevMode = candidate;
+      consecutive = 0;
+    }
+    // else: stay in prevMode, accumulate consecutive count
+
+    return prevMode;
+  };
+}
+
+function resolveVisual(tags, ctx, mode) {
   const cam  = { zoom: 1.0, move: false, cutSnap: false, duration: 0 };
   const fl   = { color: null, duration: 0 };
   const vis  = { glow: false, edgeColor: null, edgeWidth: null, labelDelay: 0, shake: false, pulse: false };
 
+  // Mode overrides — intentional style jumps, not gentle modulation
+  if      (mode === 'chaos') {
+    Object.assign(cam, { zoom: 1.6, move: true, cutSnap: true, duration: 60 });
+    Object.assign(fl,  { color: '#6b5000', duration: 50 });
+    Object.assign(vis, { shake: true, labelDelay: 0.90 });
+  }
+  else if (mode === 'burst') {
+    Object.assign(cam, { zoom: 0.75, move: true, cutSnap: true, duration: 100 });
+    Object.assign(fl,  { color: '#0088cc', duration: 70 });
+    Object.assign(vis, { glow: true, labelDelay: 0.65 });
+  }
+  else if (mode === 'focus') {
+    Object.assign(cam, { zoom: 1.6, move: true, cutSnap: false, duration: 400 });
+    Object.assign(fl,  { color: '#0088cc', duration: 100 });
+    Object.assign(vis, { glow: true, labelDelay: 0.60 });
+  }
+  else if (mode === 'linger') {
+    Object.assign(cam, { zoom: 1.0, move: false, cutSnap: false, duration: 0 });
+    Object.assign(fl,  { color: '#004488', duration: 40 });
+    Object.assign(vis, { glow: false, labelDelay: 0.80 });
+  }
+  // else 'normal' — fall through to tag-based rules
+
+  // Context-aware zoom modulation
+  const burstZoom   = ctx.parallelBurstSize > 3 ? 0.85 : ctx.parallelBurstSize > 1 ? 1.0 : 1.15;
+  const degreeZoom  = ctx.jobDegree > 4 ? 0.80 : ctx.jobDegree > 2 ? 1.0 : 1.1;
+  const gapZoom     = ctx.gapPrev < 0.01 ? 1.3 : ctx.gapPrev > 0.3 ? 0.95 : 1.0;
+
   if      (tags.includes('claimed') && tags.includes('montage-first')) {
-    Object.assign(cam,  { zoom: 0.75, move: true, cutSnap: true,  duration: 400 });
+    Object.assign(cam,  { zoom: 0.75 * burstZoom, move: true, cutSnap: true,  duration: 400 });
     Object.assign(fl,   { color: '#0088cc', duration: 80 });
     Object.assign(vis,  { glow: true, labelDelay: 0.75 });
   }
   else if (tags.includes('claimed') && tags.includes('montage')) {
-    Object.assign(cam,  { zoom: 1.5,  move: true, cutSnap: true,  duration: 80 });
+    Object.assign(cam,  { zoom: 1.5 * degreeZoom * burstZoom, move: true, cutSnap: true,  duration: 80 });
     Object.assign(fl,   { color: '#0088cc', duration: 60 });
     Object.assign(vis,  { glow: true, labelDelay: 0.75 });
   }
   else if (tags.includes('claimed') && tags.includes('critical')) {
-    Object.assign(cam,  { zoom: 1.5, move: true, cutSnap: false, duration: 350 });
+    Object.assign(cam,  { zoom: 1.5 * gapZoom, move: true, cutSnap: false, duration: 350 });
     Object.assign(fl,   { color: '#0088cc', duration: 90 });
     Object.assign(vis,  { glow: true, labelDelay: 0.70 });
   }
   else if (tags.includes('claimed')) {
-    Object.assign(cam,  { zoom: 1.4, move: true, cutSnap: false, duration: 320 });
+    Object.assign(cam,  { zoom: 1.4 * degreeZoom, move: true, cutSnap: false, duration: 320 });
     Object.assign(fl,   { color: '#0088cc', duration: 80 });
     Object.assign(vis,  { glow: true, labelDelay: 0.75 });
   }
   else if (tags.includes('unblocked')) {
-    Object.assign(cam,  { zoom: 1.1, move: true, cutSnap: true,  duration: 380 });
+    Object.assign(cam,  { zoom: 1.1 * burstZoom * gapZoom, move: true, cutSnap: true,  duration: 380 });
     Object.assign(fl,   { color: '#6b5000', duration: 80 });
     Object.assign(vis,  { glow: true, edgeColor: '#f0c040', edgeWidth: 2.5, labelDelay: 0.70 });
   }
@@ -459,12 +536,12 @@ function resolveVisual(tags) {
     Object.assign(vis,  { glow: true, edgeColor: '#00aa44', edgeWidth: 2.0, labelDelay: 0.70 });
   }
   else if (tags.includes('failed') && tags.includes('cascade')) {
-    Object.assign(cam,  { zoom: 1.3, move: true, cutSnap: false, duration: 400 });
+    Object.assign(cam,  { zoom: 1.3 * burstZoom, move: true, cutSnap: false, duration: 400 });
     Object.assign(fl,   { color: '#aa0033', duration: 130 });
     Object.assign(vis,  { glow: true, edgeColor: '#aa0033', edgeWidth: 2.5, labelDelay: 0.60 });
   }
   else if (tags.includes('failed')) {
-    Object.assign(cam,  { zoom: 1.2, move: true, cutSnap: false, duration: 350 });
+    Object.assign(cam,  { zoom: 1.2 * gapZoom, move: true, cutSnap: false, duration: 350 });
     Object.assign(fl,   { color: '#aa0033', duration: 100 });
     Object.assign(vis,  { glow: true, edgeColor: '#aa0033', edgeWidth: 2.0, labelDelay: 0.65 });
   }
@@ -477,7 +554,7 @@ function resolveVisual(tags) {
     Object.assign(vis,  { shake: true, labelDelay: 0.80 });
   }
   else if (tags.includes('poison-pill')) {
-    Object.assign(cam,  { zoom: 1.1, move: true, cutSnap: true,  duration: 380 });
+    Object.assign(cam,  { zoom: 1.1 * burstZoom, move: true, cutSnap: true,  duration: 380 });
     Object.assign(fl,   { color: '#ff0033', duration: 120 });
     Object.assign(vis,  { glow: true, edgeColor: '#ff0033', edgeWidth: 2.5, labelDelay: 0.50 });
   }
@@ -485,26 +562,33 @@ function resolveVisual(tags) {
   return { cam, fl, vis };
 }
 
-function resolveRhythm(tags) {
+function resolveRhythm(tags, ctx, mode) {
   let hold = 0.03, merge = false, accent = false;
 
-  if      (tags.includes('claimed') && tags.includes('montage-first')) { hold = 0.05; accent = true; }
-  else if (tags.includes('claimed') && tags.includes('montage'))        { hold = 0.02; accent = true; }
-  else if (tags.includes('claimed') && tags.includes('critical'))     { hold = 0.05; accent = true; }
-  else if (tags.includes('claimed'))                                   { hold = 0.04; }
-  else if (tags.includes('unblocked'))                                  { hold = 0.05; accent = true; }
-  else if (tags.includes('completed'))                                  { hold = 0.03; }
-  else if (tags.includes('failed') && tags.includes('cascade'))        { hold = 0.06; accent = true; }
-  else if (tags.includes('failed'))                                    { hold = 0.05; }
-  else if (tags.includes('retry-storm'))                               { hold = 0.02; merge = true; }
-  else if (tags.includes('retry'))                                     { hold = 0.03; }
-  else if (tags.includes('poison-pill'))                               { hold = 0.06; accent = true; }
-  else if (tags.includes('absorb'))                                     { hold = 0; merge = true; }
+  // Mode-driven primary decisions — intentional rhythm jumps
+  if      (mode === 'chaos')  { hold = 0.012; merge = false; accent = true; }
+  else if (mode === 'burst')   { hold = 0.018; merge = true;  accent = true; }
+  else if (mode === 'focus')   { hold = 0.06;  merge = false; accent = true; }
+  else if (mode === 'linger')  { hold = 0.10;  merge = false; accent = false; }
+  // 'normal' — tag-based rules
+  else {
+    if      (tags.includes('claimed') && tags.includes('montage-first')) { hold = 0.05; accent = true; }
+    else if (tags.includes('claimed') && tags.includes('montage'))        { hold = 0.025; accent = true; }
+    else if (tags.includes('claimed') && tags.includes('critical'))      { hold = 0.055; accent = true; }
+    else if (tags.includes('claimed'))                                    { hold = 0.04; }
+    else if (tags.includes('unblocked'))                                   { hold = 0.05; accent = true; }
+    else if (tags.includes('completed'))                                   { hold = 0.03; }
+    else if (tags.includes('failed') && tags.includes('cascade'))         { hold = 0.06; accent = true; }
+    else if (tags.includes('failed'))                                      { hold = 0.05; }
+    else if (tags.includes('retry'))                                       { hold = 0.025; }
+    else if (tags.includes('poison-pill'))                                { hold = 0.06; accent = true; }
+    else if (tags.includes('absorb'))                                      { hold = 0; merge = true; }
+  }
 
   return { hold, merge, accent };
 }
 
-function resolveEmphasis(tags) {
+function resolveEmphasis(tags, ctx, mode) {
   if (tags.includes('claimed') || tags.includes('poison-pill')) return 'strong';
   if (tags.includes('unblocked') || tags.includes('completed') || tags.includes('failed')) return 'medium';
   if (tags.includes('retry')) return 'weak';
@@ -554,6 +638,8 @@ function buildDirector(trace) {
 
   // ── Pass 1: ctx → tags → visual/rhythm resolves → raw segments ───────────────
   const rawSegs = [];
+  // Mode persistence — the director has memory; modes must "earn" the right to switch
+  const resolveModePersisted = makeModeResolver();
 
   events.forEach((ev, i) => {
     const fn = DIRECTOR_PLAN[ev.type];
@@ -569,9 +655,11 @@ function buildDirector(trace) {
     const nextTs  = i < events.length - 1 ? events[i + 1].ts : ev.ts + 300;
     const end     = normPos(nextTs, startTs, endTs);
 
-    const { cam, fl, vis } = resolveVisual(tags);
-    const rhythm = resolveRhythm(tags);
-    const emphasis = resolveEmphasis(tags);
+    // Resolve mode with persistence (hysteresis built into makeModeResolver)
+    const mode = resolveModePersisted(tags, ctx);
+    const { cam, fl, vis } = resolveVisual(tags, ctx, mode);
+    const rhythm = resolveRhythm(tags, ctx, mode);
+    const emphasis = resolveEmphasis(tags, ctx, mode);
 
     let duration = Math.max(end - start, rhythm.hold || RHYTHM.MIN_SEG_DURATION);
     if (rhythm.accent) duration *= RHYTHM.ACCENT_DURATION_MULT;
@@ -752,30 +840,16 @@ function App() {
 
   /**
    * Apply current quality modifiers to a segment's resolved values.
-   * Three orthogonal axes:
-   *   1️⃣ Tempo    — pacing  → holdAdj     (time density)
-   *   2️⃣ Camera Energy — motion → camZoomAdj + camMoveAdj  (lens only)
-   *   3️⃣ Visual Noise  — noise(=1-stab) → shakeAdj + flashDurAdj + glowAdj
    *
-   * Called once at segment entry — results stored on seg for playback.
+   * pacing/holdAdj → segment-level (discrete, set once per segment entry)
+   * motion/stability → continuous (computed fresh each frame in applySegAtT)
+   *
+   * Called once at segment entry — only discrete (pace-sensitive) values here.
    */
   const applyModifiers = useCallback((seg) => {
-    const { pacing: pac, motion: mot, stability: stab } = currentQualityRef.current;
-
-    // 1️⃣ Tempo — hold duration (inverse relationship: higher pac = faster cuts)
+    const { pacing: pac } = currentQualityRef.current;
+    // Tempo — pacing only affects hold (segment-level, discrete)
     seg.holdAdj = seg.hold * (1.0 / pac);
-
-    // 2️⃣ Camera Energy — zoom + move only (does NOT touch glow)
-    seg.camZoomAdj    = (seg.camZoom || 1.0) * (1.0 + mot * 0.5);
-    seg.camMoveAdj    = mot > 0.25 && seg.camMove;
-    seg.camCutSnapAdj = stab < 0.6 && seg.camCutSnap;
-
-    // 3️⃣ Visual Noise — shake + flash + glow (inverted: high stab = clean)
-    const noise = 1.0 - stab;
-    seg.shakeAdj    = noise > 0.2 && seg.shake;
-    seg.flashDurAdj = seg.flashDur * (0.5 + noise * 0.5);
-    seg.glowAdj     = noise * mot;   // noise controls glow intensity; motion scales it
-
     return seg;
   }, []);
 
@@ -804,8 +878,9 @@ function App() {
   const camRef = useRef({
     x: 0, y: 0, zoom: 1.0,
     tx: 0, ty: 0, tzoom: 1.0,
-    active: false,  // true when a smooth move is in progress
+    active: false,   // true when a smooth move is in progress
     finished: true,
+    freezeUntil: 0,  // timestamp; camera locked during this window (post-cut freeze)
   });
 
   // ── Segment boundary state (prev / current for cut detection) ────────────
@@ -883,6 +958,8 @@ function App() {
     if (!rfInstance) return;
     const cam = camRef.current;
     if (!cam.active) return;
+    // Freeze window post-cut — hold camera still for ~50ms then resume lerping
+    if (performance.now() < cam.freezeUntil) return;
 
     // Ease towards target
     const lerpSpeed = 6; // higher = snappier
@@ -910,22 +987,36 @@ function App() {
     if (!rfInstance) return;
     const pos = getNodePos(nodeId);
     if (!pos) return;
+    const cam = camRef.current;
     const cx = window.innerWidth / 2;
     const cy = window.innerHeight / 2;
-    camRef.current.tx = pos.x;
-    camRef.current.ty = pos.y;
-    camRef.current.tzoom = zoom || 1.2;
-    camRef.current.active = true;
+    const ZOOM_EPS = 0.005;
+    const POS_EPS = 0.5;
+
     if (isCut) {
-      // Instant snap on cut
-      camRef.current.x = pos.x;
-      camRef.current.y = pos.y;
-      camRef.current.zoom = zoom || 1.2;
-      camRef.current.active = false;
+      // Instant snap — bypass lerp, reset everything
+      cam.x = cam.tx = pos.x;
+      cam.y = cam.ty = pos.y;
+      cam.zoom = cam.tzoom = zoom || 1.2;
+      cam.active = false;
+      cam.freezeUntil = performance.now() + 50; // hold camera still for ~3 frames post-cut
       try {
         rfInstance.setViewport({ x: cx - pos.x, y: cy - pos.y, zoom: zoom || 1.2 }, { duration: 0 });
       } catch (_) {}
+      return;
     }
+
+    // Only update target if it has drifted beyond epsilon (avoids unnecessary ref writes)
+    const dz = Math.abs((zoom || 1.2) - cam.tzoom);
+    const dx = Math.abs(pos.x - cam.tx);
+    const dy = Math.abs(pos.y - cam.ty);
+    if (dz > ZOOM_EPS || dx > POS_EPS || dy > POS_EPS) {
+      cam.tx = pos.x;
+      cam.ty = pos.y;
+      cam.tzoom = zoom || 1.2;
+      cam.active = true;
+    }
+    // If within epsilon, leave cam state untouched — avoids jitter on convergence
   }, [rfInstance, getNodePos]);
 
   // ── Apply segment at localT ∈ [0,1] (continuous interpolation) ─────────────
@@ -943,9 +1034,21 @@ function App() {
   const applySegAtT = useCallback((seg, localT) => {
     const t = easeOutQuad(clamp(localT, 0, 1));
 
+    // Continuous domain — read live from currentQualityRef every frame
+    // (lerped toward target each tick, so motion/stability changes are fluid)
+    const { motion: mot, stability: stab } = currentQualityRef.current;
+    const noise = 1.0 - stab;
+
     const newStatus = STATUS_MAP[seg.type] || 'blocked';
     const glowActive = seg.glow;
-    const glowIntensity = glowActive ? (seg.glowAdj || 0) * t : 0;
+    // glow: noise controls intensity, motion scales it — both continuous
+    const glowIntensity = glowActive ? (glowActive * noise * mot) * t : 0;
+    // shaking suppressed by high stability; continuous (not baked at segment entry)
+    const shaking = (noise > 0.2 && seg.shake) ? (t > 0.08 && t < 0.92) : false;
+
+    // Camera — zoom is fully continuous (updated every frame, not just on segment entry)
+    const zoom = (seg.camZoom || 1.0) * (1.0 + mot * 0.5);
+    setCameraTarget(seg.jobId, zoom, false);
 
     setNodeState(prev => {
       const n = JSON.parse(JSON.stringify(prev));
@@ -959,7 +1062,7 @@ function App() {
         workerId: seg.type === 'CLAIMED' ? seg.workerId : p.workerId,
         highlighted: glowActive ? seg.type : null,
         glowT: glowIntensity,
-        shaking: seg.shakeAdj ? (t > 0.08 && t < 0.92) : false,
+        shaking,
         pulse: !!seg.pulse,
       };
       return n;
@@ -990,52 +1093,54 @@ function App() {
       showLabel(`${prefix} ${seg.jobName}`);
     }
 
-  }, [setEdges, showLabel]);
+  }, [setEdges, showLabel, setCameraTarget]);
 
   // ── Segment entry (fires once per segment boundary) ─────────────────────────
 
   const enterSegment = useCallback((seg) => {
     prevSegRef.current = seg;
 
-    // Apply quality modifiers (computed once per segment, stored on seg)
+    // Apply quality modifiers (discrete: pacing/hold only)
     applyModifiers(seg);
 
-    // Update Director Debug Panel — show base + adjusted values
+    // Flash — fires once at segment entry
+    if (seg.flashColor) {
+      const { stability: stab } = currentQualityRef.current;
+      const noise = 1.0 - stab;
+      showFlash(seg.flashColor, Math.round(seg.flashDur * (0.5 + noise * 0.5)));
+    }
+
+    // Cut transition — fires once at segment entry
+    const { motion: mot, stability: stab } = currentQualityRef.current;
+    if (mot > 0.25 && seg.camMove && stab < 0.6 && seg.camCutSnap) {
+      triggerCut();
+    }
+
+    // Debug panel — show base → current (live lerped) values
+    const noise = 1.0 - stab;
+    const liveZoom = ((seg.camZoom || 1.0) * (1.0 + mot * 0.5)).toFixed(2);
+    const liveMove = mot > 0.25 && seg.camMove;
+    const liveCutSnap = stab < 0.6 && seg.camCutSnap;
     setDebugSeg({
       type: seg.type,
       jobId: seg.jobId,
       tags: seg.tags,
       emphasis: seg.emphasis,
-      camZoom: `${seg.camZoom || 1.0} → ${seg.camZoomAdj?.toFixed(2)}`,
-      camMove: `${seg.camMove} → ${seg.camMoveAdj}`,
-      camCutSnap: `${seg.camCutSnap} → ${seg.camCutSnapAdj}`,
+      camZoom: `${seg.camZoom || 1.0} → ${liveZoom}`,
+      camMove: `${seg.camMove} → ${liveMove}`,
+      camCutSnap: `${seg.camCutSnap} → ${liveCutSnap}`,
       flashColor: seg.flashColor,
-      flashDur: `${seg.flashDur}ms → ${Math.round(seg.flashDurAdj)}ms`,
+      flashDur: `${seg.flashDur}ms → ${Math.round(seg.flashDur * (0.5 + noise * 0.5))}ms`,
       glow: seg.glow,
       edgeColor: seg.edgeColor,
       merge: seg.merge,
       accent: seg.accent,
       isMontage: seg.isMontage,
       paceHold: `×${seg.holdAdj?.toFixed(2)}`,
-      motionScale: qualityRef.current.motion.toFixed(1),
+      motionScale: currentQualityRef.current.motion.toFixed(1),
       ctx: seg.ctx,
     });
-
-    // Flash — use adjusted duration
-    if (seg.flashColor) {
-      showFlash(seg.flashColor, Math.round(seg.flashDurAdj || 80));
-    }
-
-    // Cut transition — use adjusted cutSnap
-    if (seg.camCutSnapAdj) {
-      triggerCut();
-    }
-
-    // Camera move — use adjusted zoom and cutSnap
-    if (seg.camMoveAdj && seg.camZoomAdj) {
-      setCameraTarget(seg.jobId, seg.camZoomAdj, seg.camCutSnapAdj);
-    }
-  }, [triggerCut, showFlash, setCameraTarget, applyModifiers]);
+  }, [triggerCut, showFlash, applyModifiers]);
 
   // ── Playback loop (progress-driven, continuous) ───────────────────────────
 
@@ -1432,13 +1537,16 @@ React.createElement('span', { className: 'header-stat' },
             { label: 'TikTok',  pac: 1.8, mot: 0.9, stab: 0.2 },
             { label: 'Cinema',   pac: 0.7, mot: 0.3, stab: 0.9 },
             { label: 'Glitch',   pac: 1.4, mot: 0.8, stab: 0.1 },
-          ].flatMap(p =>
-            React.createElement('button', {
+          ].flatMap(p => {
+            const isActive = Math.abs(pacing - p.pac) < 0.06
+              && Math.abs(motion - p.mot) < 0.06
+              && Math.abs(stability - p.stab) < 0.06;
+            return React.createElement('button', {
               key: p.label,
-              className: 'preset-btn',
+              className: 'preset-btn' + (isActive ? ' active' : ''),
               onClick: () => { setPacing(p.pac); setMotion(p.mot); setStability(p.stab); }
-            }, p.label)
-          )
+            }, p.label);
+          })
         ),
 
         React.createElement('span', { className: 'header-stat' },
