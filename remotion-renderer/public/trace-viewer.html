@@ -424,6 +424,39 @@ const DIRECTOR_PLAN = {
 // resolveRhythm: tags → hold + merge + accent
 // All visual decisions live here. Rule functions never return camera/flash/rhythm.
 // ─────────────────────────────────────────────────────────────────────────────
+// LAYER 3a — Scene Detection (narrative grouping)
+// Scenes are broader than modes: a scene is a "story beat" that lasts multiple
+// segments and biases the director toward a narrative intent.
+// Scene detection is purely a function of ctx (content-derived, no history).
+// ─────────────────────────────────────────────────────────────────────────────
+
+function detectScene(tags, ctx, sceneCount) {
+  // Climax: retry storm or cascade failure — peak intensity
+  if (tags.includes('retry-storm') || (tags.includes('cascade') && tags.includes('failed'))) {
+    return 'climax';
+  }
+  // Buildup: burst following a normal/idle period — tension is accumulating
+  if (ctx.parallelBurstSize > 3) {
+    return 'buildup';
+  }
+  // Focus arc: critical path job — sustained attention beat
+  if (tags.includes('critical')) {
+    return 'focus-arc';
+  }
+  // Release: linger after intense activity — winding down
+  if (ctx.gapPrev > 0.3) {
+    return 'release';
+  }
+  // Intro: first scene with minimal prior activity
+  if (sceneCount <= 1 && ctx.isFirstEvent) {
+    return 'intro';
+  }
+  // Idle: sustained still frames with no demand
+  if (ctx.parallelBurstSize === 0 && ctx.gapPrev > 0.5) {
+    return 'idle';
+  }
+  return 'normal';
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // LAYER 3b — Director Mode (discrete style decisions)
@@ -432,23 +465,73 @@ const DIRECTOR_PLAN = {
 // number of consecutive segments before it can change — the director has memory.
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Minimum segments a mode must hold before releasing
-const MODE_STICKINESS = {
-  chaos:  2,   // retry storm is sticky — hard to exit once in
-  burst:  3,   // burst window needs a few beats to establish
-  focus:  2,   // focus punches in and holds
-  linger: 2,   // linger needs a beat to settle
-  normal: 1,   // normal is the fallback, easy to leave
-};
+// Time-based mode persistence + transition grammar + scene bias
+// Scene shapes mode preference — the narrative context biases shot selection.
+// ─────────────────────────────────────────────────────────────────────────────
 
-
-// Higher-order resolveMode that tracks consecutive wins across segments
 function makeModeResolver() {
-  let prevMode = 'normal';
-  let consecutive = 0;
-  const STICK = { chaos: 2, burst: 3, focus: 2, linger: 2, normal: 1 };
+  let currentMode = 'normal';
+  let modeSince = 0; // ms timestamp when currentMode was entered
 
-  return function resolveModePersisted(tags, ctx) {
+  // Minimum ms a mode must hold before releasing (prevents thrashing)
+  const MIN_DURATION = {
+    chaos:  200,  // chaos is short but intense
+    burst:  300,  // wide shot needs a beat to establish
+    focus:  400,  // punch-in holds the viewer's attention
+    linger: 600,  // still moments need room to breathe
+    normal: 100,  // normal transitions quickly
+  };
+
+  // Scene bias table — narrative context reshapes mode preference
+  // Applied AFTER candidate derivation, before time-lock check
+  function applySceneBias(candidate, scene) {
+    switch (scene) {
+      case 'climax':
+        // Peak intensity: chaos wins, linger suppressed
+        if (candidate === 'chaos' || candidate === 'burst') return 'chaos';
+        if (candidate === 'linger') return 'focus'; // still frames become tight focus
+        return candidate;
+      case 'buildup':
+        // Tension accumulation: burst/focus preferred, linger suppressed
+        if (candidate === 'normal' || candidate === 'linger') return 'burst';
+        return candidate;
+      case 'focus-arc':
+        // Sustained attention: prefer focus, chaos redirected to focus
+        if (candidate === 'chaos') return 'focus';
+        if (candidate === 'linger') return 'focus';
+        if (candidate === 'normal') return 'focus';
+        return candidate;
+      case 'release':
+        // Wind-down: linger wins, burst suppressed
+        if (candidate === 'burst' || candidate === 'focus' || candidate === 'chaos') return 'linger';
+        return candidate;
+      case 'idle':
+        // Dead air: linger preferred, any intense mode softened
+        if (candidate !== 'linger') return 'linger';
+        return candidate;
+      case 'intro':
+        // Establish before intensifying: prefer normal/burst, suppress chaos
+        if (candidate === 'chaos') return 'normal';
+        if (candidate === 'focus') return 'burst';
+        return candidate;
+      default: // 'normal' scene — no bias
+        return candidate;
+    }
+  }
+
+  // Transition grammar: how the director cuts between modes
+  function getTransition(from, to) {
+    if (from === to) return null;
+    if (to === 'chaos') return 'jump-cut';
+    if (from !== 'chaos' && to === 'burst') return 'wide-cut';
+    if (to === 'linger') return 'ease-out';
+    if (from === 'burst' && to === 'focus') return 'snap-in';
+    if (from === 'focus' && to === 'burst') return 'release-cut';
+    return 'cut';
+  }
+
+  return function resolveModePersisted(tags, ctx, scene, now = 0) {
+    // Derive base candidate from content (pure, no history)
     let candidate;
     if      (tags.includes('retry-storm')) candidate = 'chaos';
     else if (ctx.parallelBurstSize > 3)   candidate = 'burst';
@@ -456,20 +539,27 @@ function makeModeResolver() {
     else if (ctx.gapPrev > 0.3)           candidate = 'linger';
     else                                   candidate = 'normal';
 
-    if (candidate === prevMode) {
-      consecutive = 0; // reset counter on stable mode
-      return prevMode;
+    // Apply scene bias BEFORE time-lock (scene is broader narrative context)
+    candidate = applySceneBias(candidate, scene);
+
+    if (candidate === currentMode) {
+      return { mode: currentMode, transition: null, fromMode: null, scene };
     }
 
-    // Candidate differs — need STICK consecutive appearances before switching
-    consecutive++;
-    if (consecutive >= STICK[prevMode]) {
-      prevMode = candidate;
-      consecutive = 0;
+    // Time-based lock: mode must hold for MIN_DURATION[ms] before switching
+    const elapsed = now - modeSince;
+    if (elapsed < MIN_DURATION[currentMode]) {
+      // Locked — still in cooldown, reject switch
+      return { mode: currentMode, transition: null, fromMode: null, scene };
     }
-    // else: stay in prevMode, accumulate consecutive count
 
-    return prevMode;
+    // Mode switch confirmed
+    const fromMode = currentMode;
+    const transition = getTransition(fromMode, candidate);
+    currentMode = candidate;
+    modeSince = now;
+
+    return { mode: currentMode, transition, fromMode, scene };
   };
 }
 
@@ -478,28 +568,33 @@ function resolveVisual(tags, ctx, mode) {
   const fl   = { color: null, duration: 0 };
   const vis  = { glow: false, edgeColor: null, edgeWidth: null, labelDelay: 0, shake: false, pulse: false };
 
-  // Mode overrides — intentional style jumps, not gentle modulation
+  // Mode overrides — INTENTIONAL SHOT SELECTION (not gentle modulation)
+  // Mode is PRIMARY: once a mode is selected, it RETURNS — no fall-through to tag rules
   if      (mode === 'chaos') {
     Object.assign(cam, { zoom: 1.6, move: true, cutSnap: true, duration: 60 });
     Object.assign(fl,  { color: '#6b5000', duration: 50 });
     Object.assign(vis, { shake: true, labelDelay: 0.90 });
+    return { cam, fl, vis };
   }
   else if (mode === 'burst') {
     Object.assign(cam, { zoom: 0.75, move: true, cutSnap: true, duration: 100 });
     Object.assign(fl,  { color: '#0088cc', duration: 70 });
     Object.assign(vis, { glow: true, labelDelay: 0.65 });
+    return { cam, fl, vis };
   }
   else if (mode === 'focus') {
     Object.assign(cam, { zoom: 1.6, move: true, cutSnap: false, duration: 400 });
     Object.assign(fl,  { color: '#0088cc', duration: 100 });
     Object.assign(vis, { glow: true, labelDelay: 0.60 });
+    return { cam, fl, vis };
   }
   else if (mode === 'linger') {
     Object.assign(cam, { zoom: 1.0, move: false, cutSnap: false, duration: 0 });
     Object.assign(fl,  { color: '#004488', duration: 40 });
     Object.assign(vis, { glow: false, labelDelay: 0.80 });
+    return { cam, fl, vis };
   }
-  // else 'normal' — fall through to tag-based rules
+  // 'normal' — falls through to tag-based rules below
 
   // Context-aware zoom modulation
   const burstZoom   = ctx.parallelBurstSize > 3 ? 0.85 : ctx.parallelBurstSize > 1 ? 1.0 : 1.15;
@@ -627,7 +722,7 @@ function computeLayout(jobs) {
   });
 }
 
-// ── Director layer builder (v2 — ctx-aware + merge + accent) ─────────────────
+// ── Director layer builder (v2 — ctx-aware + scene + mode + transition) ───────────
 
 function buildDirector(trace) {
   const { events, startTs, endTs, jobs } = trace;
@@ -636,10 +731,10 @@ function buildDirector(trace) {
   const jobDeps = {};
   (jobs || []).forEach(j => { jobDeps[j.id] = j.dependsOn || []; });
 
-  // ── Pass 1: ctx → tags → visual/rhythm resolves → raw segments ───────────────
+  // ── Pass 1: ctx → scene → mode → visual/rhythm resolves → raw segments ────────
   const rawSegs = [];
-  // Mode persistence — the director has memory; modes must "earn" the right to switch
   const resolveModePersisted = makeModeResolver();
+  let sceneCount = 0; // number of committed scenes so far
 
   events.forEach((ev, i) => {
     const fn = DIRECTOR_PLAN[ev.type];
@@ -651,12 +746,25 @@ function buildDirector(trace) {
     // 'absorb' tags → no visual segment (state only)
     if (tags.includes('absorb')) return;
 
+    // Scene detection — purely from content, no history needed
+    const scene = detectScene(tags, ctx, sceneCount);
+    if (i === 0 || scene !== rawSegs[rawSegs.length - 1]?.scene) {
+      sceneCount++;
+    }
+
     const start   = normPos(ev.ts, startTs, endTs);
     const nextTs  = i < events.length - 1 ? events[i + 1].ts : ev.ts + 300;
     const end     = normPos(nextTs, startTs, endTs);
 
-    // Resolve mode with persistence (hysteresis built into makeModeResolver)
-    const mode = resolveModePersisted(tags, ctx);
+    // Resolve mode with time-based persistence + scene bias
+    const { mode, transition, fromMode } = resolveModePersisted(tags, ctx, scene, ev.ts);
+
+    const start   = normPos(ev.ts, startTs, endTs);
+    const nextTs  = i < events.length - 1 ? events[i + 1].ts : ev.ts + 300;
+    const end     = normPos(nextTs, startTs, endTs);
+
+    // Resolve mode with time-based persistence; transition is set when mode actually switches
+    const { mode, transition } = resolveModePersisted(tags, ctx, ev.ts);
     const { cam, fl, vis } = resolveVisual(tags, ctx, mode);
     const rhythm = resolveRhythm(tags, ctx, mode);
     const emphasis = resolveEmphasis(tags, ctx, mode);
@@ -667,6 +775,9 @@ function buildDirector(trace) {
     rawSegs.push({
       ...ev,
       ctx, tags, emphasis,
+      scene,         // narrative grouping: 'intro'|'buildup'|'climax'|'release'|'idle'|'focus-arc'|'normal'
+      mode,          // the committed mode for this segment
+      transition,    // type of cut from previous mode ('cut'|'jump-cut'|'wide-cut'|'snap-in'|'release-cut'|'ease-out'|null)
       start, end, duration,
       origDuration: end - start,
       camZoom:   cam.zoom,
@@ -1110,10 +1221,30 @@ function App() {
       showFlash(seg.flashColor, Math.round(seg.flashDur * (0.5 + noise * 0.5)));
     }
 
-    // Cut transition — fires once at segment entry
+    // Cut transition — driven by mode transition grammar
+    // transition is non-null only when the segment is the first in a new mode
     const { motion: mot, stability: stab } = currentQualityRef.current;
-    if (mot > 0.25 && seg.camMove && stab < 0.6 && seg.camCutSnap) {
+    const t = seg.transition;
+
+    if (t === 'jump-cut') {
+      // chaos cut: instant + aggressive freeze
       triggerCut();
+    } else if (t === 'snap-in') {
+      // tension build: immediate snap into focus
+      triggerCut();
+    } else if (t === 'wide-cut' || t === 'release-cut' || t === 'cut') {
+      // standard cuts
+      if (mot > 0.25 && seg.camMove && stab < 0.6 && seg.camCutSnap) {
+        triggerCut();
+      }
+    } else if (t === 'ease-out') {
+      // linger: no hard cut — let camera settle naturally
+      // suppress cut even if camCutSnap would normally fire
+    } else if (t === null && seg.camCutSnap) {
+      // same mode, normal cut
+      if (mot > 0.25 && seg.camMove && stab < 0.6) {
+        triggerCut();
+      }
     }
 
     // Debug panel — show base → current (live lerped) values
