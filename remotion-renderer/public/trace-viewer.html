@@ -737,9 +737,13 @@ function App() {
   // Pacing: [0.5, 2.0] — hold duration multiplier (higher = faster cuts)
   // Motion:  [0, 1]    — camera activity (0 = static, 1 = full)
   // Stability:[0, 1]    — smoothness vs snappiness (1 = smooth, 0 = snappy)
-  const [pacing, setPacing]     = useState(1.0);
-  const [motion, setMotion]     = useState(0.6);
+  const [pacing, setPacing]       = useState(1.0);
+  const [motion, setMotion]       = useState(0.6);
   const [stability, setStability] = useState(0.7);
+
+  // currentQuality — smoothly interpolated values used for rendering
+  // (lerps toward targetQuality each frame, enabling smooth style transitions)
+  const currentQualityRef = useRef({ pacing: 1.0, motion: 0.6, stability: 0.7 });
 
   // Refs so callbacks don't need quality params in dependency arrays
   const qualityRef = useRef({ pacing: 1.0, motion: 0.6, stability: 0.7 });
@@ -756,7 +760,7 @@ function App() {
    * Called once at segment entry — results stored on seg for playback.
    */
   const applyModifiers = useCallback((seg) => {
-    const { pacing: pac, motion: mot, stability: stab } = qualityRef.current;
+    const { pacing: pac, motion: mot, stability: stab } = currentQualityRef.current;
 
     // 1️⃣ Tempo — hold duration (inverse relationship: higher pac = faster cuts)
     seg.holdAdj = seg.hold * (1.0 / pac);
@@ -1079,6 +1083,16 @@ function App() {
     // ── Camera lerp (every frame, not just on segment entry) ─────────────
     updateCameraLerp(dt);
 
+    // ── Parameter interpolation — smoothly converge toward target values ────
+    // This makes preset/style changes feel like a director adjusting knobs,
+    // not a sudden jump cut.
+    const SMOOTH = 0.08;
+    const cq = currentQualityRef.current;
+    const tq = qualityRef.current;
+    cq.pacing    = cq.pacing    + (tq.pacing    - cq.pacing)    * SMOOTH;
+    cq.motion    = cq.motion    + (tq.motion    - cq.motion)    * SMOOTH;
+    cq.stability = cq.stability + (tq.stability - cq.stability) * SMOOTH;
+
     if (newProg >= 1) {
       setPlaying(false);
       playingRef.current = false;
@@ -1086,7 +1100,7 @@ function App() {
     }
 
     rafRef.current = requestAnimationFrame(tick);
-  }, [director, speed, applySegAtT, enterSegment, updateCameraLerp]);
+  }, [director, speed, applySegAtT, enterSegment, updateCameraLerp, currentQualityRef]);
 
   useEffect(() => {
     if (playing) {
