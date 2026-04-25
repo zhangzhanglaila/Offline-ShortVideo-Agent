@@ -424,38 +424,125 @@ const DIRECTOR_PLAN = {
 // resolveRhythm: tags → hold + merge + accent
 // All visual decisions live here. Rule functions never return camera/flash/rhythm.
 // ─────────────────────────────────────────────────────────────────────────────
-// LAYER 3a — Scene Detection (narrative grouping)
-// Scenes are broader than modes: a scene is a "story beat" that lasts multiple
-// segments and biases the director toward a narrative intent.
-// Scene detection is purely a function of ctx (content-derived, no history).
+// LAYER 3a — Scene State Machine (narrative grouping with persistence)
+// Scene is a STATE MACHINE, not a stateless classifier.
+// The director tells a story with a beginning, middle, and end —
+// scenes advance in narrative direction, they don't random-walk.
 // ─────────────────────────────────────────────────────────────────────────────
 
-function detectScene(tags, ctx, sceneCount) {
-  // Climax: retry storm or cascade failure — peak intensity
-  if (tags.includes('retry-storm') || (tags.includes('cascade') && tags.includes('failed'))) {
-    return 'climax';
+function makeSceneResolver() {
+  let currentScene = 'normal';
+  let sceneSince = 0; // ms timestamp when currentScene was entered
+
+  // Minimum ms a scene must hold before releasing (narrative "breathing room")
+  const MIN_SCENE_DURATION = {
+    intro:     600,  // opening statement needs to establish
+    buildup:   500,  // tension builds over several beats
+    climax:    300,  // peak is brief but intense
+    release:   800,  // winding down needs room to land
+    idle:      400,  // pause but don't lose momentum
+    'focus-arc': 400,
+    normal:    200,  // normal transitions quickly
+  };
+
+  // Narrative direction graph: which scene transitions are allowed
+  // This prevents "backwards" storytelling: buildup → intro makes no sense
+  const NARRATIVE_ALLOWED = {
+    intro:     ['buildup', 'normal'],
+    buildup:   ['climax', 'focus-arc', 'normal'],
+    climax:    ['release', 'normal'],
+    release:   ['idle', 'normal', 'buildup'],
+    idle:      ['buildup', 'normal'],
+    'focus-arc': ['climax', 'release', 'normal'],
+    normal:    ['buildup', 'focus-arc', 'idle', 'intro', 'climax'],
+  };
+
+  // Derive candidate scene — BOTH content AND current narrative state.
+// This is what makes the scene machine "drive interpretation" rather than被动.
+// Key insight: (currentScene + event) → next scene
+// The current scene interprets the event through narrative inertia.
+  function deriveScene(tags, ctx, currentScene) {
+    // ── Climax inertia: once in climax, ride it until clear release signal
+    if (currentScene === 'climax') {
+      if (ctx.gapPrev > 0.4) return 'release'; // strong gap forces exit
+      return 'climax'; // otherwise, stay — don't abandon peak early
+    }
+
+    // ── Buildup inertia: resist premature release — tension must fully resolve
+    if (currentScene === 'buildup') {
+      if (tags.includes('retry-storm') || tags.includes('cascade')) return 'climax';
+      if (ctx.parallelBurstSize > 4) return 'buildup'; // still intensifying
+      if (ctx.gapPrev > 0.5) return 'release'; // clear wind-down signal
+      return 'buildup'; // otherwise hold — don't release before climax
+    }
+
+    // ── Focus-arc inertia: sustain attention, don't abandon for minor gaps
+    if (currentScene === 'focus-arc') {
+      if (ctx.gapPrev > 0.45) return 'release';
+      if (tags.includes('retry-storm')) return 'climax';
+      return 'focus-arc';
+    }
+
+    // ── Release inertia: once winding down, don't spike back up
+    if (currentScene === 'release') {
+      if (tags.includes('retry-storm')) return 'climax';
+      if (ctx.parallelBurstSize > 3) return 'buildup'; // new activity rising
+      if (ctx.gapPrev > 0.5) return 'idle';
+      return 'release';
+    }
+
+    // ── Idle: wait for genuine activity signal
+    if (currentScene === 'idle') {
+      if (ctx.parallelBurstSize > 2) return 'buildup';
+      return 'idle';
+    }
+
+    // ── Intro: establishes early; leaves on first activity
+    if (currentScene === 'intro') {
+      if (tags.includes('retry-storm') || tags.includes('cascade')) return 'climax';
+      if (ctx.parallelBurstSize > 2) return 'buildup';
+      if (tags.includes('critical')) return 'focus-arc';
+      return 'intro';
+    }
+
+    // ── Normal (free state): open to any scene transition
+    if (tags.includes('retry-storm') || (tags.includes('cascade') && tags.includes('failed'))) return 'climax';
+    if (ctx.parallelBurstSize > 3) return 'buildup';
+    if (tags.includes('critical')) return 'focus-arc';
+    if (ctx.gapPrev > 0.3) return 'release';
+    if (ctx.parallelBurstSize === 0 && ctx.gapPrev > 0.5) return 'idle';
+    if (ctx.isFirstEvent) return 'intro';
+    return 'normal';
   }
-  // Buildup: burst following a normal/idle period — tension is accumulating
-  if (ctx.parallelBurstSize > 3) {
-    return 'buildup';
-  }
-  // Focus arc: critical path job — sustained attention beat
-  if (tags.includes('critical')) {
-    return 'focus-arc';
-  }
-  // Release: linger after intense activity — winding down
-  if (ctx.gapPrev > 0.3) {
-    return 'release';
-  }
-  // Intro: first scene with minimal prior activity
-  if (sceneCount <= 1 && ctx.isFirstEvent) {
-    return 'intro';
-  }
-  // Idle: sustained still frames with no demand
-  if (ctx.parallelBurstSize === 0 && ctx.gapPrev > 0.5) {
-    return 'idle';
-  }
-  return 'normal';
+
+  return function resolveScenePersisted(tags, ctx, now = 0) {
+    const candidate = deriveScene(tags, ctx, currentScene);
+
+    if (candidate === currentScene) {
+      return { scene: currentScene, fromScene: null };
+    }
+
+    // Narrative direction constraint: reject backward jumps
+    const allowed = NARRATIVE_ALLOWED[currentScene] || ['normal'];
+    if (!allowed.includes(candidate)) {
+      // Block — stay in current scene (e.g., buildup → intro is forbidden)
+      return { scene: currentScene, fromScene: null };
+    }
+
+    // Time-based lock: scene must hold for minimum duration
+    const elapsed = now - sceneSince;
+    if (elapsed < MIN_SCENE_DURATION[currentScene]) {
+      return { scene: currentScene, fromScene: null };
+    }
+
+    // Scene switch confirmed
+    const fromScene = currentScene;
+    currentScene = candidate;
+    sceneSince = now;
+    sceneEpoch++; // New epoch — all pending intents are bound to the old scene
+
+    return { scene: currentScene, fromScene };
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -520,14 +607,28 @@ function makeModeResolver() {
   }
 
   // Transition grammar: how the director cuts between modes
-  function getTransition(from, to) {
+  // sceneBiasToTransition: scene influences which transition type is preferred
+  function getTransition(from, to, scene) {
     if (from === to) return null;
-    if (to === 'chaos') return 'jump-cut';
-    if (from !== 'chaos' && to === 'burst') return 'wide-cut';
-    if (to === 'linger') return 'ease-out';
-    if (from === 'burst' && to === 'focus') return 'snap-in';
-    if (from === 'focus' && to === 'burst') return 'release-cut';
-    return 'cut';
+
+    // Base grammar
+    let t;
+    if (to === 'chaos') t = 'jump-cut';
+    else if (from !== 'chaos' && to === 'burst') t = 'wide-cut';
+    else if (to === 'linger') t = 'ease-out';
+    else if (from === 'burst' && to === 'focus') t = 'snap-in';
+    else if (from === 'focus' && to === 'burst') t = 'release-cut';
+    else t = 'cut';
+
+    // Scene bias: climax wants aggressive cuts, release wants soft ones
+    if (scene === 'climax' && t === 'cut') t = 'jump-cut';
+    if (scene === 'climax' && t === 'wide-cut') t = 'jump-cut';
+    if (scene === 'release' && (t === 'cut' || t === 'snap-in')) t = 'ease-out';
+    if (scene === 'intro' && t === 'cut') t = 'wide-cut';
+    if (scene === 'focus-arc' && t === 'cut') t = 'snap-in';
+    if (scene === 'idle' && t === 'cut') t = 'ease-out';
+
+    return t;
   }
 
   return function resolveModePersisted(tags, ctx, scene, now = 0) {
@@ -555,7 +656,7 @@ function makeModeResolver() {
 
     // Mode switch confirmed
     const fromMode = currentMode;
-    const transition = getTransition(fromMode, candidate);
+    const transition = getTransition(fromMode, candidate, scene);
     currentMode = candidate;
     modeSince = now;
 
@@ -657,7 +758,7 @@ function resolveVisual(tags, ctx, mode) {
   return { cam, fl, vis };
 }
 
-function resolveRhythm(tags, ctx, mode) {
+function resolveRhythm(tags, ctx, mode, scene) {
   let hold = 0.03, merge = false, accent = false;
 
   // Mode-driven primary decisions — intentional rhythm jumps
@@ -680,6 +781,20 @@ function resolveRhythm(tags, ctx, mode) {
     else if (tags.includes('absorb'))                                      { hold = 0; merge = true; }
   }
 
+  // Scene bias: rhythm serves the narrative arc
+  // Applied after mode rules — scene is broader context
+  if (scene === 'climax') {
+    hold = Math.min(hold, 0.02); // peak intensity: shortest holds
+    accent = true;
+  } else if (scene === 'release') {
+    hold *= 1.4; // wind-down: breathe more
+    merge = true;
+  } else if (scene === 'idle') {
+    hold = Math.max(hold, 0.12); // dead air: very long pauses
+  } else if (scene === 'buildup') {
+    hold *= 0.85; // tension: slightly tighter
+  }
+
   return { hold, merge, accent };
 }
 
@@ -691,8 +806,324 @@ function resolveEmphasis(tags, ctx, mode) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// LAYER 4 — Timeline Engine
-// Consumes ctx + tags + visual/rhythm resolves.
+// LAYER 3.5 — Narrative Compiler
+// Transforms narrative kernel state into an executable render instruction IR.
+// This is the OUTPUT CONTRACT — the bridge from Narrative OS to Video Renderer.
+// Each instruction is a self-contained "导演脚本" describing ONE shot.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Shot vocabulary: maps narrative semantics to concrete shot language
+const SHOT_MAP = {
+  chaos:    'jitter-cut',
+  burst:    'wide-push',
+  focus:    'tighten',
+  linger:   'static-hold',
+  normal:   'cut',
+};
+
+function compileNarrativeInstruction(seg) {
+  const { scene, mode, transition, camZoom, camMove, camCutSnap, camDur,
+          flashColor, flashDur, rhythm, emphasis, tags, glow, shake, edgeColor, edgeWidth } = seg;
+
+  // Derive shot type from mode + camera behavior
+  const shot = SHOT_MAP[mode] || 'cut';
+
+  // Motion profile: derive from mode + scene
+  let motion;
+  if      (mode === 'chaos')  motion = 'jitter';
+  else if (mode === 'burst')   motion = 'accelerate';
+  else if (mode === 'focus')   motion = 'push-in';
+  else if (mode === 'linger')  motion = 'decelerate';
+  else if (tags.includes('unblocked') || tags.includes('retry')) motion = 'snap';
+  else                         motion = 'steady';
+
+  // Intensity: 0-1 scale for effects
+  let intensity = 0.5;
+  if      (mode === 'chaos')  intensity = 1.0;
+  else if (mode === 'burst')   intensity = 0.8;
+  else if (mode === 'focus')   intensity = 0.7;
+  else if (mode === 'linger')  intensity = 0.3;
+  else if (emphasis === 'strong')   intensity = 0.9;
+  else if (emphasis === 'medium')    intensity = 0.6;
+  else if (emphasis === 'weak')      intensity = 0.3;
+
+  // Transition: canonicalize to render transition vocabulary
+  let renderTransition = transition || 'cut';
+  if (renderTransition === 'release-cut') renderTransition = 'ease-out';
+  if (renderTransition === 'snap-in')      renderTransition = 'snap';
+
+  // Camera instruction block
+  const cameraInstruction = {
+    zoom: camZoom || 1.0,
+    move: camMove || false,
+    snap: camCutSnap || false,
+    duration: camDur || 0,
+  };
+
+  // Flash instruction block
+  const flashInstruction = {
+    color: flashColor || null,
+    duration: flashDur || 0,
+  };
+
+  // Audio/score hint: derive from scene + rhythm
+  let audioHint = 'neutral';
+  if      (scene === 'climax' && rhythm?.accent) audioHint = 'build-tension';
+  else if (scene === 'release')                  audioHint = 'wind-down';
+  else if (scene === 'buildup')                  audioHint = 'pulse';
+  else if (mode === 'chaos')                    audioHint = 'disrupt';
+  else if (mode === 'linger')                   audioHint = 'sustain';
+
+  // Render hints: what effects to apply during this shot
+  const renderHints = {
+    glow:       glow  || false,
+    shake:      shake || false,
+    edgeColor:  edgeColor || null,
+    edgeWidth:  edgeWidth || null,
+  };
+
+  return {
+    scene,
+    shot,
+    motion,
+    duration:   seg.duration || 0,
+    transition: renderTransition,
+    intensity,
+    camera: cameraInstruction,
+    flash:  flashInstruction,
+    emphasis,
+    audio:  audioHint,
+    renderHints,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LAYER 4.5 — Content Binding Layer (IR → Asset Mapping)
+// Maps Narrative IR to actual visual/audio content.
+// This is the bridge from "directing instructions" to "actual media assets".
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Asset source registry — where each subject type gets its visual representation
+const ASSET_SOURCES = {
+  'server-node':       'generated',    // heatmap / node graph
+  'queue-depth':        'generated',    // animated bar chart
+  'retry-storm':        'generated',    // pulsing burst diagram
+  'buildup':            'generated',    // rising wave
+  'climax':             'generated',    // peak flash / waveform
+  'release':            'generated',    // descending curve
+  'failure-cascade':    'generated',    // red network spread
+  'default':            'generated',
+};
+
+// Style presets for generated content
+const CONTENT_STYLE_PRESETS = {
+  'dark-tech':  { bg: '#0a0a0f', text: '#44aaff', accent: '#0088cc', font: 'monospace' },
+  'light-minimal': { bg: '#f5f5f5', text: '#333', accent: '#888', font: 'sans-serif' },
+  'neon':      { bg: '#0a0a0f', text: '#ff4466', accent: '#ff0033', font: 'monospace', glow: true },
+  'warm':      { bg: '#1a1410', text: '#f0c040', accent: '#6b5000', font: 'serif' },
+};
+
+// Compile IR + metadata → ContentBinding
+// A ContentBinding describes what visual content should be rendered for this shot.
+function compileContentBinding(ir, seg) {
+  const style = CONTENT_STYLE_PRESETS['dark-tech'];
+  const assetSource = ASSET_SOURCES[seg.scene] || ASSET_SOURCES['default'];
+
+  // Derive content type from narrative context
+  let contentType;
+  if      (seg.scene === 'climax' && ir.shot === 'jitter-cut') contentType = 'peak-chaos';
+  else if (seg.scene === 'buildup')  contentType = 'rising-pattern';
+  else if (seg.scene === 'release') contentType = 'falling-pattern';
+  else if (ir.shot === 'wide-push') contentType = 'overview';
+  else if (ir.shot === 'tighten')   contentType = 'focus-detail';
+  else if (ir.shot === 'static-hold') contentType = 'still-frame';
+  else contentType = 'steady';
+
+  // Text caption: short narrative label for on-screen text
+  const captionMap = {
+    'peak-chaos':      '⚠ OVERLOAD',
+    'rising-pattern':   '↗ BUILDING',
+    'falling-pattern': '↘ RESOLVING',
+    'overview':        seg.jobId || 'SYSTEM',
+    'focus-detail':    seg.tags?.includes('failed') ? '✗ FAILURE' : '▶ ACTIVE',
+    'still-frame':     seg.jobId || '...',
+    'steady':          seg.jobId || '·',
+  };
+  const caption = captionMap[contentType] || seg.jobId || '·';
+
+  // Prompt for image generation: narrative → visual prompt
+  const genPromptMap = {
+    'peak-chaos':       'abstract red network overflow, dark background, glitch art, intense',
+    'rising-pattern':   'ascending data visualization, blue tones, dark grid, rising energy',
+    'falling-pattern':  'descending waveform, calming blue, fade to dark, resolution',
+    'overview':         'tech system diagram, dark mode, nodes and connections, minimal',
+    'focus-detail':     'close-up data node, detailed, sharp focus, dark background',
+    'still-frame':       'system component, static view, dark background, clean UI',
+    'steady':           'system activity, neutral state, dark mode, clean visualization',
+  };
+  const genPrompt = genPromptMap[contentType] || 'abstract data visualization, dark tech style';
+
+  return {
+    assetSource,      // 'generated' | 'image' | 'video' | 'icon'
+    contentType,     // semantic content category
+    caption,         // on-screen label
+    style,           // color/style preset
+    genPrompt,        // text-to-image prompt for this shot
+    audioHint: ir.audio,
+    duration: ir.duration,
+    intensity: ir.intensity,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LAYER 4.7 — Audio Instruction Compiler
+// Maps audio hint → audio track parameters (BPM, filter, envelope).
+// ─────────────────────────────────────────────────────────────────────────────
+
+function compileAudioParams(ir) {
+  const { audio, scene, intensity } = ir;
+
+  const baseBPM = 120;
+  const bpmMap = {
+    'build-tension': baseBPM + 20,
+    'pulse':         baseBPM + 10,
+    'wind-down':     baseBPM - 20,
+    'disrupt':       baseBPM + 40,
+    'sustain':       baseBPM,
+    'neutral':       baseBPM,
+  };
+
+  const filterMap = {
+    'build-tension': 'lowpass-rise',  // rise sweep
+    'pulse':         'pulse',          // rhythmic filter
+    'wind-down':     'lowpass-fall',  // close down
+    'disrupt':       'bandpass',       // harsh
+    'sustain':       'flat',           // no filter
+    'neutral':       'flat',
+  };
+
+  const envelopeMap = {
+    'build-tension': { attack: 0.8, decay: 0.1, sustain: 0.6, release: 0.4 },
+    'pulse':         { attack: 0.2, decay: 0.1, sustain: 0.8, release: 0.2 },
+    'wind-down':     { attack: 0.1, decay: 0.2, sustain: 0.4, release: 0.8 },
+    'disrupt':       { attack: 0.9, decay: 0.05, sustain: 0.3, release: 0.1 },
+    'sustain':       { attack: 0.1, decay: 0.2, sustain: 0.9, release: 0.3 },
+    'neutral':       { attack: 0.1, decay: 0.2, sustain: 0.8, release: 0.3 },
+  };
+
+  return {
+    bpm: bpmMap[audio] || baseBPM,
+    filter: filterMap[audio] || 'flat',
+    envelope: envelopeMap[audio] || envelopeMap['neutral'],
+    scene,
+    intensity,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LAYER 4 — Timeline Renderer (IR → Time-indexed Execution)
+// Executes the compiled IR on a time axis.
+// Transforms discrete shot descriptions into continuous frame-level behavior.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Scene-based easing curves: how the narrative arc shapes the motion curve
+function getShotEasing(scene, motion) {
+  if (motion === 'jitter')    return 'linear';       // chaos: no smoothing
+  if (motion === 'snap')      return 'ease-out';     // quick settle
+  if (motion === 'push-in') {
+    if (scene === 'climax')  return 'ease-in';      // accelerate into peak
+    return 'ease-in-out';
+  }
+  if (motion === 'decelerate') return 'ease-out';    // slow landing
+  if (scene === 'release')    return 'ease-out';    // wind-down breathes
+  if (scene === 'buildup')    return 'ease-in';      // tension builds
+  if (scene === 'climax')     return 'ease-in';      // peak intensifies
+  return 'ease-in-out';
+}
+
+// Ease function dispatcher
+function applyEasing(t, easing) {
+  switch (easing) {
+    case 'linear':    return t;
+    case 'ease-in':   return t * t;
+    case 'ease-out':  return 1 - (1 - t) * (1 - t);
+    default:          return t < 0.5 ? 2*t*t : 1 - Math.pow(-2*t+2,3)/2; // ease-in-out-cubic
+  }
+}
+
+// Compile a shot IR into an array of time-indexed keyframe instructions.
+// Each keyframe: { t, zoom, move, glow, shake, flash }
+function compileShotCurve(ir, totalDurationMs) {
+  const easing = getShotEasing(ir.scene, ir.motion);
+  const keyframes = [];
+
+  // Start frame
+  keyframes.push({ t: 0, zoom: 1.0, glow: 0, shake: false, flash: false });
+
+  if (ir.shot === 'jitter-cut') {
+    // Rapid jitter: 4 keyframes in the shot lifetime
+    for (let i = 1; i <= 4; i++) {
+      const kt = i / 4;
+      keyframes.push({
+        t: kt,
+        zoom: 1.0 + (Math.random() - 0.5) * 0.15,
+        glow: ir.renderHints?.glow ? 0.6 : 0,
+        shake: true,
+        flash: false,
+      });
+    }
+  } else if (ir.motion === 'accelerate') {
+    // Push-in curve: zoom increases toward end
+    keyframes.push({ t: 0.5, zoom: ir.camera.zoom * 0.7,  glow: 0.3, shake: false, flash: false });
+    keyframes.push({ t: 1.0, zoom: ir.camera.zoom,         glow: ir.renderHints?.glow ? 0.6 : 0, shake: false, flash: false });
+  } else if (ir.motion === 'push-in') {
+    // Sustained tighten
+    keyframes.push({ t: 0.4, zoom: ir.camera.zoom * 0.8,  glow: 0.4, shake: false, flash: false });
+    keyframes.push({ t: 1.0, zoom: ir.camera.zoom,         glow: ir.renderHints?.glow ? 0.8 : 0, shake: false, flash: false });
+  } else if (ir.motion === 'decelerate') {
+    // Slow settle
+    keyframes.push({ t: 0.3, zoom: ir.camera.zoom,         glow: 0.3, shake: false, flash: false });
+    keyframes.push({ t: 1.0, zoom: 1.0,                    glow: 0,   shake: false, flash: false });
+  } else {
+    // Default: simple hold with optional flash at start
+    if (ir.flash?.color && ir.flash?.duration > 0) {
+      keyframes.push({ t: 0.02, zoom: 1.0, glow: 0, shake: false, flash: true });
+    }
+    keyframes.push({ t: 1.0, zoom: ir.camera.zoom, glow: ir.renderHints?.glow ? 0.5 : 0, shake: false, flash: false });
+  }
+
+  return { keyframes, easing };
+}
+
+// Evaluate the compiled shot curve at a given localT (0-1).
+// Returns interpolated values for zoom, glow, shake.
+function evaluateShotCurve(curve, localT) {
+  const { keyframes, easing } = curve;
+  if (keyframes.length === 0) return { zoom: 1.0, glow: 0, shake: false };
+  if (keyframes.length === 1) return { zoom: keyframes[0].zoom, glow: keyframes[0].glow, shake: keyframes[0].shake };
+
+  const t = applyEasing(clamp(localT, 0, 1), easing);
+
+  // Find surrounding keyframes
+  let lo = keyframes[0], hi = keyframes[keyframes.length - 1];
+  for (let i = 0; i < keyframes.length - 1; i++) {
+    if (localT >= keyframes[i].t && localT <= keyframes[i + 1].t) {
+      lo = keyframes[i];
+      hi = keyframes[i + 1];
+      break;
+    }
+  }
+
+  const spanT = hi.t === lo.t ? 0 : (t - lo.t) / (hi.t - lo.t);
+  return {
+    zoom: lerp(lo.zoom, hi.zoom, spanT),
+    glow: lerp(lo.glow, hi.glow, spanT),
+    shake: hi.shake || (spanT < 0.5 && lo.shake), // shake active in first half of transition
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LAYER 5 — Segment Assembly (from compiled segments → final timeline)
 // Produces final segments. Only place where segment structure is modified.
 // merge: 'absorb' segments are merged into the next strong segment.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -731,10 +1162,28 @@ function buildDirector(trace) {
   const jobDeps = {};
   (jobs || []).forEach(j => { jobDeps[j.id] = j.dependsOn || []; });
 
-  // ── Pass 1: ctx → scene → mode → visual/rhythm resolves → raw segments ────────
+  // ── Pass 1: scene → mode → visual/rhythm resolves → raw segments ─────────────────
   const rawSegs = [];
+  const resolveScenePersisted = makeSceneResolver();
   const resolveModePersisted = makeModeResolver();
-  let sceneCount = 0; // number of committed scenes so far
+
+  // Change Arbiter: per-segment budget for system stability.
+  // Priority: scene > mode > rhythm. Only one "major" layer change per segment.
+  // This prevents visual thrashing when multiple layers want to shift simultaneously.
+  let prevScene = null;
+  let prevMode  = 'normal';
+  let prevHold = 0.03;
+
+  // Intent Queue (Scene-bound Temporal Intent Scheduler)
+  // Layer 3: scene-epoch-aware arbitration — NOT just time delay
+  // Queue = oldest-first release, Validity Gate = epoch binding + NARRATIVE_ALLOWED check,
+  // TTL = 2× MIN_SCENE_DURATION (soft cleanup, no longer primary logic).
+  // Intent is bound to the scene-epoch in which it was captured.
+  let pendingModeIntents = []; // Array of { mode, transition, sceneAtCapture, sceneEpochId, createdAt }
+
+  // Scene epoch: increments on each genuine scene transition.
+  // Intent validity is epoch-bound — prevents "emotional leakage across scene boundary".
+  let sceneEpoch = 0;
 
   events.forEach((ev, i) => {
     const fn = DIRECTOR_PLAN[ev.type];
@@ -746,28 +1195,124 @@ function buildDirector(trace) {
     // 'absorb' tags → no visual segment (state only)
     if (tags.includes('absorb')) return;
 
-    // Scene detection — purely from content, no history needed
-    const scene = detectScene(tags, ctx, sceneCount);
-    if (i === 0 || scene !== rawSegs[rawSegs.length - 1]?.scene) {
-      sceneCount++;
-    }
+    const start  = normPos(ev.ts, startTs, endTs);
+    const nextTs = i < events.length - 1 ? events[i + 1].ts : ev.ts + 300;
+    const end    = normPos(nextTs, startTs, endTs);
 
-    const start   = normPos(ev.ts, startTs, endTs);
-    const nextTs  = i < events.length - 1 ? events[i + 1].ts : ev.ts + 300;
-    const end     = normPos(nextTs, startTs, endTs);
+    // Scene state machine: persistent, directional, time-locked
+    const { scene, fromScene } = resolveScenePersisted(tags, ctx, ev.ts);
 
-    // Resolve mode with time-based persistence + scene bias
+    // Scene transition: how the director signals a new narrative beat
+    // Only fires when fromScene is non-null (scene actually switched)
+    const SCENE_TRANSITIONS = {
+      'intro→buildup':   'zoom-in',
+      'buildup→climax':  'flash-cut',
+      'climax→release':  'silence-hold',
+      'focus-arc→climax':'tighten',
+      'release→idle':     'fade-out',
+      'release→buildup':  'cut',
+    };
+    const sceneTransition = fromScene
+      ? (SCENE_TRANSITIONS[`${fromScene}→${scene}`] || 'cut')
+      : null;
+
+    // Mode: driven by content + biased by scene
     const { mode, transition, fromMode } = resolveModePersisted(tags, ctx, scene, ev.ts);
 
-    const start   = normPos(ev.ts, startTs, endTs);
-    const nextTs  = i < events.length - 1 ? events[i + 1].ts : ev.ts + 300;
-    const end     = normPos(nextTs, startTs, endTs);
+    // ── Change Arbiter: decide committedMode BEFORE visual/rhythm resolution ────────
+    // Priority: scene > mode > rhythm.
+    // All visual output must use committedMode, not the raw candidate.
+    //
+    // Intent Queue: when scene suppresses a mode change, enqueue the intent
+    // for deferred release in the next stable segment (scene must validate).
+    const sceneChanged = fromScene !== null;
+    const modeChanged  = fromMode  !== null;
 
-    // Resolve mode with time-based persistence; transition is set when mode actually switches
-    const { mode, transition } = resolveModePersisted(tags, ctx, ev.ts);
-    const { cam, fl, vis } = resolveVisual(tags, ctx, mode);
-    const rhythm = resolveRhythm(tags, ctx, mode);
-    const emphasis = resolveEmphasis(tags, ctx, mode);
+    let committedMode;
+    let committedTransition;
+    if (sceneChanged) {
+      // Scene took priority — suppress mode, preserve intent for next segment
+      committedMode = prevMode;
+      committedTransition = null;
+      if (modeChanged) {
+        // Mode also wanted to change — enqueue for deferred release (no overwrite)
+        pendingModeIntents.push({
+          mode,
+          transition,
+          sceneAtCapture: scene,
+          sceneEpochId: sceneEpoch, // Bind intent to current scene-epoch
+          createdAt: ev.ts,
+        });
+      }
+    } else if (pendingModeIntents.length > 0) {
+      // Scene is stable — try to release the oldest valid intent
+      const MAX_INTENT_AGE = 2 * 400; // 2× typical MIN_SCENE_DURATION in ms (soft cleanup)
+
+      // Discard intents whose epoch has expired or whose mode conflicts with scene direction
+      while (pendingModeIntents.length > 0) {
+        const next = pendingModeIntents[0];
+        const ageOk = (ev.ts - next.createdAt) < MAX_INTENT_AGE;
+        const sceneOk = NARRATIVE_ALLOWED[scene]?.includes(next.mode);
+        const sceneStable = next.sceneEpochId === sceneEpoch; // Epoch binding gates release
+
+        if (ageOk && sceneOk && sceneStable) {
+          // Valid intent — release from front of queue
+          pendingModeIntents.shift();
+          committedMode = next.mode;
+          committedTransition = next.transition;
+          break;
+        } else {
+          // Stale or scene-conflicting intent — discard
+          pendingModeIntents.shift();
+        }
+      }
+
+      // If queue exhausted with no valid intent, fall through to resolved mode
+      if (pendingModeIntents.length === 0 && committedMode === undefined) {
+        committedMode = mode;
+        committedTransition = (mode === prevMode) ? null : transition;
+      }
+    } else {
+      // Normal: no suppression, no pending — use resolved mode
+      committedMode = mode;
+      committedTransition = (mode === prevMode) ? null : transition;
+    }
+
+    // Rhythm: uses committedMode + scene, computed AFTER arbiter decision
+    let rhythm = resolveRhythm(tags, ctx, committedMode, scene);
+
+    // Rhythm micro-change suppression (only when nothing major changed)
+    if (!sceneChanged && !modeChanged) {
+      if (Math.abs(rhythm.hold - prevHold) / prevHold < 0.15) {
+        rhythm = { ...rhythm, hold: prevHold };
+      }
+    }
+
+    // Visual resolution uses committedMode (arbiter controls rendering, not record)
+    const { cam, fl, vis } = resolveVisual(tags, ctx, committedMode);
+    const emphasis = resolveEmphasis(tags, ctx, committedMode);
+
+    // ── Narrative Compiler: translate narrative kernel state → render IR ──────────
+    // This is the OUTPUT CONTRACT: state → executable 导演脚本
+    const segForCompile = {
+      scene, mode, transition,
+      camZoom: cam.zoom, camMove: cam.move, camCutSnap: cam.cutSnap, camDur: cam.duration,
+      flashColor: fl.color, flashDur: fl.duration,
+      rhythm, emphasis, tags,
+      glow: vis.glow, shake: vis.shake,
+      edgeColor: vis.edgeColor, edgeWidth: vis.edgeWidth,
+      duration: Math.max(end - start, rhythm.hold || 0),
+    };
+    const renderIR = compileNarrativeInstruction(segForCompile);
+
+    // ── Content Binding: compile visual asset instructions from IR ──────────────
+    const contentBinding = compileContentBinding(renderIR, segForCompile);
+    const audioParams   = compileAudioParams(renderIR);
+
+    // Update prev values for next segment's budget
+    prevScene = scene;
+    prevMode  = committedMode;
+    prevHold = rhythm.hold;
 
     let duration = Math.max(end - start, rhythm.hold || RHYTHM.MIN_SEG_DURATION);
     if (rhythm.accent) duration *= RHYTHM.ACCENT_DURATION_MULT;
@@ -775,9 +1320,11 @@ function buildDirector(trace) {
     rawSegs.push({
       ...ev,
       ctx, tags, emphasis,
-      scene,         // narrative grouping: 'intro'|'buildup'|'climax'|'release'|'idle'|'focus-arc'|'normal'
-      mode,          // the committed mode for this segment
-      transition,    // type of cut from previous mode ('cut'|'jump-cut'|'wide-cut'|'snap-in'|'release-cut'|'ease-out'|null)
+      scene,           // narrative grouping: 'intro'|'buildup'|'climax'|'release'|'idle'|'focus-arc'|'normal'
+      fromScene,       // previous scene (null when scene didn't change)
+      sceneTransition, // visual signal when narrative beat changes ('zoom-in'|'flash-cut'|'silence-hold'|'tighten'|'fade-out'|'cut'|null)
+      mode: committedMode,      // arbiter-overridden mode (also used by visual)
+      transition: committedTransition,
       start, end, duration,
       origDuration: end - start,
       camZoom:   cam.zoom,
@@ -795,6 +1342,10 @@ function buildDirector(trace) {
       merge:     rhythm.merge,
       accent:    rhythm.accent,
       merged:    false,
+      renderIR,       // Narrative Compiler output: executable 导演脚本
+      contentBinding, // Content Binding Layer output: asset/caption/prompt mapping
+      audioParams,     // Audio Instruction Compiler output: BPM/filter/envelope
+      shotCurve: compileShotCurve(renderIR, duration * RHYTHM.TOTAL_DUR), // Pre-compiled time curve
     });
   });
 
@@ -1151,14 +1702,27 @@ function App() {
     const noise = 1.0 - stab;
 
     const newStatus = STATUS_MAP[seg.type] || 'blocked';
-    const glowActive = seg.glow;
-    // glow: noise controls intensity, motion scales it — both continuous
-    const glowIntensity = glowActive ? (glowActive * noise * mot) * t : 0;
-    // shaking suppressed by high stability; continuous (not baked at segment entry)
-    const shaking = (noise > 0.2 && seg.shake) ? (t > 0.08 && t < 0.92) : false;
 
-    // Camera — zoom is fully continuous (updated every frame, not just on segment entry)
-    const zoom = (seg.camZoom || 1.0) * (1.0 + mot * 0.5);
+    // ── Timeline Renderer: evaluate pre-compiled shot curve ────────────────────
+    // Uses the IR-compiled keyframe curve instead of ad-hoc formulas.
+    // This is the core of the IR → time-axis execution layer.
+    let glowIntensity = 0;
+    let shaking = false;
+    let zoom = seg.camZoom || 1.0;
+
+    if (seg.shotCurve) {
+      const curveResult = evaluateShotCurve(seg.shotCurve, t);
+      zoom = curveResult.zoom * (1.0 + mot * 0.5);
+      glowIntensity = curveResult.glow * noise * mot;
+      shaking = (noise > 0.2 && curveResult.shake) ? (t > 0.08 && t < 0.92) : false;
+    } else {
+      // Fallback: legacy ad-hoc camera (shouldn't reach here after IR upgrade)
+      const glowActive = seg.glow;
+      glowIntensity = glowActive ? (glowActive * noise * mot) * t : 0;
+      shaking = (noise > 0.2 && seg.shake) ? (t > 0.08 && t < 0.92) : false;
+      zoom = (seg.camZoom || 1.0) * (1.0 + mot * 0.5);
+    }
+
     setCameraTarget(seg.jobId, zoom, false);
 
     setNodeState(prev => {
@@ -1171,7 +1735,7 @@ function App() {
         ...p,
         status: newStatus,
         workerId: seg.type === 'CLAIMED' ? seg.workerId : p.workerId,
-        highlighted: glowActive ? seg.type : null,
+        highlighted: glowIntensity > 0.05 ? seg.type : null,
         glowT: glowIntensity,
         shaking,
         pulse: !!seg.pulse,
@@ -1247,6 +1811,29 @@ function App() {
       }
     }
 
+    // Scene transition — narrative beat change expressed as visual signal
+    // Fires once at the first segment of a new scene
+    if (seg.sceneTransition) {
+      if (seg.sceneTransition === 'flash-cut') {
+        showFlash('#ffffff', 250); // full-white flash for climax transition
+        triggerCut();
+      } else if (seg.sceneTransition === 'silence-hold') {
+        // release from climax: black hold, let the moment breathe
+        showFlash('#000000', 400);
+      } else if (seg.sceneTransition === 'fade-out') {
+        showFlash('#1a1a2a', 600); // slow fade to dark for release→idle
+      } else if (seg.sceneTransition === 'zoom-in') {
+        // intro→buildup: camera pushes in to build tension
+        camRef.current.tzoom = (camRef.current.tzoom || 1.0) * 1.15;
+        camRef.current.active = true;
+      } else if (seg.sceneTransition === 'tighten') {
+        // focus-arc→climax: slight zoom to heighten intensity
+        camRef.current.tzoom = (camRef.current.tzoom || 1.0) * 1.2;
+        camRef.current.active = true;
+      }
+      // 'cut' and null: no additional scene-level effect
+    }
+
     // Debug panel — show base → current (live lerped) values
     const noise = 1.0 - stab;
     const liveZoom = ((seg.camZoom || 1.0) * (1.0 + mot * 0.5)).toFixed(2);
@@ -1269,6 +1856,7 @@ function App() {
       isMontage: seg.isMontage,
       paceHold: `×${seg.holdAdj?.toFixed(2)}`,
       motionScale: currentQualityRef.current.motion.toFixed(1),
+      renderIR: seg.renderIR,
       ctx: seg.ctx,
     });
   }, [triggerCut, showFlash, applyModifiers]);
@@ -1553,7 +2141,80 @@ function App() {
                 style: { color: v === '—' ? '#444' : '#7a9aaa' }
               }, v)
             )
-          )
+          ),
+
+          // Compiled IR: the OUTPUT CONTRACT from Narrative Compiler
+          debugSeg.renderIR ? React.createElement(React.Fragment, null,
+            React.createElement('div', {
+              style: { color: '#444', letterSpacing: '0.08em', marginTop: 8, marginBottom: 4 }
+            }, 'COMPILED IR'),
+            (() => {
+              const ir = debugSeg.renderIR;
+              return [
+                ['shot',     ir.shot],
+                ['motion',   ir.motion],
+                ['trans',    ir.transition],
+                ['intensity', ir.intensity?.toFixed(2)],
+                ['audio',    ir.audio],
+              ].map(([k, v]) =>
+                React.createElement('div', {
+                  key: k, style: { display: 'flex', justifyContent: 'space-between', gap: 8, lineHeight: 1.7 }
+                },
+                  React.createElement('span', { style: { color: '#3a3a4a' } }, k),
+                  React.createElement('span', {
+                    style: { color: '#7a9aaa' }
+                  }, v)
+                )
+              );
+            })()
+          ) : null,
+
+          // Content Binding: visual asset + prompt mapping
+          debugSeg.renderIR?.contentBinding ? React.createElement(React.Fragment, null,
+            React.createElement('div', {
+              style: { color: '#444', letterSpacing: '0.08em', marginTop: 8, marginBottom: 4 }
+            }, 'CONTENT'),
+            (() => {
+              const cb = debugSeg.renderIR.contentBinding;
+              return [
+                ['caption',   cb.caption],
+                ['type',      cb.contentType],
+                ['prompt',    cb.genPrompt?.slice(0, 40) + '...'],
+              ].map(([k, v]) =>
+                React.createElement('div', {
+                  key: k, style: { display: 'flex', justifyContent: 'space-between', gap: 8, lineHeight: 1.7 }
+                },
+                  React.createElement('span', { style: { color: '#3a3a4a' } }, k),
+                  React.createElement('span', {
+                    style: { color: '#7a9aaa', fontSize: 9 }
+                  }, v)
+                )
+              );
+            })()
+          ) : null,
+
+          // Audio params
+          debugSeg.renderIR?.audioParams ? React.createElement(React.Fragment, null,
+            React.createElement('div', {
+              style: { color: '#444', letterSpacing: '0.08em', marginTop: 8, marginBottom: 4 }
+            }, 'AUDIO'),
+            (() => {
+              const ap = debugSeg.renderIR.audioParams;
+              return [
+                ['bpm',      ap.bpm],
+                ['filter',   ap.filter],
+              ].map(([k, v]) =>
+                React.createElement('div', {
+                  key: k, style: { display: 'flex', justifyContent: 'space-between', gap: 8, lineHeight: 1.7 }
+                },
+                  React.createElement('span', { style: { color: '#3a3a4a' } }, k),
+                  React.createElement('span', {
+                    style: { color: '#7a9aaa' }
+                  }, v)
+                )
+              );
+            })()
+          ) : null
         ) : null,
 
         React.createElement(ReactFlow, {

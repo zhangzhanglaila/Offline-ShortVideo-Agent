@@ -1,0 +1,798 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI导演 · 实时轨迹</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: #0a0a0f;
+  color: #e0e0e0;
+  font-family: 'JetBrains Mono', 'Courier New', monospace;
+  overflow: hidden;
+  height: 100vh;
+}
+
+.panel {
+  position: absolute;
+  background: rgba(10, 10, 20, 0.92);
+  border: 1px solid rgba(0, 200, 255, 0.15);
+  border-radius: 12px;
+  backdrop-filter: blur(12px);
+}
+
+.panel-title {
+  font-size: 10px;
+  letter-spacing: 3px;
+  color: rgba(0, 200, 255, 0.6);
+  text-transform: uppercase;
+  padding: 12px 16px 8px;
+  border-bottom: 1px solid rgba(0, 200, 255, 0.08);
+}
+
+.chart-area {
+  position: absolute;
+  top: 60px;
+  left: 20px;
+  right: 320px;
+  bottom: 20px;
+}
+
+.main-chart {
+  width: 100%;
+  height: 60%;
+  border-bottom: 1px solid rgba(0, 200, 255, 0.1);
+  position: relative;
+}
+
+.scatter-area {
+  width: 100%;
+  height: 40%;
+  display: flex;
+  gap: 1px;
+}
+
+.scatter-box {
+  flex: 1;
+  position: relative;
+  border: 1px solid rgba(0, 200, 255, 0.08);
+  margin: 2px;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.scatter-box canvas {
+  width: 100%;
+  height: 100%;
+}
+
+.right-panel {
+  position: absolute;
+  top: 60px;
+  right: 20px;
+  width: 280px;
+  bottom: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.metric-card {
+  background: rgba(15, 15, 30, 0.9);
+  border: 1px solid rgba(0, 200, 255, 0.1);
+  border-radius: 10px;
+  padding: 14px 16px;
+}
+
+.metric-label {
+  font-size: 9px;
+  letter-spacing: 2px;
+  color: rgba(0, 200, 255, 0.5);
+  margin-bottom: 6px;
+}
+
+.metric-value {
+  font-size: 28px;
+  font-weight: 700;
+  color: #fff;
+  line-height: 1;
+}
+
+.metric-sub {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.3);
+  margin-top: 4px;
+}
+
+.bar-chart {
+  height: 80px;
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  margin-top: 10px;
+}
+
+.bar {
+  flex: 1;
+  background: linear-gradient(to top, rgba(0, 200, 255, 0.8), rgba(0, 200, 255, 0.3));
+  border-radius: 3px 3px 0 0;
+  transition: height 0.3s ease;
+}
+
+.flame-container {
+  height: 120px;
+  position: relative;
+  margin-top: 8px;
+  overflow: hidden;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.4);
+}
+
+#flameCanvas {
+  width: 100%;
+  height: 100%;
+}
+
+.legend {
+  padding: 10px 16px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+}
+
+.legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.live-badge {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  background: #00ff88;
+  border-radius: 50%;
+  animation: pulse 1.5s infinite;
+  margin-right: 6px;
+}
+
+.title-bar {
+  padding: 16px 20px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.title-text {
+  font-size: 14px;
+  font-weight: 600;
+  color: #fff;
+  letter-spacing: 1px;
+}
+
+.header-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+}
+
+.btn {
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-size: 10px;
+  letter-spacing: 1px;
+  cursor: pointer;
+  border: 1px solid rgba(0, 200, 255, 0.3);
+  background: rgba(0, 200, 255, 0.1);
+  color: rgba(0, 200, 255, 0.9);
+  transition: all 0.2s;
+}
+
+.btn:hover {
+  background: rgba(0, 200, 255, 0.25);
+  border-color: rgba(0, 200, 255, 0.5);
+}
+
+.btn-primary {
+  background: rgba(0, 200, 255, 0.2);
+  border-color: rgba(0, 200, 255, 0.5);
+  color: #fff;
+}
+
+/* D3 elements */
+.axis text {
+  fill: rgba(255,255,255,0.4);
+  font-size: 9px;
+}
+
+.axis line, .axis path {
+  stroke: rgba(0, 200, 255, 0.15);
+}
+
+.grid line {
+  stroke: rgba(0, 200, 255, 0.05);
+  stroke-dasharray: 2,4;
+}
+
+tooltip {
+  position: absolute;
+  background: rgba(0, 15, 30, 0.95);
+  border: 1px solid rgba(0, 200, 255, 0.3);
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 11px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+</style>
+</head>
+<body>
+
+<!-- Title Bar -->
+<div class="panel" style="top:20px;left:20px;right:20px;height:44px;border-radius:10px;">
+  <div class="title-bar">
+    <span class="live-badge"></span>
+    <span class="title-text">MCTS VISUAL DIRECTOR · REAL-TIME TRACE</span>
+    <div class="header-actions">
+      <button class="btn" onclick="resetView()">RESET</button>
+      <button class="btn btn-primary" onclick="togglePause()">⏸ PAUSE</button>
+    </div>
+  </div>
+</div>
+
+<!-- Main Chart Area -->
+<div class="panel chart-area">
+  <div class="main-chart">
+    <svg id="mainSvg" style="width:100%;height:100%;"></svg>
+  </div>
+  <div class="scatter-area">
+    <div class="scatter-box">
+      <div class="panel-title">REWARD LANDSCAPE</div>
+      <canvas id="rewardCanvas"></canvas>
+    </div>
+    <div class="scatter-box">
+      <div class="panel-title">EXPLORATION DENSITY</div>
+      <canvas id="densityCanvas"></canvas>
+    </div>
+    <div class="scatter-box">
+      <div class="panel-title">Q-VALUE HEATMAP</div>
+      <canvas id="heatmapCanvas"></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- Right Metrics Panel -->
+<div class="panel right-panel">
+
+  <div class="metric-card">
+    <div class="metric-label">SIMULATION DEPTH</div>
+    <div class="metric-value" id="simDepth">0</div>
+    <div class="metric-sub">layers</div>
+    <div class="bar-chart" id="depthBarChart"></div>
+  </div>
+
+  <div class="metric-card">
+    <div class="metric-label">BRANCHING FACTOR</div>
+    <div class="metric-value" id="branchFactor">0</div>
+    <div class="metric-sub">avg children/node</div>
+  </div>
+
+  <div class="metric-card">
+    <div class="metric-label">BEST Q-VALUE</div>
+    <div class="metric-value" id="bestQ">0.000</div>
+    <div class="metric-sub">selection priority</div>
+  </div>
+
+  <div class="metric-card">
+    <div class="metric-label">EXPLORATION RATIO</div>
+    <div class="metric-value" id="exploreRatio">0%</div>
+    <div class="metric-sub">vs exploitation</div>
+  </div>
+
+  <div class="metric-card" style="flex:1;">
+    <div class="metric-label">🔥 VIRAL SCORE</div>
+    <div class="metric-value" id="viralScore" style="color:#ff6b35;font-size:36px;">0.00</div>
+    <div class="metric-sub">momentum index</div>
+    <div class="flame-container">
+      <canvas id="flameCanvas"></canvas>
+    </div>
+  </div>
+
+  <div class="metric-card">
+    <div class="legend">
+      <div class="legend-item"><div class="legend-dot" style="background:#00ff88"></div>EXPLOIT</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#ff6b35"></div>VIRAL</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#00d4ff"></div>EXPLORE</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#a855f7"></div>RANDOM</div>
+    </div>
+  </div>
+</div>
+
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<script>
+// ============================================================
+// MCTS VISUAL DIRECTOR — D3 Edition
+// ============================================================
+
+let paused = false;
+let tick = 0;
+let mctsState = {
+  depth: 12,
+  branchFactor: 3.7,
+  bestQ: 0.847,
+  exploreRatio: 0.34,
+  viralScore: 2.47,
+  rewardHistory: [],
+  nodePositions: [],
+  particles: [],
+  flameParticles: []
+};
+
+// D3 SVG Setup
+const mainSvg = d3.select('#mainSvg');
+const width = mainSvg.node().getBoundingClientRect().width || 800;
+const height = mainSvg.node().getBoundingClientRect().height || 400;
+
+const g = mainSvg.append('g');
+
+// Scales
+const xScale = d3.scaleLinear().domain([0, 100]).range([40, width - 20]);
+const yScale = d3.scaleLinear().domain([0, 100]).range([height - 30, 20]);
+const colorScale = d3.scaleSequential(d3.interpolateViridis).domain([0, 1]);
+
+// Grid
+g.append('g').attr('class', 'grid')
+  .selectAll('line')
+  .data(d3.range(0, 101, 10))
+  .enter().append('line')
+  .attr('x1', d => xScale(d)).attr('x2', d => xScale(d))
+  .attr('y1', yScale(0)).attr('y2', yScale(100))
+  .attr('stroke', 'rgba(0,200,255,0.05)');
+
+g.append('g').attr('class', 'grid')
+  .selectAll('line')
+  .data(d3.range(0, 101, 10))
+  .enter().append('line')
+  .attr('x1', xScale(0)).attr('x2', xScale(100))
+  .attr('y1', d => yScale(d)).attr('y2', d => yScale(d))
+  .attr('stroke', 'rgba(0,200,255,0.05)');
+
+// Axes
+g.append('g').attr('class', 'axis').attr('transform', `translate(0,${height-25})`)
+  .call(d3.axisBottom(xScale).ticks(10).tickSize(-4))
+  .selectAll('text').attr('fill', 'rgba(255,255,255,0.35)').attr('font-size', '9px');
+
+g.append('g').attr('class', 'axis').attr('transform', 'translate(35,0)')
+  .call(d3.axisLeft(yScale).ticks(8).tickSize(-4))
+  .selectAll('text').attr('fill', 'rgba(255,255,255,0.35)').attr('font-size', '9px');
+
+// Line path
+const linePath = g.append('path')
+  .attr('fill', 'none')
+  .attr('stroke', '#00d4ff')
+  .attr('stroke-width', 2)
+  .attr('filter', 'drop-shadow(0 0 6px rgba(0,212,255,0.6))');
+
+const areaPath = g.append('path')
+  .attr('fill', 'rgba(0,212,255,0.08)')
+  .attr('stroke', 'none');
+
+// Branch lines group
+const branchGroup = g.append('g').attr('class', 'branches');
+const nodeGroup = g.append('g').attr('class', 'nodes');
+const particleGroup = g.append('g').attr('class', 'particles');
+
+// Node data
+let treeNodes = [];
+let treeEdges = [];
+let particleData = [];
+
+// Initialize depth bar chart
+function initDepthBars() {
+  const container = document.getElementById('depthBarChart');
+  container.innerHTML = '';
+  for (let i = 0; i < 12; i++) {
+    const bar = document.createElement('div');
+    bar.className = 'bar';
+    bar.style.height = Math.random() * 60 + 20 + '%';
+    container.appendChild(bar);
+  }
+}
+
+// Canvas setups
+const rewardCanvas = document.getElementById('rewardCanvas');
+const rewardCtx = rewardCanvas.getContext('2d');
+const densityCanvas = document.getElementById('densityCanvas');
+const densityCtx = densityCanvas.getContext('2d');
+const heatmapCanvas = document.getElementById('heatmapCanvas');
+const heatmapCtx = heatmapCanvas.getContext('2d');
+const flameCanvas = document.getElementById('flameCanvas');
+const flameCtx = flameCanvas.getContext('2d');
+
+function resizeCanvases() {
+  [rewardCanvas, densityCanvas, heatmapCanvas, flameCanvas].forEach(c => {
+    c.width = c.offsetWidth * 2;
+    c.height = c.offsetHeight * 2;
+  });
+}
+
+// Simulation data
+function generateTreeData() {
+  const nodes = [];
+  const edges = [];
+  const levels = 6;
+  const branchFactor = Math.floor(Math.random() * 3) + 2;
+
+  // Root
+  nodes.push({ id: 0, x: 50, y: 95, q: 0.5 + Math.random() * 0.5, depth: 0, type: 'root' });
+
+  let id = 1;
+  for (let d = 1; d < levels; d++) {
+    const parents = nodes.filter(n => n.depth === d - 1);
+    parents.forEach(p => {
+      const numChildren = Math.floor(Math.random() * 4) + 2;
+      for (let i = 0; i < numChildren && id < 30; i++) {
+        const xSpread = 80 / Math.pow(1.5, d);
+        const childX = p.x + (Math.random() - 0.5) * xSpread;
+        const childY = 95 - d * 14 - Math.random() * 8;
+        const q = Math.random();
+        nodes.push({
+          id: id,
+          x: Math.max(5, Math.min(95, childX)),
+          y: Math.max(5, Math.min(95, childY)),
+          q: q,
+          depth: d,
+          type: q > 0.75 ? 'viral' : q > 0.5 ? 'exploit' : q > 0.3 ? 'explore' : 'random'
+        });
+        edges.push({ source: p.id, target: id, q: q });
+        id++;
+      }
+    });
+  }
+
+  return { nodes, edges };
+}
+
+function updateMainChart() {
+  const data = mctsState.rewardHistory.slice(-80);
+
+  const line = d3.line()
+    .x((d, i) => xScale(i * 100 / Math.max(data.length - 1, 1)))
+    .y(d => yScale(d * 100))
+    .curve(d3.curveCatmullRom);
+
+  const area = d3.area()
+    .x((d, i) => xScale(i * 100 / Math.max(data.length - 1, 1)))
+    .y0(yScale(0))
+    .y1(d => yScale(d * 100))
+    .curve(d3.curveCatmullRom);
+
+  linePath.attr('d', line(data));
+  areaPath.attr('d', area(data));
+}
+
+function updateBranches(edges) {
+  const ed = branchGroup.selectAll('path').data(edges);
+
+  ed.enter().append('path')
+    .attr('fill', 'none')
+    .attr('stroke-width', d => 1 + d.q * 2)
+    .attr('stroke-opacity', d => 0.2 + d.q * 0.5)
+    .merge(ed)
+    .attr('stroke', d => {
+      if (d.q > 0.75) return '#ff6b35';
+      if (d.q > 0.5) return '#00ff88';
+      if (d.q > 0.3) return '#00d4ff';
+      return '#a855f7';
+    })
+    .attr('d', d => {
+      const s = treeNodes.find(n => n.id === d.source);
+      const t = treeNodes.find(n => n.id === d.target);
+      if (!s || !t) return '';
+      const mx = (s.x + t.x) / 2;
+      const my = (s.y + t.y) / 2 - 8;
+      return `M${xScale(s.x)},${yScale(s.y)} Q${xScale(mx)},${yScale(my)} ${xScale(t.x)},${yScale(t.y)}`;
+    });
+
+  ed.exit().remove();
+}
+
+function updateNodes(nodes) {
+  const nd = nodeGroup.selectAll('circle').data(nodes);
+
+  nd.enter().append('circle')
+    .attr('r', d => d.type === 'root' ? 8 : 4 + d.q * 5)
+    .attr('fill', d => {
+      if (d.type === 'root') return '#ffffff';
+      if (d.type === 'viral') return '#ff6b35';
+      if (d.type === 'exploit') return '#00ff88';
+      if (d.type === 'explore') return '#00d4ff';
+      return '#a855f7';
+    })
+    .attr('opacity', 0.9)
+    .attr('filter', d => d.type === 'viral' ? 'drop-shadow(0 0 8px #ff6b35)' : 'none')
+    .merge(nd)
+    .attr('cx', d => xScale(d.x))
+    .attr('cy', d => yScale(d.y));
+
+  nd.exit().remove();
+}
+
+function updateParticles() {
+  // Add new particle
+  if (Math.random() < 0.3 && !paused) {
+    particleData.push({
+      x: Math.random() * 100,
+      y: 95 + Math.random() * 10,
+      vx: (Math.random() - 0.5) * 2,
+      vy: -Math.random() * 3 - 1,
+      life: 1,
+      size: Math.random() * 3 + 1,
+      color: ['#00d4ff', '#00ff88', '#ff6b35', '#a855f7'][Math.floor(Math.random() * 4)]
+    });
+  }
+
+  particleData = particleData.filter(p => {
+    p.x += p.vx;
+    p.y += p.vy;
+    p.life -= 0.015;
+    return p.life > 0;
+  });
+
+  const pt = particleGroup.selectAll('circle').data(particleData);
+  pt.enter().append('circle').merge(pt)
+    .attr('cx', d => xScale(d.x))
+    .attr('cy', d => yScale(d.y))
+    .attr('r', d => d.size * d.life)
+    .attr('fill', d => d.color)
+    .attr('opacity', d => d.life * 0.7);
+  pt.exit().remove();
+}
+
+function drawRewardLandscape() {
+  const w = rewardCanvas.width;
+  const h = rewardCanvas.height;
+  const cols = 40;
+  const rows = 30;
+
+  const cellW = w / cols;
+  const cellH = h / rows;
+
+  for (let x = 0; x < cols; x++) {
+    for (let y = 0; y < rows; y++) {
+      const nx = x / cols;
+      const ny = y / rows;
+      const v = Math.sin(nx * 6 + tick * 0.02) * Math.cos(ny * 4 + tick * 0.015) * 0.5 + 0.5;
+      const hue = 180 + v * 80;
+      rewardCtx.fillStyle = `hsla(${hue}, 80%, ${20 + v * 40}%, ${0.6 + v * 0.4})`;
+      rewardCtx.fillRect(x * cellW, y * cellH, cellW + 1, cellH + 1);
+    }
+  }
+
+  // Draw contour lines
+  rewardCtx.strokeStyle = 'rgba(0, 212, 255, 0.3)';
+  rewardCtx.lineWidth = 0.5;
+  for (let lvl = 0.2; lvl < 0.9; lvl += 0.15) {
+    rewardCtx.beginPath();
+    for (let x = 0; x < cols; x++) {
+      const nx = x / cols;
+      const v = Math.sin(nx * 6 + tick * 0.02) * Math.cos(lvl * 4 + tick * 0.015) * 0.5 + 0.5;
+      const py = (1 - v) * h;
+      if (x === 0) rewardCtx.moveTo(x * cellW, py);
+      else rewardCtx.lineTo(x * cellW, py);
+    }
+    rewardCtx.stroke();
+  }
+}
+
+function drawDensityMap() {
+  const w = densityCanvas.width;
+  const h = densityCanvas.height;
+  const ctx = densityCtx;
+
+  ctx.clearRect(0, 0, w, h);
+
+  // Random walk particles
+  const numPoints = 80;
+  for (let i = 0; i < numPoints; i++) {
+    const px = Math.sin(i * 0.3 + tick * 0.01) * 0.3 + 0.5;
+    const py = Math.cos(i * 0.5 + tick * 0.008) * 0.3 + 0.5;
+    const size = 15 + Math.sin(i + tick * 0.02) * 8;
+
+    const grad = ctx.createRadialGradient(px * w, py * h, 0, px * w, py * h, size);
+    grad.addColorStop(0, 'rgba(0, 255, 136, 0.8)');
+    grad.addColorStop(0.5, 'rgba(0, 212, 255, 0.3)');
+    grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(px * w, py * h, size, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function drawQHeatmap() {
+  const w = heatmapCanvas.width;
+  const h = heatmapCanvas.height;
+  const ctx = heatmapCtx;
+
+  const cols = 16;
+  const rows = 12;
+  const cellW = w / cols;
+  const cellH = h / rows;
+
+  for (let x = 0; x < cols; x++) {
+    for (let y = 0; y < rows; y++) {
+      const v = Math.abs(Math.sin(x * 0.4 + tick * 0.025) * Math.cos(y * 0.5 + tick * 0.02));
+      ctx.fillStyle = `rgba(${v > 0.6 ? '255,107,53' : '0,212,255'}, ${v * 0.9}, ${v})`;
+      ctx.fillRect(x * cellW, y * cellH, cellW, cellH);
+    }
+  }
+
+  // Q-value overlay
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+  ctx.font = `${Math.min(cellW, cellH) * 0.5}px monospace`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  for (let x = 0; x < cols; x++) {
+    for (let y = 0; y < rows; y++) {
+      const v = Math.abs(Math.sin(x * 0.4 + tick * 0.025) * Math.cos(y * 0.5 + tick * 0.02));
+      if (v > 0.7) {
+        ctx.fillText((v).toFixed(2), x * cellW + cellW / 2, y * cellH + cellH / 2);
+      }
+    }
+  }
+}
+
+function drawFlame() {
+  const w = flameCanvas.width;
+  const h = flameCanvas.height;
+  const ctx = flameCtx;
+
+  ctx.clearRect(0, 0, w, h);
+
+  // Flame particles
+  if (!mctsState.flameParticles) mctsState.flameParticles = [];
+
+  const fp = mctsState.flameParticles;
+
+  // Add new flame particles
+  if (!paused && Math.random() < 0.4) {
+    fp.push({
+      x: w * (0.3 + Math.random() * 0.4),
+      y: h,
+      vx: (Math.random() - 0.5) * 3,
+      vy: -Math.random() * 8 - 4,
+      life: 1,
+      size: Math.random() * 20 + 10
+    });
+  }
+
+  fp.forEach(p => {
+    p.x += p.vx + Math.sin(tick * 0.1 + p.y * 0.01) * 2;
+    p.y += p.vy;
+    p.vy *= 0.99;
+    p.life -= 0.02;
+    p.size *= 0.99;
+  });
+
+  const alive = fp.filter(p => p.life > 0);
+  mctsState.flameParticles = alive;
+
+  // Draw
+  alive.forEach(p => {
+    const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size);
+    const r = Math.floor(255 * (1 - p.life * 0.3));
+    const g = Math.floor(107 * (1 - p.life) + 200 * p.life);
+    grad.addColorStop(0, `rgba(${r}, ${g}, 53, ${p.life * 0.9})`);
+    grad.addColorStop(0.5, `rgba(255, 100, 30, ${p.life * 0.5})`);
+    grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  // Viral score display
+  ctx.fillStyle = `rgba(255, 107, 53, ${0.8 + Math.sin(tick * 0.1) * 0.2})`;
+  ctx.font = `bold ${h * 0.25}px monospace`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(mctsState.viralScore.toFixed(2), w / 2, h / 2);
+}
+
+function updateMetrics() {
+  document.getElementById('simDepth').textContent = mctsState.depth;
+  document.getElementById('branchFactor').textContent = mctsState.branchFactor.toFixed(1);
+  document.getElementById('bestQ').textContent = mctsState.bestQ.toFixed(3);
+  document.getElementById('exploreRatio').textContent = Math.round(mctsState.exploreRatio * 100) + '%';
+  document.getElementById('viralScore').textContent = mctsState.viralScore.toFixed(2);
+}
+
+function animate() {
+  if (!paused) {
+    tick++;
+
+    // Update MCTS state
+    mctsState.depth = Math.floor(8 + Math.sin(tick * 0.01) * 3 + tick % 5);
+    mctsState.branchFactor = 2.5 + Math.sin(tick * 0.015) * 1.2 + Math.random() * 0.5;
+    mctsState.bestQ = 0.7 + Math.sin(tick * 0.02) * 0.25;
+    mctsState.exploreRatio = 0.3 + Math.sin(tick * 0.018) * 0.15;
+    mctsState.viralScore = 1.5 + Math.sin(tick * 0.025) * 0.8 + Math.random() * 0.4;
+
+    // Update reward history
+    mctsState.rewardHistory.push(mctsState.bestQ);
+    if (mctsState.rewardHistory.length > 100) mctsState.rewardHistory.shift();
+
+    // Generate tree data periodically
+    if (tick % 30 === 0) {
+      const data = generateTreeData();
+      treeNodes = data.nodes;
+      treeEdges = data.edges;
+    }
+
+    // Update bars
+    const bars = document.querySelectorAll('#depthBarChart .bar');
+    bars.forEach((bar, i) => {
+      const targetH = 20 + Math.abs(Math.sin(tick * 0.05 + i * 0.3)) * 70;
+      const currentH = parseFloat(bar.style.height) || 50;
+      bar.style.height = currentH + (targetH - currentH) * 0.1 + '%';
+    });
+  }
+
+  // Render everything
+  updateMainChart();
+  updateBranches(treeEdges);
+  updateNodes(treeNodes);
+  updateParticles();
+  drawRewardLandscape();
+  drawDensityMap();
+  drawQHeatmap();
+  drawFlame();
+  updateMetrics();
+
+  requestAnimationFrame(animate);
+}
+
+function resetView() {
+  tick = 0;
+  mctsState.rewardHistory = [];
+  mctsState.viralScore = 1.5;
+  particleData = [];
+  if (mctsState.flameParticles) mctsState.flameParticles = [];
+  initDepthBars();
+}
+
+function togglePause() {
+  paused = !paused;
+  document.querySelector('.btn-primary').textContent = paused ? '▶ RESUME' : '⏸ PAUSE';
+}
+
+// Init
+window.addEventListener('resize', () => {
+  resizeCanvases();
+});
+
+initDepthBars();
+resizeCanvases();
+animate();
+</script>
+</body>
+</html>

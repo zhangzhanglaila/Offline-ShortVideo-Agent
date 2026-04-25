@@ -1,0 +1,21 @@
+{
+  "events": [
+    {"type": "CREATED",   "jobId": "job1", "ts":    0, "jobName": "Video Pipeline"},
+    {"type": "CLAIMED",   "jobId": "job1", "ts":  100, "jobName": "Video Pipeline", "workerId": "w1"},
+    {"type": "UNBLOCKED", "jobId": "job2", "ts":  300, "jobName": "Image Fetch"},
+    {"type": "CLAIMED",   "jobId": "job2", "ts":  400, "jobName": "Image Fetch",    "workerId": "w2"},
+    {"type": "COMPLETED", "jobId": "job2", "ts":  800, "jobName": "Image Fetch"},
+    {"type": "RETRY",     "jobId": "job3", "ts":  900, "jobName": "Audio Render"},
+    {"type": "RETRY",     "jobId": "job3", "ts": 1000, "jobName": "Audio Render"},
+    {"type": "CLAIMED",   "jobId": "job3", "ts": 1100, "jobName": "Audio Render",  "workerId": "w3"},
+    {"type": "FAILED",    "jobId": "job3", "ts": 1300, "jobName": "Audio Render"},
+    {"type": "COMPLETED", "jobId": "job1", "ts": 1500, "jobName": "Video Pipeline"}
+  ],
+  "startTs": 0,
+  "endTs": 1600,
+  "jobs": [
+    {"id": "job1", "name": "Video Pipeline", "dependsOn": []},
+    {"id": "job2", "name": "Image Fetch",    "dependsOn": ["job1"]},
+    {"id": "job3", "name": "Audio Render",  "dependsOn": ["job2"]}
+  ]
+}
