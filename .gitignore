@@ -21,7 +21,6 @@ build/
 
 # 输出文件
 output/
-assets/
 !assets/bgm/.gitkeep
 !assets/素材池_待剪辑/.gitkeep
 !assets/thumbnails/.gitkeep
