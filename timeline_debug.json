@@ -1,0 +1,624 @@
+{
+  "fps": 30,
+  "duration": 120,
+  "totalMs": 12000,
+  "segments": [
+    {
+      "id": "seg_0",
+      "start": 62,
+      "end": 185,
+      "duration": 123,
+      "scene": "normal",
+      "mode": "normal",
+      "type": "CLAIMED",
+      "camera": {
+        "type": "pan",
+        "speed": 0.11400000000000002,
+        "shake": 0.05
+      },
+      "visual": {
+        "type": "gradient",
+        "parallax": 0.1,
+        "caption": "SYSTEM",
+        "genPrompt": "system activity, neutral state, dark mode, clean visualization",
+        "style": {
+          "bg": "#0a0a0f",
+          "text": "#44aaff",
+          "accent": "#0088cc",
+          "font": "monospace",
+          "glow": true
+        }
+      },
+      "fx": {
+        "noise": 0.05,
+        "motionBlur": 0.1,
+        "lightLeak": false,
+        "vignette": 0.2
+      },
+      "audio": {
+        "emotion": "steady"
+      },
+      "_meta": {
+        "zoom": 1.54,
+        "flashColor": "#0088cc",
+        "flashDur": 80,
+        "glow": true,
+        "edgeColor": null,
+        "edgeWidth": null,
+        "tags": [
+          "claimed"
+        ],
+        "emphasis": "strong",
+        "transition": null,
+        "sceneTransition": null,
+        "camCutSnap": false,
+        "renderIR": {
+          "scene": "normal",
+          "shot": "cut",
+          "motion": "steady",
+          "duration": 0.125,
+          "transition": "cut",
+          "intensity": 0.9,
+          "camera": {
+            "zoom": 1.54,
+            "move": true,
+            "snap": false,
+            "duration": 320
+          },
+          "flash": {
+            "color": "#0088cc",
+            "duration": 80
+          },
+          "emphasis": "strong",
+          "audio": "neutral",
+          "renderHints": {
+            "glow": true,
+            "shake": false,
+            "edgeColor": null,
+            "edgeWidth": null
+          }
+        }
+      }
+    },
+    {
+      "id": "seg_1",
+      "start": 189,
+      "end": 247,
+      "duration": 58,
+      "scene": "normal",
+      "mode": "normal",
+      "type": "UNBLOCKED",
+      "camera": {
+        "type": "pan",
+        "speed": 0.0865,
+        "shake": 0.05
+      },
+      "visual": {
+        "type": "gradient",
+        "parallax": 0.1,
+        "caption": "SYSTEM",
+        "genPrompt": "system activity, neutral state, dark mode, clean visualization",
+        "style": {
+          "bg": "#0a0a0f",
+          "text": "#44aaff",
+          "accent": "#0088cc",
+          "font": "monospace",
+          "glow": true
+        }
+      },
+      "fx": {
+        "noise": 0.05,
+        "motionBlur": 0.1,
+        "lightLeak": false,
+        "vignette": 0.2
+      },
+      "audio": {
+        "emotion": "steady"
+      },
+      "_meta": {
+        "zoom": 1.265,
+        "flashColor": "#6b5000",
+        "flashDur": 80,
+        "glow": true,
+        "edgeColor": "#f0c040",
+        "edgeWidth": 2.5,
+        "tags": [
+          "unblocked",
+          "accent-beat"
+        ],
+        "emphasis": "medium",
+        "transition": null,
+        "sceneTransition": null,
+        "camCutSnap": true,
+        "renderIR": {
+          "scene": "normal",
+          "shot": "cut",
+          "motion": "snap",
+          "duration": 0.0625,
+          "transition": "cut",
+          "intensity": 0.6,
+          "camera": {
+            "zoom": 1.265,
+            "move": true,
+            "snap": true,
+            "duration": 380
+          },
+          "flash": {
+            "color": "#6b5000",
+            "duration": 80
+          },
+          "emphasis": "medium",
+          "audio": "neutral",
+          "renderHints": {
+            "glow": true,
+            "shake": false,
+            "edgeColor": "#f0c040",
+            "edgeWidth": 2.5
+          }
+        }
+      }
+    },
+    {
+      "id": "seg_2",
+      "start": 252,
+      "end": 500,
+      "duration": 248,
+      "scene": "normal",
+      "mode": "normal",
+      "type": "CLAIMED",
+      "camera": {
+        "type": "pan",
+        "speed": 0.11400000000000002,
+        "shake": 0.05
+      },
+      "visual": {
+        "type": "gradient",
+        "parallax": 0.1,
+        "caption": "SYSTEM",
+        "genPrompt": "system activity, neutral state, dark mode, clean visualization",
+        "style": {
+          "bg": "#0a0a0f",
+          "text": "#44aaff",
+          "accent": "#0088cc",
+          "font": "monospace",
+          "glow": true
+        }
+      },
+      "fx": {
+        "noise": 0.05,
+        "motionBlur": 0.1,
+        "lightLeak": false,
+        "vignette": 0.2
+      },
+      "audio": {
+        "emotion": "steady"
+      },
+      "_meta": {
+        "zoom": 1.54,
+        "flashColor": "#0088cc",
+        "flashDur": 80,
+        "glow": true,
+        "edgeColor": null,
+        "edgeWidth": null,
+        "tags": [
+          "claimed"
+        ],
+        "emphasis": "strong",
+        "transition": null,
+        "sceneTransition": null,
+        "camCutSnap": false,
+        "renderIR": {
+          "scene": "normal",
+          "shot": "cut",
+          "motion": "steady",
+          "duration": 0.25,
+          "transition": "cut",
+          "intensity": 0.9,
+          "camera": {
+            "zoom": 1.54,
+            "move": true,
+            "snap": false,
+            "duration": 320
+          },
+          "flash": {
+            "color": "#0088cc",
+            "duration": 80
+          },
+          "emphasis": "strong",
+          "audio": "neutral",
+          "renderHints": {
+            "glow": true,
+            "shake": false,
+            "edgeColor": null,
+            "edgeWidth": null
+          }
+        }
+      }
+    },
+    {
+      "id": "seg_3",
+      "start": 562,
+      "end": 623,
+      "duration": 61,
+      "scene": "normal",
+      "mode": "normal",
+      "type": "RETRY",
+      "camera": {
+        "type": "pan",
+        "speed": 0.06,
+        "shake": 0.4
+      },
+      "visual": {
+        "type": "gradient",
+        "parallax": 0.1,
+        "caption": "SYSTEM",
+        "genPrompt": "system activity, neutral state, dark mode, clean visualization",
+        "style": {
+          "bg": "#0a0a0f",
+          "text": "#44aaff",
+          "accent": "#0088cc",
+          "font": "monospace",
+          "glow": true
+        }
+      },
+      "fx": {
+        "noise": 0.05,
+        "motionBlur": 0.1,
+        "lightLeak": false,
+        "vignette": 0.2
+      },
+      "audio": {
+        "emotion": "steady"
+      },
+      "_meta": {
+        "zoom": 1.0,
+        "flashColor": "#6b5000",
+        "flashDur": 80,
+        "glow": false,
+        "edgeColor": null,
+        "edgeWidth": null,
+        "tags": [
+          "retry"
+        ],
+        "emphasis": "weak",
+        "transition": null,
+        "sceneTransition": null,
+        "camCutSnap": false,
+        "renderIR": {
+          "scene": "normal",
+          "shot": "cut",
+          "motion": "snap",
+          "duration": 0.0625,
+          "transition": "cut",
+          "intensity": 0.3,
+          "camera": {
+            "zoom": 1.0,
+            "move": false,
+            "snap": false,
+            "duration": 0
+          },
+          "flash": {
+            "color": "#6b5000",
+            "duration": 80
+          },
+          "emphasis": "weak",
+          "audio": "neutral",
+          "renderHints": {
+            "glow": false,
+            "shake": true,
+            "edgeColor": null,
+            "edgeWidth": null
+          }
+        }
+      }
+    },
+    {
+      "id": "seg_4",
+      "start": 627,
+      "end": 685,
+      "duration": 58,
+      "scene": "normal",
+      "mode": "normal",
+      "type": "RETRY",
+      "camera": {
+        "type": "pan",
+        "speed": 0.06,
+        "shake": 0.4
+      },
+      "visual": {
+        "type": "gradient",
+        "parallax": 0.1,
+        "caption": "SYSTEM",
+        "genPrompt": "system activity, neutral state, dark mode, clean visualization",
+        "style": {
+          "bg": "#0a0a0f",
+          "text": "#44aaff",
+          "accent": "#0088cc",
+          "font": "monospace",
+          "glow": true
+        }
+      },
+      "fx": {
+        "noise": 0.05,
+        "motionBlur": 0.1,
+        "lightLeak": false,
+        "vignette": 0.2
+      },
+      "audio": {
+        "emotion": "steady"
+      },
+      "_meta": {
+        "zoom": 1.0,
+        "flashColor": "#6b5000",
+        "flashDur": 80,
+        "glow": false,
+        "edgeColor": null,
+        "edgeWidth": null,
+        "tags": [
+          "retry"
+        ],
+        "emphasis": "weak",
+        "transition": null,
+        "sceneTransition": null,
+        "camCutSnap": false,
+        "renderIR": {
+          "scene": "normal",
+          "shot": "cut",
+          "motion": "snap",
+          "duration": 0.0625,
+          "transition": "cut",
+          "intensity": 0.3,
+          "camera": {
+            "zoom": 1.0,
+            "move": false,
+            "snap": false,
+            "duration": 0
+          },
+          "flash": {
+            "color": "#6b5000",
+            "duration": 80
+          },
+          "emphasis": "weak",
+          "audio": "neutral",
+          "renderHints": {
+            "glow": false,
+            "shake": true,
+            "edgeColor": null,
+            "edgeWidth": null
+          }
+        }
+      }
+    },
+    {
+      "id": "seg_5",
+      "start": 689,
+      "end": 810,
+      "duration": 121,
+      "scene": "normal",
+      "mode": "normal",
+      "type": "CLAIMED",
+      "camera": {
+        "type": "pan",
+        "speed": 0.11400000000000002,
+        "shake": 0.05
+      },
+      "visual": {
+        "type": "gradient",
+        "parallax": 0.1,
+        "caption": "SYSTEM",
+        "genPrompt": "system activity, neutral state, dark mode, clean visualization",
+        "style": {
+          "bg": "#0a0a0f",
+          "text": "#44aaff",
+          "accent": "#0088cc",
+          "font": "monospace",
+          "glow": true
+        }
+      },
+      "fx": {
+        "noise": 0.05,
+        "motionBlur": 0.1,
+        "lightLeak": false,
+        "vignette": 0.2
+      },
+      "audio": {
+        "emotion": "steady"
+      },
+      "_meta": {
+        "zoom": 1.54,
+        "flashColor": "#0088cc",
+        "flashDur": 80,
+        "glow": true,
+        "edgeColor": null,
+        "edgeWidth": null,
+        "tags": [
+          "claimed"
+        ],
+        "emphasis": "strong",
+        "transition": null,
+        "sceneTransition": null,
+        "camCutSnap": false,
+        "renderIR": {
+          "scene": "normal",
+          "shot": "cut",
+          "motion": "steady",
+          "duration": 0.125,
+          "transition": "cut",
+          "intensity": 0.9,
+          "camera": {
+            "zoom": 1.54,
+            "move": true,
+            "snap": false,
+            "duration": 320
+          },
+          "flash": {
+            "color": "#0088cc",
+            "duration": 80
+          },
+          "emphasis": "strong",
+          "audio": "neutral",
+          "renderHints": {
+            "glow": true,
+            "shake": false,
+            "edgeColor": null,
+            "edgeWidth": null
+          }
+        }
+      }
+    },
+    {
+      "id": "seg_6",
+      "start": 814,
+      "end": 935,
+      "duration": 121,
+      "scene": "normal",
+      "mode": "normal",
+      "type": "FAILED",
+      "camera": {
+        "type": "pan",
+        "speed": 0.08,
+        "shake": 0.05
+      },
+      "visual": {
+        "type": "gradient",
+        "parallax": 0.1,
+        "caption": "SYSTEM",
+        "genPrompt": "system activity, neutral state, dark mode, clean visualization",
+        "style": {
+          "bg": "#0a0a0f",
+          "text": "#44aaff",
+          "accent": "#0088cc",
+          "font": "monospace",
+          "glow": true
+        }
+      },
+      "fx": {
+        "noise": 0.05,
+        "motionBlur": 0.1,
+        "lightLeak": false,
+        "vignette": 0.2
+      },
+      "audio": {
+        "emotion": "steady"
+      },
+      "_meta": {
+        "zoom": 1.2,
+        "flashColor": "#aa0033",
+        "flashDur": 100,
+        "glow": true,
+        "edgeColor": "#aa0033",
+        "edgeWidth": 2.0,
+        "tags": [
+          "failed"
+        ],
+        "emphasis": "medium",
+        "transition": null,
+        "sceneTransition": null,
+        "camCutSnap": false,
+        "renderIR": {
+          "scene": "normal",
+          "shot": "cut",
+          "motion": "steady",
+          "duration": 0.125,
+          "transition": "cut",
+          "intensity": 0.6,
+          "camera": {
+            "zoom": 1.2,
+            "move": true,
+            "snap": false,
+            "duration": 350
+          },
+          "flash": {
+            "color": "#aa0033",
+            "duration": 100
+          },
+          "emphasis": "medium",
+          "audio": "neutral",
+          "renderHints": {
+            "glow": true,
+            "shake": false,
+            "edgeColor": "#aa0033",
+            "edgeWidth": 2.0
+          }
+        }
+      }
+    },
+    {
+      "id": "seg_7",
+      "start": 939,
+      "end": 1000,
+      "duration": 61,
+      "scene": "normal",
+      "mode": "normal",
+      "type": "COMPLETED",
+      "camera": {
+        "type": "pan",
+        "speed": 0.06,
+        "shake": 0.05
+      },
+      "visual": {
+        "type": "gradient",
+        "parallax": 0.1,
+        "caption": "SYSTEM",
+        "genPrompt": "system activity, neutral state, dark mode, clean visualization",
+        "style": {
+          "bg": "#0a0a0f",
+          "text": "#44aaff",
+          "accent": "#0088cc",
+          "font": "monospace",
+          "glow": true
+        }
+      },
+      "fx": {
+        "noise": 0.05,
+        "motionBlur": 0.1,
+        "lightLeak": false,
+        "vignette": 0.2
+      },
+      "audio": {
+        "emotion": "steady"
+      },
+      "_meta": {
+        "zoom": 1.0,
+        "flashColor": "#00aa44",
+        "flashDur": 60,
+        "glow": true,
+        "edgeColor": "#00aa44",
+        "edgeWidth": 2.0,
+        "tags": [
+          "completed"
+        ],
+        "emphasis": "medium",
+        "transition": null,
+        "sceneTransition": null,
+        "camCutSnap": false,
+        "renderIR": {
+          "scene": "normal",
+          "shot": "cut",
+          "motion": "steady",
+          "duration": 0.1875,
+          "transition": "cut",
+          "intensity": 0.6,
+          "camera": {
+            "zoom": 1.0,
+            "move": false,
+            "snap": false,
+            "duration": 0
+          },
+          "flash": {
+            "color": "#00aa44",
+            "duration": 60
+          },
+          "emphasis": "medium",
+          "audio": "neutral",
+          "renderHints": {
+            "glow": true,
+            "shake": false,
+            "edgeColor": "#00aa44",
+            "edgeWidth": 2.0
+          }
+        }
+      }
+    }
+  ]
+}

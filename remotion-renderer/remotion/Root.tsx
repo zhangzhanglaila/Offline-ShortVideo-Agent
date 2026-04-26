@@ -1,38 +1,47 @@
 /**
- * Root - Remotion Composition 注册入口
- *
- * PRODUCTION PIPELINE (Live Path):
- *   Root.tsx → VideoComposition → VideoScene → directorEval → types.ts
- *
- * 所有其他旧 Composition 已删除（TimelineScene / CinematicScene / TestScene 等）
- *
- * @see VideoScene.tsx  — 三层语义渲染引擎（emotion / emphasis / phrase）
- * @see directorEval.ts — 每帧状态机（emotionEffect / cameraOverride）
+ * Root - Remotion composition registration
  */
-import React from "react";
-import { Composition } from "remotion";
-import { VideoComposition, videoLayoutSchema } from "./Composition";
+import React, {useCallback} from "react";
+import {Composition, type CalculateMetadataFunction} from "remotion";
+import {VideoComposition, type VideoProps, videoLayoutSchema} from "./Composition";
+import {getLayoutDurationInFrames, resolveVideoLayout} from "./layoutUtils";
+import type {VideoLayout} from "./types";
 
 export const RemotionRoot: React.FC = () => {
-  return (
-    <>
-      {/* V6+ 视频级元素系统（VideoScene）— 唯一 production 路径 */}
-      <Composition
-        id="VideoFlow"
-        component={VideoComposition}
-        durationInFrames={300}
-        fps={30}
-        width={1080}
-        height={1920}
-        schema={videoLayoutSchema}
-        defaultProps={{
-          width: 1080,
-          height: 1920,
-          fps: 30,
-          background: "#0A0E14",
-          elements: [],
-        }}
-      />
-    </>
-  );
+	const calculateMetadata = useCallback<CalculateMetadataFunction<VideoProps>>(
+		async ({props}) => {
+			const layout = resolveVideoLayout(
+				props as unknown as VideoLayout & {video?: VideoLayout},
+			);
+			return {
+				durationInFrames: getLayoutDurationInFrames(layout),
+				fps: layout.fps ?? 30,
+			};
+		},
+		[],
+	);
+
+	return (
+		<>
+			<Composition
+				id="VideoFlow"
+				component={VideoComposition}
+				durationInFrames={300}
+				fps={30}
+				width={1080}
+				height={1920}
+				schema={videoLayoutSchema}
+				calculateMetadata={calculateMetadata}
+				defaultProps={{
+					width: 1080,
+					height: 1920,
+					fps: 30,
+					durationInFrames: 300,
+					background: "#0A0E14",
+					elements: [],
+					shots: [],
+				}}
+			/>
+		</>
+	);
 };

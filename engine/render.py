@@ -1,14 +1,19 @@
 """
 render.py — Narrative OS Pipeline
-Events → Narrative Kernel → Compiled IR → Content Binding → Shot Curves → Frames → Video
+Events → Narrative Kernel → Compiled IR → Content Binding → Shot Curves
+
+WARNING: build_director() output is only valid as input to bridge.py (Python→Remotion).
+Direct PIL/ffmpeg rendering via engine.renderer is DEPRECATED.
+Legacy video_renderer.py is retained only for rollback safety.
 
 Usage:
-    python render.py input.json [--output output.mp4] [--fps 30] [--width 1280] [--height 720]
+    python -c "from engine.bridge import build_director_json; print(build_director_json(trace))"
 """
 
 import json
 import sys
 import math
+import re
 import argparse
 from pathlib import Path
 
@@ -149,6 +154,159 @@ def resolve_emphasis(tags, ctx, mode):
     if 'unblocked' in tags or 'completed' in tags or 'failed' in tags: return 'medium'
     if 'retry' in tags: return 'weak'
     return 'none'
+
+
+def _read_semantic_directives(ev):
+    semantic_block = ev.get('semantics', {}) if isinstance(ev.get('semantics'), dict) else {}
+
+    def _pick(key, default=None):
+        return semantic_block.get(key, ev.get(key, default))
+
+    return {
+        'intent': _pick('intent'),
+        'emotion': _pick('emotion'),
+        'rhythm': _pick('rhythm'),
+        'focus': _pick('focus'),
+        'motionProfile': _pick('motionProfile'),
+        'energy': _pick('energy'),
+    }
+
+
+def resolve_segment_semantics(ev, tags, ctx, scene, mode, timing, emphasis, cam, vis):
+    explicit = _read_semantic_directives(ev)
+
+    if explicit['intent']:
+        intent = explicit['intent']
+    elif scene == 'release' or 'completed' in tags:
+        intent = 'release'
+    elif scene == 'climax' or mode in {'chaos', 'burst'} or 'failed' in tags or 'poison-pill' in tags:
+        intent = 'impact'
+    elif scene == 'focus-arc' or mode == 'focus' or 'unblocked' in tags:
+        intent = 'reveal'
+    elif scene == 'buildup' or mode == 'buildup' or 'claimed' in tags:
+        intent = 'approach'
+    elif mode == 'linger':
+        intent = 'linger'
+    else:
+        intent = 'steady'
+
+    if explicit['emotion']:
+        emotion = explicit['emotion']
+    elif mode == 'chaos':
+        emotion = 'tension'
+    elif scene == 'climax' or mode == 'burst':
+        emotion = 'excited'
+    elif scene in {'buildup', 'focus-arc'} or emphasis == 'strong':
+        emotion = 'anticipation'
+    elif scene == 'release' or mode == 'linger':
+        emotion = 'calm'
+    else:
+        emotion = 'neutral'
+
+    if explicit['rhythm']:
+        semantic_rhythm = explicit['rhythm']
+    elif timing.get('accent'):
+        semantic_rhythm = 'accent'
+    elif mode in {'chaos', 'burst'} or vis.get('pulse'):
+        semantic_rhythm = 'pulse'
+    elif mode == 'linger':
+        semantic_rhythm = 'linger'
+    else:
+        semantic_rhythm = 'flow'
+
+    if explicit['focus']:
+        focus = explicit['focus']
+    elif cam.get('zoom', 1.0) >= 1.35 or intent in {'impact', 'reveal'}:
+        focus = 'subject'
+    elif scene == 'release':
+        focus = 'environment'
+    else:
+        focus = 'wide'
+
+    if explicit['motionProfile']:
+        motion_profile = explicit['motionProfile']
+    elif cam.get('cutSnap') or mode in {'chaos', 'burst'}:
+        motion_profile = 'snap'
+    elif mode == 'linger':
+        motion_profile = 'drift'
+    else:
+        motion_profile = 'glide'
+
+    if explicit['energy'] is not None:
+        try:
+            energy = max(0.2, min(1.0, float(explicit['energy'])))
+        except (TypeError, ValueError):
+            energy = 0.5
+    else:
+        energy = 0.45
+        if emotion == 'tension':
+            energy = 0.95
+        elif emotion == 'excited':
+            energy = 0.84
+        elif emotion == 'anticipation':
+            energy = 0.68
+        elif emotion == 'calm':
+            energy = 0.30
+        if timing.get('accent'):
+            energy = min(1.0, energy + 0.08)
+
+    return {
+        'intent': intent,
+        'emotion': emotion,
+        'rhythm': semantic_rhythm,
+        'focus': focus,
+        'motionProfile': motion_profile,
+        'energy': energy,
+        'source': 'explicit' if explicit['intent'] or explicit['emotion'] or explicit['rhythm'] or explicit['focus'] else 'fallback',
+    }
+
+
+def generate_semantic_segments(text: str) -> list[dict]:
+    """
+    Minimal director-input helper.
+    Converts free text into explicit semantic beats that upstream systems can inject.
+    """
+    beats = [
+        chunk.strip()
+        for chunk in re.split(r'[。！？!?;\n]+', text)
+        if chunk and chunk.strip()
+    ]
+    if not beats and text.strip():
+        beats = [text.strip()]
+
+    semantic_segments: list[dict] = []
+    total = max(len(beats), 1)
+
+    for index, beat in enumerate(beats):
+        lowered = beat.lower()
+
+        if re.search(r'fail|error|crash|爆|炸|失败|警告|危险', lowered):
+            intent, emotion = 'impact', 'tension'
+        elif re.search(r'reveal|show|发现|看到|揭示|原来', lowered):
+            intent, emotion = 'reveal', 'anticipation'
+        elif re.search(r'release|done|finish|完成|解决|落地', lowered):
+            intent, emotion = 'release', 'calm'
+        elif index == 0:
+            intent, emotion = 'approach', 'anticipation'
+        elif index == total - 1:
+            intent, emotion = 'release', 'calm'
+        else:
+            intent, emotion = 'steady', 'neutral'
+
+        rhythm = 'accent' if len(beat) <= 12 or intent == 'impact' else 'flow'
+        focus = 'subject' if intent in {'impact', 'reveal', 'approach'} else 'wide'
+        duration = round(max(1.0, min(3.5, len(beat) * 0.18)), 2)
+
+        semantic_segments.append({
+            'text': beat,
+            'intent': intent,
+            'emotion': emotion,
+            'rhythm': rhythm,
+            'focus': focus,
+            'duration': duration,
+        })
+
+    return semantic_segments
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -345,11 +503,20 @@ def build_director(trace):
         fl  = vis_result['fl']
         vis = vis_result['vis']
         emphasis = resolve_emphasis(tags, ctx, committed_mode)
+        semantics = resolve_segment_semantics(
+            ev, tags, ctx, scene, committed_mode, rhythm, emphasis, cam, vis
+        )
 
         # Narrative Compiler: compile segment → renderIR
         seg_for_compile = {
             'scene': scene,
             'mode':  committed_mode,
+            'intent': semantics['intent'],
+            'emotion': semantics['emotion'],
+            'rhythm': semantics['rhythm'],
+            'focus': semantics['focus'],
+            'motionProfile': semantics['motionProfile'],
+            'energy': semantics['energy'],
             'transition': committed_trans,
             'camZoom':   cam['zoom'],
             'camMove':   cam['move'],
@@ -357,7 +524,7 @@ def build_director(trace):
             'camDur':    cam['duration'],
             'flashColor': fl['color'],
             'flashDur':  fl['duration'],
-            'rhythm':    rhythm,
+            'timing':    rhythm,
             'emphasis':   emphasis,
             'tags':       tags,
             'glow':       vis['glow'],
@@ -384,6 +551,14 @@ def build_director(trace):
             **ev,
             'ctx':            ctx,
             'tags':           tags,
+            'semantics':      semantics,
+            'intent':         semantics['intent'],
+            'emotion':        semantics['emotion'],
+            'rhythm':         semantics['rhythm'],
+            'focus':          semantics['focus'],
+            'motionProfile':  semantics['motionProfile'],
+            'energy':         semantics['energy'],
+            'semanticSource': semantics['source'],
             'emphasis':       emphasis,
             'scene':          scene,
             'fromScene':      from_scene,

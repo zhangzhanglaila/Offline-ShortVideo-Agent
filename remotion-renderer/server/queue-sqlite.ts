@@ -670,5 +670,3 @@ export function getJobQueue(): SqliteJobQueue {
   }
   return _queue;
 }
-
-export { SqliteJob };

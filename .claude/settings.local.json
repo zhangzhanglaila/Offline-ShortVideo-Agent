@@ -239,7 +239,8 @@
       "Bash(echo \"worker PID: $!\")",
       "Bash(where chromium:*)",
       "Bash(where chrome:*)",
-      "Read(//c/Users/H/AppData/Local/**)"
+      "Read(//c/Users/H/AppData/Local/**)",
+      "Bash(wmic process:*)"
     ]
   }
 }

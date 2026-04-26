@@ -11,7 +11,7 @@ import { WebSocketServer, WebSocket } from "ws";
 import { getJobQueue } from "./queue-sqlite.js";
 import { getRenderPool } from "./render-pool.js";
 
-import { selectComposition, getCompositions } from "@remotion/renderer";
+import { renderMedia, selectComposition, getCompositions } from "@remotion/renderer";
 import { generateLayoutFromTopic as generateLayoutFromTopicRule, generateMiniLayout } from "./generator";
 import { generateLayoutFromTopic as generateLayoutFromTopicLLM, generateVideoLayoutFromTopic } from "./llm";
 import { controlHub } from "./controlHub.js";
@@ -20,6 +20,7 @@ import { mctsConfig } from "./mctsConfig.js";
 import { mctsStatsStore } from "./mctsStatsStore.js";
 import type { TimelineLayout } from "@remotion/types";
 import type { VideoLayout } from "@remotion/types";
+import { getLayoutDurationInFrames } from "@remotion/layoutUtils";
 
 // ============================================================
 // 统一入参类型（只在边界做一次 Record<string, unknown> 转换）
@@ -169,12 +170,7 @@ async function renderVideoComposition(
     }
 
     // 从 elements 计算总时长
-    const lastEnd = (layout.elements || []).reduce(
-      (max: number, el: { start: number; duration: number }) =>
-        Math.max(max, el.start + el.duration),
-      0
-    );
-    const durationInFrames = Math.max(lastEnd + 60, 300);
+    const durationInFrames = getLayoutDurationInFrames(layout);
 
     console.info(`[render:v2] ${jobId} VideoFlow render, duration=${durationInFrames} frames`);
 
@@ -318,7 +314,8 @@ async function validateImageUrls(layout: VideoLayout): Promise<VideoLayout> {
 
   // 替换失败的图片元素为渐变色 shape
   const failedElements = results.filter(r => !r.ok).map(r => r.el);
-  const elements = layout.elements.filter(e => !failedElements.includes(e));
+  const failedElementIds = new Set(failedElements.map(el => el.id));
+  const elements = layout.elements.filter(e => !failedElementIds.has(e.id));
   failedElements.forEach(el => {
     const id = (el as {id?: string}).id || "img";
     const x = (el as {x?: number}).x ?? 0;
@@ -399,9 +396,34 @@ app.post("/generate-video/v2", async (req, res) => {
   console.info(`[server:v2] generate-video/v2 job: ${jobId}, topic: "${topic}"`);
   console.info(`[server:v2]   elements: ${safeLayout.elements.length}, hook="${((firstText as {text?: string})?.text ?? "").slice(0, 40)}"`);
 
-  enqueueRender(jobId, safeLayout, "VideoFlow");
+  void renderVideoComposition(jobId, safeLayout, serverPORT);
 
   res.json({ jobId, topic, layout: safeLayout });
+});
+
+/**
+ * POST /render/video
+ * Direct VideoFlow render — accepts VideoLayout (our new format).
+ * Bypasses TimelineLayout boxes[] validation.
+ */
+app.post("/render/video", async (req, res) => {
+  const { layout } = req.body as { layout?: Record<string, unknown> };
+
+  if (!layout) {
+    res.status(400).json({ error: "Missing 'layout' in request body" });
+    return;
+  }
+
+  const jobId = randomUUID();
+  jobs.set(jobId, { status: "pending", layout: layout as unknown as VideoLayout });
+
+  console.info(`[server] New video render job: ${jobId}`);
+  console.info(`[server]   shots: ${(layout.shots as unknown[])?.length ?? 0}`);
+  console.info(`[server]   elements: ${(layout.elements as unknown[])?.length ?? 0}`);
+
+  void renderVideoComposition(jobId, layout as unknown as VideoLayout, serverPORT);
+
+  res.json({ jobId });
 });
 
 /**

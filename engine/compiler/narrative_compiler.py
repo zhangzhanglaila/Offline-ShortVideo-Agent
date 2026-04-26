@@ -31,6 +31,15 @@ SHOT_MAP = {
     'normal': 'cut',
 }
 
+INTENT_SHOT_MAP = {
+    'impact': 'wide-push',
+    'approach': 'cut',
+    'reveal': 'tighten',
+    'release': 'static-hold',
+    'linger': 'static-hold',
+    'steady': 'cut',
+}
+
 
 def compile_narrative_instruction(seg: dict) -> RenderIR:
     """
@@ -41,6 +50,12 @@ def compile_narrative_instruction(seg: dict) -> RenderIR:
     """
     scene      = seg.get('scene', 'normal')
     mode       = seg.get('mode', 'normal')
+    intent     = seg.get('intent')
+    emotion    = seg.get('emotion')
+    semantic_rhythm = seg.get('rhythm')
+    focus      = seg.get('focus')
+    motion_profile = seg.get('motionProfile')
+    semantic_energy = seg.get('energy')
     transition = seg.get('transition') or 'cut'
     cam_zoom   = seg.get('camZoom', 1.0)
     cam_move   = seg.get('camMove', False)
@@ -55,13 +70,24 @@ def compile_narrative_instruction(seg: dict) -> RenderIR:
     edge_color = seg.get('edgeColor')
     edge_width = seg.get('edgeWidth')
     duration   = seg.get('duration', 0)
-    rhythm     = seg.get('rhythm', {})
+    timing_raw = seg.get('timing', seg.get('rhythm', {}))
+    timing     = timing_raw if isinstance(timing_raw, dict) else {}
 
-    # Shot type from mode
-    shot = SHOT_MAP.get(mode, 'cut')
+    # Shot type from explicit intent first, then mode fallback
+    shot = INTENT_SHOT_MAP.get(intent, SHOT_MAP.get(mode, 'cut'))
 
     # Motion profile
-    if mode == 'chaos':
+    if motion_profile == 'snap':
+        motion = 'snap'
+    elif motion_profile == 'drift':
+        motion = 'decelerate'
+    elif motion_profile == 'glide':
+        motion = 'steady'
+    elif intent == 'impact':
+        motion = 'accelerate'
+    elif intent == 'reveal':
+        motion = 'push-in'
+    elif mode == 'chaos':
         motion = 'jitter'
     elif mode == 'burst':
         motion = 'accelerate'
@@ -75,7 +101,17 @@ def compile_narrative_instruction(seg: dict) -> RenderIR:
         motion = 'steady'
 
     # Intensity 0-1
-    if mode == 'chaos':
+    if semantic_energy is not None:
+        intensity = max(0.0, min(1.0, float(semantic_energy)))
+    elif emotion == 'tension':
+        intensity = 0.95
+    elif emotion == 'excited':
+        intensity = 0.82
+    elif emotion == 'anticipation':
+        intensity = 0.68
+    elif emotion == 'calm':
+        intensity = 0.30
+    elif mode == 'chaos':
         intensity = 1.0
     elif mode == 'burst':
         intensity = 0.8
@@ -112,7 +148,15 @@ def compile_narrative_instruction(seg: dict) -> RenderIR:
     }
 
     # Audio hint
-    if scene == 'climax' and rhythm.get('accent'):
+    if emotion == 'tension':
+        audio_hint = 'disrupt'
+    elif emotion == 'excited':
+        audio_hint = 'build-tension'
+    elif emotion == 'anticipation':
+        audio_hint = 'pulse'
+    elif emotion == 'calm':
+        audio_hint = 'wind-down'
+    elif scene == 'climax' and timing.get('accent'):
         audio_hint = 'build-tension'
     elif scene == 'release':
         audio_hint = 'wind-down'

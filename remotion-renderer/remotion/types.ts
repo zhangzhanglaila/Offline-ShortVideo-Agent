@@ -195,7 +195,60 @@ export type VideoElement =
 // 镜头系统（v10 新增）
 // 素材不再是静态背景，而是参与镜头语法的动态单元
 // ============================================================
-export type ShotCamera = "push-in" | "pan-left" | "pan-right" | "pull-out" | "tilt-up" | "tilt-down" | "static";
+export type ShotCamera =
+  | "push-in"
+  | "pan-left"
+  | "pan-right"
+  | "pull-out"
+  | "tilt-up"
+  | "tilt-down"
+  | "static"
+  | "shake";
+
+export type ShotObjectType = "image" | "fx" | "shape";
+
+export type ShotObjectAnimationType = "move" | "zoom" | "float" | "sweep";
+
+export interface ShotObjectAnimation {
+  type: ShotObjectAnimationType;
+  from?: [number, number];
+  to?: [number, number];
+  fromScale?: number;
+  toScale?: number;
+  amplitude?: number;
+  speed?: number;
+}
+
+export interface ShotObject {
+  id: string;
+  type: ShotObjectType;
+  z: number;
+  src?: string;
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  opacity?: number;
+  blur?: number;
+  scale?: number;
+  color?: string;
+  gradient?: string;
+  borderRadius?: number;
+  blendMode?: "normal" | "screen" | "overlay" | "soft-light" | "multiply";
+  objectFit?: "cover" | "contain" | "fill";
+  shape?: "rect" | "circle";
+  effect?: "light-sweep" | "foreground-occlusion" | "glow-orb" | "vignette";
+  animation?: ShotObjectAnimation;
+}
+
+export interface ShotInteraction {
+  sourceId: string;
+  targetId: string;
+  type: "link-opacity" | "proximity-scale";
+  inputRange?: [number, number];
+  outputRange?: [number, number];
+  distance?: number;
+}
 
 export interface Shot {
   /** 镜头在视频中的起始帧 */
@@ -203,9 +256,9 @@ export interface Shot {
   /** 持续帧数 */
   duration: number;
   /** 图片 URL（来自 preResolveAllImages） */
-  src: string;
+  src?: string;
   /** 相机运动类型 */
-  camera: ShotCamera;
+  camera?: ShotCamera;
   /** 显示区域（相对于全屏，0~1） */
   cropX?: number;   // 默认 0
   cropY?: number;    // 默认 0
@@ -213,6 +266,9 @@ export interface Shot {
   cropH?: number;    // 默认 1（全高）
   /** 叠加透明度 */
   opacity?: number; // 默认 1
+  objects?: ShotObject[];
+  interactions?: ShotInteraction[];
+  _meta?: Record<string, unknown>;
 }
 
 // ============================================================
@@ -222,6 +278,7 @@ export interface VideoLayout {
   width: number;
   height: number;
   fps: number;
+  durationInFrames?: number;
   background?: string;  // 背景色或渐变
   elements: VideoElement[];
   /** 导演意图（指导渲染层的动态状态） */

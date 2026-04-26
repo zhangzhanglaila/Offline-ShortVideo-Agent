@@ -5,6 +5,7 @@
  */
 import { renderMedia, selectComposition } from "@remotion/renderer";
 import type { VideoLayout } from "@remotion/types";
+import { getLayoutDurationInFrames } from "@remotion/layoutUtils";
 import { WebSocketServer } from "ws";
 import http from "node:http";
 import express from "express";
@@ -58,18 +59,17 @@ async function renderJob(job: RenderJob): Promise<void> {
     if (!composition) throw new Error(`Composition "${compositionId}" not found`);
 
     // Support both VideoFlow (elements[]) and TimelineFlow (boxes[])
-    const elements = layout.elements as Array<{ start: number; duration: number }> | undefined;
-    const boxes = layout.boxes as Array<{ showFrom: number; durationInFrames: number }> | undefined;
+    const legacyLayout = layout as VideoLayout & {
+      boxes?: Array<{ showFrom: number; durationInFrames: number }>;
+    };
+    const boxes = legacyLayout.boxes;
 
     let durationInFrames: number;
-    if (elements) {
-      const lastEnd = elements.reduce((max, el) => Math.max(max, el.start + el.duration), 0);
-      durationInFrames = Math.max(lastEnd + 60, 300);
-    } else if (boxes) {
+    if (boxes) {
       const lastEnd = boxes.reduce((max, b) => Math.max(max, b.showFrom + b.durationInFrames), 0);
       durationInFrames = Math.max(lastEnd + 90, 300);
     } else {
-      durationInFrames = 300;
+      durationInFrames = getLayoutDurationInFrames(layout);
     }
 
     log(`Duration: ${durationInFrames} frames`);

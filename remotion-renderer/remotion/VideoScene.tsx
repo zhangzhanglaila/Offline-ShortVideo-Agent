@@ -30,8 +30,17 @@ import React, { useMemo } from "react";
 import { AbsoluteFill, useCurrentFrame, useVideoConfig, interpolate, Easing, Img, spring } from "remotion";
 import { FONT_FAMILY } from "./constants";
 import type { VideoLayout, VideoElement, TextElement, ImageElement, StickerElement, BackgroundElement, ShapeElement, Shot } from "./types";
+import { getCameraShotTransform } from "./cameraExpression";
 import { evaluateDirector, type DirectorState } from "./directorEval";
+import { getLayoutDurationInFrames } from "./layoutUtils";
+import { getLayerAnimationStyle } from "./layerAnimation";
 import { buildFeatureVector, w0, b0, w1, b1, w2, b2, norm_X_mean, norm_X_std, norm_y_mean, norm_y_std } from "./rewardModel";
+import { ShotDensityStack } from "./shotDensity";
+import {
+  getLinearTransitionProgress,
+  getPresentationStyle,
+  resolveTransitionPresentation,
+} from "./transitionPresentation";
 
 /**
  * (π, E, J) — MCTS runtime control params
@@ -1972,89 +1981,14 @@ function useTransitionPlan(
 
 function useElementAnimation(start: number, duration: number, animation?: VideoElement["animation"]) {
   const frame = useCurrentFrame();
-  const t = Math.max(0, frame - start);
-  const end = duration;
-  const animDuration = animation?.duration ?? 15;
-
-  // 入场进度 [0, animDuration]
-  const enterProgress = Math.min(t / animDuration, 1);
-  // 退场进度 [end-animDuration, end]
-  const exitT = Math.max(0, t - (end - animDuration));
-  const exitProgress = Math.min(exitT / animDuration, 1);
-
-  // 基础 opacity
-  let opacity = 1;
-  let transform = "";
-
-  if (t === 0) {
-    opacity = 0;
-  } else if (t < animDuration) {
-    // 入场动画
-    opacity = enterProgress;
-  } else if (t > end - animDuration) {
-    // 退场动画
-    opacity = 1 - exitProgress;
-  }
-
-  // 入场 transform
-  if (t < animDuration) {
-    const enterType = animation?.enter ?? "fade";
-    switch (enterType) {
-      case "slide-up":
-        transform = `translateY(${(1 - enterProgress) * 40}px)`;
-        break;
-      case "slide-down":
-        transform = `translateY(${(1 - enterProgress) * -40}px)`;
-        break;
-      case "zoom-in":
-        transform = `scale(${0.5 + enterProgress * 0.5})`;
-        break;
-      case "zoom-out":
-        transform = `scale(${1.5 - enterProgress * 0.5})`;
-        break;
-      case "bounce-in": {
-        const spring = enterProgress < 0.6
-          ? 1.2
-          : 1.05 - (enterProgress - 0.6) / 0.4 * 0.05;
-        transform = `scale(${enterProgress * spring})`;
-        break;
-      }
-      case "blur-in":
-        opacity = enterProgress;
-        transform = `blur(${(1 - enterProgress) * 8}px)`;
-        break;
-      default: // fade
-        break;
-    }
-  } else {
-    // 持续期间：轻微呼吸
-    const breathe = 1 + Math.sin(t * 0.03) * 0.015;
-    transform = `scale(${breathe})`;
-  }
-
-  // 退场 transform
-  if (t > end - animDuration && exitProgress > 0) {
-    const exitType = animation?.exit ?? "fade";
-    switch (exitType) {
-      case "slide-up":
-        transform = `translateY(${-exitProgress * 40}px)`;
-        break;
-      case "slide-down":
-        transform = `translateY(${exitProgress * 40}px)`;
-        break;
-      case "zoom-out":
-        transform = `scale(${1 - exitProgress * 0.5})`;
-        break;
-      case "blur-out":
-        transform = `blur(${exitProgress * 8}px)`;
-        break;
-      default: // fade
-        break;
-    }
-    opacity = 1 - exitProgress;
-  }
-
-  return { opacity: Math.max(0, Math.min(1, opacity)), transform, isVisible: t >= 0 && t <= end };
+  const { fps } = useVideoConfig();
+  return getLayerAnimationStyle({
+    frame,
+    fps,
+    start,
+    duration,
+    animation,
+  });
 }
 
 // ============================================================
@@ -2104,10 +2038,9 @@ const WordHighlightedText: React.FC<{
 WordHighlightedText.displayName = "WordHighlightedText";
 
 const TextLayer: React.FC<{ element: TextElement; frame: number }> = ({ element, frame }) => {
-  const { opacity, transform, isVisible } = useElementAnimation(element.start, element.duration, element.animation);
-  if (!isVisible) return null;
-
+  const { opacity, transform, filter, isVisible } = useElementAnimation(element.start, element.duration, element.animation);
   const { fps } = useVideoConfig();
+  if (!isVisible) return null;
   const t = frame / fps;
 
   // ── 逐词高亮渲染 ─────────────────────────────────────────
@@ -2134,6 +2067,7 @@ const TextLayer: React.FC<{ element: TextElement; frame: number }> = ({ element,
             maxWidth: element.maxWidth,
             opacity,
             transform,
+            filter,
             textShadow: `0 2px 12px rgba(0,0,0,0.8)`,
             zIndex: element.zIndex,
           }}
@@ -2161,6 +2095,7 @@ const TextLayer: React.FC<{ element: TextElement; frame: number }> = ({ element,
         maxWidth: element.maxWidth,
         opacity,
         transform,
+        filter,
         textShadow: `0 2px 12px rgba(0,0,0,0.8)`,
         zIndex: element.zIndex,
       }}
@@ -2171,7 +2106,7 @@ const TextLayer: React.FC<{ element: TextElement; frame: number }> = ({ element,
 };
 
 const ImageLayerEl: React.FC<{ element: ImageElement }> = ({ element }) => {
-  const { opacity, transform, isVisible } = useElementAnimation(element.start, element.duration, element.animation);
+  const { opacity, transform, filter, isVisible } = useElementAnimation(element.start, element.duration, element.animation);
   if (!isVisible) return null;
 
   return (
@@ -2186,6 +2121,7 @@ const ImageLayerEl: React.FC<{ element: ImageElement }> = ({ element }) => {
         overflow: "hidden",
         opacity,
         transform,
+        filter,
         boxShadow: `0 8px 32px rgba(0,0,0,0.5)`,
         zIndex: element.zIndex,
       }}
@@ -2203,7 +2139,7 @@ const ImageLayerEl: React.FC<{ element: ImageElement }> = ({ element }) => {
 };
 
 const StickerLayer: React.FC<{ element: StickerElement }> = ({ element }) => {
-  const { opacity, transform, isVisible } = useElementAnimation(element.start, element.duration, element.animation);
+  const { opacity, transform, filter, isVisible } = useElementAnimation(element.start, element.duration, element.animation);
   if (!isVisible) return null;
 
   return (
@@ -2215,7 +2151,7 @@ const StickerLayer: React.FC<{ element: StickerElement }> = ({ element }) => {
         fontSize: element.size,
         opacity,
         transform,
-        filter: `drop-shadow(0 4px 12px rgba(0,0,0,0.4))`,
+        filter: `${filter === "none" ? "" : `${filter} `}drop-shadow(0 4px 12px rgba(0,0,0,0.4))`.trim(),
         zIndex: element.zIndex,
       }}
     >
@@ -2225,7 +2161,7 @@ const StickerLayer: React.FC<{ element: StickerElement }> = ({ element }) => {
 };
 
 const ShapeLayer: React.FC<{ element: ShapeElement }> = ({ element }) => {
-  const { opacity, transform, isVisible } = useElementAnimation(element.start, element.duration, element.animation);
+  const { opacity, transform, filter, isVisible } = useElementAnimation(element.start, element.duration, element.animation);
   if (!isVisible) return null;
 
   const baseStyle = {
@@ -2240,6 +2176,7 @@ const ShapeLayer: React.FC<{ element: ShapeElement }> = ({ element }) => {
       ? "50%"
       : element.borderRadius ?? 8,
     opacity,
+    filter,
     transform: element.rotation ? `${transform} rotate(${element.rotation}deg)` : transform,
     zIndex: element.zIndex,
   };
@@ -2248,7 +2185,7 @@ const ShapeLayer: React.FC<{ element: ShapeElement }> = ({ element }) => {
 };
 
 const BackgroundLayer: React.FC<{ element: BackgroundElement; frame: number }> = ({ element, frame }) => {
-  const { opacity, transform, isVisible } = useElementAnimation(element.start, element.duration, element.animation);
+  const { opacity, transform, filter, isVisible } = useElementAnimation(element.start, element.duration, element.animation);
   if (!isVisible) return null;
 
   // 背景轻微呼吸
@@ -2265,6 +2202,7 @@ const BackgroundLayer: React.FC<{ element: BackgroundElement; frame: number }> =
         background: element.gradient ?? element.color ?? "#0A0E14",
         opacity,
         transform,
+        filter,
         backgroundSize: "200% 200%",
         zIndex: element.zIndex,
       }}
@@ -2295,7 +2233,7 @@ function useDirectorState(layout: VideoLayout): DirectorState | null {
   const t = frame / fps;
   const duration = durationInFrames / fps;
 
-  if (!layout.director) return null;
+  if (!layout.director || layout.director.scenes.length === 0) return null;
   return evaluateDirector(layout.director, t, duration);
 }
 
@@ -2348,13 +2286,16 @@ function useShotsAroundFrame(
   isTransitioning: boolean;
 } {
   const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
   if (!shots || shots.length === 0) {
     return { current: null, next: null, currentTransform: "", nextTransform: "", nextShotTransform: "", nextEmotionTransform: "", currentOpacity: 1, nextOpacity: 0, isTransitioning: false as boolean };
   }
 
   const idx = shots.findIndex((s) => frame >= s.start && frame < s.start + s.duration);
-  const current = idx >= 0 ? shots[idx] : null;
-  const next = idx >= 0 && idx + 1 < shots.length ? shots[idx + 1] : null;
+  const fallbackIdx = frame < shots[0].start ? 0 : shots.length - 1;
+  const resolvedIdx = idx >= 0 ? idx : fallbackIdx;
+  const current = shots[resolvedIdx] ?? null;
+  const next = resolvedIdx + 1 < shots.length ? shots[resolvedIdx + 1] : null;
 
   if (!current) {
     return { current: null, next: null, currentTransform: "", nextTransform: "", nextShotTransform: "", nextEmotionTransform: "", currentOpacity: 1, nextOpacity: 0, isTransitioning: false };
@@ -2362,11 +2303,76 @@ function useShotsAroundFrame(
 
   const shotEnd = current.start + current.duration;
   const inWindow = !!(frame >= shotEnd - TRANSITION_FRAMES && frame < shotEnd && next);
+  {
+  const transitionFrame = inWindow ? frame - (shotEnd - TRANSITION_FRAMES) : 0;
+  const transitionProgress = inWindow
+    ? getLinearTransitionProgress({
+        frame: transitionFrame,
+        durationInFrames: TRANSITION_FRAMES,
+      })
+    : 0;
+  const isTransitioning = !!(inWindow && next);
+
+  // Keep the planning system intact, but drive visuals from timeline JSON.
+  void plan;
+  void emotions;
+
+  const presentation = resolveTransitionPresentation(current, next);
+  const currentPresentationStyle = isTransitioning
+    ? getPresentationStyle({
+        kind: presentation.kind,
+        direction: presentation.direction,
+        presentationDirection: "exiting",
+        presentationProgress: transitionProgress,
+      })
+    : {};
+  const nextPresentationStyle = isTransitioning
+    ? getPresentationStyle({
+        kind: presentation.kind,
+        direction: presentation.direction,
+        presentationDirection: "entering",
+        presentationProgress: transitionProgress,
+      })
+    : {};
+
+  const nextProgress = 0;
+  const {
+    shotTransform: nextShotTransform,
+    emotionTransform: nextEmotionTransform,
+  } = next
+    ? getShotTransform(next, nextProgress, cameraOverride, frame)
+    : { shotTransform: "", emotionTransform: "" };
+
+  return {
+    current,
+    next,
+    currentTransform:
+      typeof currentPresentationStyle.transform === "string"
+        ? currentPresentationStyle.transform
+        : "",
+    nextTransform:
+      typeof nextPresentationStyle.transform === "string"
+        ? nextPresentationStyle.transform
+        : "",
+    nextShotTransform,
+    nextEmotionTransform,
+    currentOpacity:
+      typeof currentPresentationStyle.opacity === "number"
+        ? currentPresentationStyle.opacity
+        : 1,
+    nextOpacity: !isTransitioning
+      ? 0
+      : typeof nextPresentationStyle.opacity === "number"
+        ? nextPresentationStyle.opacity
+        : 1,
+    isTransitioning,
+  };
+  }
   const t = inWindow ? (frame - (shotEnd - TRANSITION_FRAMES)) / TRANSITION_FRAMES : 0;
   const isTransitioning = !!(inWindow && t >= 0 && t <= 1);
 
   // ── v13: 从预建规划中查 TransitionDecision ───────────────────
-  const decision = plan.get(idx);
+  const decision = plan.get(resolvedIdx);
   const transitionType: TransitionType = decision?.type ?? "zoom";
 
   // ── v13: Shot 内部 micro-cut ────────────────────────────────
@@ -2399,17 +2405,20 @@ function useShotsAroundFrame(
   // ── v10.4: Direction-aware pan continuity ──────────────────
   // current exit direction
   let exitTranslate = 0;
-  if (current.camera === "pan-left") {
+  const currentCamera = current.camera ?? "static";
+  const nextCamera = next?.camera ?? "static";
+
+  if (currentCamera === "pan-left") {
     exitTranslate = -t * 120;
-  } else if (current.camera === "pan-right") {
+  } else if (currentCamera === "pan-right") {
     exitTranslate = t * 120;
   }
   // next enter direction（与 exit 相反，形成视觉连续）
   let enterTranslate = 0;
   if (next) {
-    if (next.camera === "pan-left") {
+    if (nextCamera === "pan-left") {
       enterTranslate = (1 - t) * 120;
-    } else if (next.camera === "pan-right") {
+    } else if (nextCamera === "pan-right") {
       enterTranslate = -(1 - t) * 120;
     }
   }
@@ -2496,6 +2505,15 @@ function getShotTransform(
   cameraOverride: string,
   frame: number
 ): { shotTransform: string; emotionTransform: string } {
+  void progress;
+  return getCameraShotTransform({
+    shot,
+    frame,
+    fps: 30,
+    width: 1080,
+    height: 1920,
+    cameraOverride,
+  });
   const { cropX = 0, cropY = 0, cropW = 1, cropH = 1, camera } = shot;
   const W = 1080, H = 1920;
 
@@ -2605,12 +2623,13 @@ export const VideoScene: React.FC<{ layout: VideoLayout }> = ({ layout }) => {
   // ========== 导演驱动的镜头系统 ==========
   // 由 useDirectorState 每帧从 evaluateDirector() 实时查询
   const directorState = useDirectorState(layout);
+  const totalDurationInFrames = getLayoutDurationInFrames(layout);
 
   // ── v13: 为每个 shot 计算代表情绪（用于 transition 规划）──
   // emotion 在 shot 中点采样，得到 per-shot 的情绪序列
   const { fps, durationInFrames } = useVideoConfig();
   const emotions = useMemo(() => {
-    if (!layout.shots || !layout.director) return [];
+    if (!layout.shots || !layout.director || layout.director.scenes.length === 0) return [];
     return layout.shots.map((shot) => {
       const midT = (shot.start + shot.duration / 2) / fps;
       const duration = durationInFrames / fps;
@@ -2711,7 +2730,8 @@ export const VideoScene: React.FC<{ layout: VideoLayout }> = ({ layout }) => {
         if (!current) return null;
 
         // 当前 shot
-        const progress = Math.min((frame - current.start) / current.duration, 1);
+        const safeDuration = Math.max(current.duration, 1);
+        const progress = Math.min(Math.max((frame - current.start) / safeDuration, 0), 1);
         const { shotTransform, emotionTransform } = getShotTransform(current, progress, cameraOverride, frame);
 
         return (
@@ -2729,18 +2749,14 @@ export const VideoScene: React.FC<{ layout: VideoLayout }> = ({ layout }) => {
                 opacity: currentOpacity,
               }}
             >
-              <Img
-                src={current.src}
-                style={{
-                  position: "absolute",
-                  top: 0,
-                  left: 0,
-                  width: "100%",
-                  height: "100%",
-                  objectFit: "cover",
-                  transform: `${shotTransform} ${emotionTransform} ${currentTransform}`.trim(),
-                  transformOrigin: "center center",
-                }}
+              <ShotDensityStack
+                shot={current}
+                frame={frame}
+                opacity={1}
+                width={width}
+                height={height}
+                zIndex={0}
+                transform={`${shotTransform} ${emotionTransform} ${currentTransform}`.trim()}
               />
             </div>
             {/* 下一 shot（入画：pan延续 + cross-zoom 缩小 + 淡入 + 完整camera pipeline） */}
@@ -2757,18 +2773,14 @@ export const VideoScene: React.FC<{ layout: VideoLayout }> = ({ layout }) => {
                   opacity: nextOpacity,
                 }}
               >
-                <Img
-                  src={next.src}
-                  style={{
-                    position: "absolute",
-                    top: 0,
-                    left: 0,
-                    width: "100%",
-                    height: "100%",
-                    objectFit: "cover",
-                    transform: `${nextShotTransform} ${nextEmotionTransform} ${nextTransform}`.trim(),
-                    transformOrigin: "center center",
-                  }}
+                <ShotDensityStack
+                  shot={next}
+                  frame={frame}
+                  opacity={1}
+                  width={width}
+                  height={height}
+                  zIndex={0}
+                  transform={`${nextShotTransform} ${nextEmotionTransform} ${nextTransform}`.trim()}
                 />
               </div>
             )}
@@ -2797,11 +2809,7 @@ export const VideoScene: React.FC<{ layout: VideoLayout }> = ({ layout }) => {
 
       {/* 进度条（特殊处理：动态宽度） */}
       {(() => {
-        const totalDuration = sortedElements.reduce(
-          (max, el) => Math.max(max, el.start + el.duration),
-          300
-        );
-        const progress = Math.min(frame / totalDuration, 1);
+        const progress = Math.min(frame / totalDurationInFrames, 1);
         const barW = width * progress;
         return (
           <>
