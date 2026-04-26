@@ -33,9 +33,9 @@
 效果展示
 ---
 
-![1e0ac44c-321f-4462-82b0-f1320e83bb90](README.assets/1e0ac44c-321f-4462-82b0-f1320e83bb90.png)
+![74cf8ac1feac77ab1c6e01e2d8ae0137](README.assets/74cf8ac1feac77ab1c6e01e2d8ae0137.png)
 
-![75ebe69d-0b83-44d6-89a1-d041e47f7b0c](README.assets/75ebe69d-0b83-44d6-89a1-d041e47f7b0c.png)
+![image-20260426213946364](README.assets/image-20260426213946364.png)
 
 ![image-20260426205644067](README.assets/image-20260426205644067.png)
 
