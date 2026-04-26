@@ -61,6 +61,5 @@ core/diagram_anagram_module.py
 
 # 测试截图输出
 *.jpg
-*.png
 !assets/thumbnails/*.jpg
 !assets/thumbnails/*.png
