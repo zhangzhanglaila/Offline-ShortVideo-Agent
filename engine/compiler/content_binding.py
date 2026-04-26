@@ -55,6 +55,10 @@ def compile_content_binding(ir: dict, seg: dict) -> ContentBinding:
     else:
         content_type = 'steady'
 
+    explicit_text = str(seg.get('text') or '').strip()
+    content_binding = seg.get('contentBinding', {}) if isinstance(seg.get('contentBinding'), dict) else {}
+    explicit_caption = str(content_binding.get('caption') or '').strip()
+
     # Caption
     caption_map = {
         'peak-chaos':      '⚠ OVERLOAD',
@@ -65,7 +69,7 @@ def compile_content_binding(ir: dict, seg: dict) -> ContentBinding:
         'still-frame':     job_id,
         'steady':          job_id,
     }
-    caption = caption_map.get(content_type, job_id)
+    caption = explicit_caption or explicit_text or caption_map.get(content_type, job_id)
 
     # Gen prompt
     gen_prompt_map = {

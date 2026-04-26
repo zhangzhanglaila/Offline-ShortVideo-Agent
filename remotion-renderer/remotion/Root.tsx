@@ -39,6 +39,7 @@ export const RemotionRoot: React.FC = () => {
 					durationInFrames: 300,
 					background: "#0A0E14",
 					elements: [],
+					audioTracks: [],
 					shots: [],
 				}}
 			/>

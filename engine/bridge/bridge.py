@@ -9,10 +9,14 @@ invariants so every frame has exactly one valid shot.
 from __future__ import annotations
 
 import json
+import shutil
+import uuid
+from pathlib import Path
 from typing import Any
 
 FPS = 30
 MIN_SHOT_FRAMES = 1
+DEFAULT_TTS_VOICE = "zh-CN-XiaoxiaoNeural"
 
 _MODE_CAMERA_MAP = {
     'chaos': 'shake',
@@ -104,6 +108,115 @@ _INTENT_CAMERA_MAP = {
 
 def _clamp_int(value: int, minimum: int, maximum: int) -> int:
     return max(minimum, min(maximum, value))
+
+
+def _segment_text(seg: dict[str, Any]) -> str:
+    content_binding = seg.get('contentBinding', {}) if isinstance(seg.get('contentBinding'), dict) else {}
+    return (
+        str(seg.get('text') or '').strip()
+        or str(content_binding.get('caption') or '').strip()
+        or str(seg.get('caption') or '').strip()
+        or str(seg.get('type') or 'segment').strip()
+    )
+
+
+def _project_root() -> Path:
+    return Path(__file__).resolve().parents[2]
+
+
+def _ensure_public_audio_copy(source_path: Path, file_name: str) -> str:
+    project_root = _project_root()
+    public_dir = project_root / "remotion-renderer" / "public" / "generated-audio"
+    build_public_dir = project_root / "remotion-renderer" / "build" / "public" / "generated-audio"
+    public_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source_path, public_dir / file_name)
+    if build_public_dir.parent.exists():
+        build_public_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source_path, build_public_dir / file_name)
+    return f"/generated-audio/{file_name}"
+
+
+def _estimate_text_duration_ms(text: str, fallback_ms: int = 1800) -> int:
+    clean = (text or "").strip()
+    if not clean:
+        return fallback_ms
+    chars_per_second = 4.2
+    return max(1000, int((len(clean) / chars_per_second) * 1000))
+
+
+def _build_audio_payload(
+    segments: list[dict[str, Any]],
+    voice: str = DEFAULT_TTS_VOICE,
+    rate: int = 0,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], int]:
+    try:
+        from core.tts_module import get_tts_module
+    except Exception:
+        return segments, [], 0
+
+    tts = get_tts_module(voice)
+    tts.voice = voice
+    tts.set_rate(rate)
+    backend = tts.get_backend_name() if hasattr(tts, "get_backend_name") else "none"
+
+    output_root = _project_root() / "output" / "generated-audio"
+    output_root.mkdir(parents=True, exist_ok=True)
+
+    prepared_segments: list[dict[str, Any]] = []
+    audio_tracks: list[dict[str, Any]] = []
+    cursor_ms = 0
+
+    for index, seg in enumerate(segments):
+        text = _segment_text(seg)
+        seg_copy = dict(seg)
+        seg_copy['text'] = text
+
+        duration_ms = _estimate_text_duration_ms(text)
+        audio_src = None
+
+        if text:
+            extension = ".mp3" if backend in {"edge", "gtts", "baidu", "xunfei"} else ".wav"
+            file_name = f"seg_{index:03d}_{uuid.uuid4().hex[:8]}{extension}"
+            source_path = output_root / file_name
+            try:
+                if tts.generate_audio(text, str(source_path)) and source_path.exists():
+                    measured = int(round(tts.get_audio_duration(str(source_path)) * 1000))
+                    duration_ms = max(1000, measured)
+                    audio_src = _ensure_public_audio_copy(source_path, file_name)
+            except Exception:
+                audio_src = None
+
+        seg_copy['_audio_duration_ms'] = duration_ms
+        if audio_src:
+            seg_copy['audioSrc'] = audio_src
+        prepared_segments.append(seg_copy)
+
+        if audio_src:
+            audio_tracks.append({
+                'id': f'audio_{index}',
+                'src': audio_src,
+                'start': round(cursor_ms / 1000 * FPS),
+                'duration': round(duration_ms / 1000 * FPS),
+                'text': text,
+            })
+
+        cursor_ms += duration_ms
+
+    total_ms = cursor_ms
+    if total_ms <= 0:
+        return prepared_segments, audio_tracks, 0
+
+    normalized_segments: list[dict[str, Any]] = []
+    cursor_ms = 0
+    for seg in prepared_segments:
+        duration_ms = int(seg.get('_audio_duration_ms', _estimate_text_duration_ms(seg.get('text', ''))))
+        seg_copy = dict(seg)
+        seg_copy['start'] = round(cursor_ms / total_ms, 6)
+        cursor_ms += duration_ms
+        seg_copy['end'] = round(cursor_ms / total_ms, 6)
+        normalized_segments.append(seg_copy)
+
+    return normalized_segments, audio_tracks, total_ms
 
 
 def _derive_visual_semantics(
@@ -460,6 +573,7 @@ def segment_to_shot(seg: dict[str, Any], idx: int, total_frames: int) -> tuple[d
     scene = seg.get('scene', 'normal')
     zoom = seg.get('camZoom', 1.0)
     semantics = _derive_visual_semantics(seg, mode, scene)
+    text = _segment_text(seg)
     camera = seg.get('camera') or _INTENT_CAMERA_MAP.get(
         semantics.get('intent', 'steady'),
         _MODE_CAMERA_MAP.get(mode, 'static'),
@@ -509,7 +623,9 @@ def segment_to_shot(seg: dict[str, Any], idx: int, total_frames: int) -> tuple[d
         'intent': semantics['intent'],
         'emotion': semantics['emotion'],
         'semantics': semantics,
-        'caption': seg.get('contentBinding', {}).get('caption', seg.get('type', 'segment')),
+        'caption': text,
+        'text': text,
+        'audioSrc': seg.get('audioSrc'),
         'genPrompt': seg.get('contentBinding', {}).get('genPrompt', ''),
         'renderIR': seg.get('renderIR', {}),
         'sceneTransition': seg.get('sceneTransition'),
@@ -558,7 +674,7 @@ def segment_to_element(seg: dict[str, Any], idx: int, total_frames: int) -> dict
 
     cb = seg.get('contentBinding', {})
     style = cb.get('style', {})
-    caption = cb.get('caption', seg.get('type', 'segment'))
+    caption = _segment_text(seg)
 
     return {
         'id': f'cap_{idx}',
@@ -586,7 +702,20 @@ def build_video_layout(
     total_ms: int = 12000,
     width: int = 1080,
     height: int = 1920,
+    enable_audio: bool = False,
+    voice: str = DEFAULT_TTS_VOICE,
+    rate: int = 0,
 ) -> dict[str, Any]:
+    audio_tracks: list[dict[str, Any]] = []
+    if enable_audio and segments:
+        segments, audio_tracks, audio_total_ms = _build_audio_payload(
+            segments,
+            voice=voice,
+            rate=rate,
+        )
+        if audio_total_ms > 0:
+            total_ms = audio_total_ms
+
     total_frames = max(1, int(total_ms / 1000 * FPS))
 
     if not segments:
@@ -598,6 +727,7 @@ def build_video_layout(
             'background': '#0a0a0f',
             'elements': [],
             'shots': [],
+            'audioTracks': [],
         }
 
     entries: list[dict[str, Any]] = []
@@ -661,12 +791,13 @@ def build_video_layout(
         'background': '#0a0a0f',
         'elements': elements,
         'shots': shots,
+        'audioTracks': audio_tracks,
         'director': {
             'arc': 'viral',
             'scenes': scenes,
             'emotionalCurve': emotional_curve or [0.5],
             'pacingCurve': pacing_curve or [0.45],
-            'ttsVoice': 'neutral',
+            'ttsVoice': voice if enable_audio else 'neutral',
             'ttsSpeed': 1.0,
             'emphasisPoints': [],
             'cameraStrategy': camera_strategy_map.get(dominant_cam, 'static'),
@@ -682,6 +813,24 @@ def build_director_timeline(trace: dict[str, Any], total_ms: int = 12000) -> dic
 
     segments = build_director(trace)
     return build_video_layout(segments, total_ms)
+
+
+def build_spoken_video_layout(
+    question: str,
+    total_ms: int = 12000,
+    voice: str = DEFAULT_TTS_VOICE,
+    rate: int = 0,
+) -> dict[str, Any]:
+    from engine.render import generate_spoken_semantic_segments
+
+    segments = generate_spoken_semantic_segments(question, video_duration=max(8, round(total_ms / 1000)))
+    return build_video_layout(
+        segments,
+        total_ms=total_ms,
+        enable_audio=True,
+        voice=voice,
+        rate=rate,
+    )
 
 
 def build_director_json(trace: dict[str, Any], total_ms: int = 12000) -> str:

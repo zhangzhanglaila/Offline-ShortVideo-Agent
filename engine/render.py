@@ -309,6 +309,112 @@ def generate_semantic_segments(text: str) -> list[dict]:
     return semantic_segments
 
 
+def _split_spoken_lines(text: str) -> list[str]:
+    lines = [
+        chunk.strip()
+        for chunk in re.split(r'[。！？!?;\n]+', text)
+        if chunk and chunk.strip()
+    ]
+    return lines
+
+
+def _is_bad_script_line(text: str) -> bool:
+    lowered = (text or "").lower()
+    return (
+        not lowered
+        or "{'error'" in lowered
+        or '"error"' in lowered
+        or "ollama连接失败" in lowered
+        or "云端api调用失败" in lowered
+        or "httpsconnectionpool" in lowered
+        or "max retries exceeded" in lowered
+        or "'script':" in lowered
+        or '"script":' in lowered
+        or lowered.startswith("'))")
+    )
+
+
+def generate_spoken_semantic_segments(
+    question: str,
+    platform: str = "抖音",
+    video_duration: int = 12,
+    style: str = "专业",
+) -> list[dict]:
+    """
+    User question -> LLM script -> spoken semantic segments.
+    Falls back to rule-based semantic splitting when LLM is unavailable.
+    """
+    question = (question or "").strip()
+    if not question:
+        return []
+
+    lines: list[str] = []
+    try:
+        from core.script_module import ScriptModule
+
+        script_module = ScriptModule()
+        topic = {
+            "title": question,
+            "hook": question,
+            "category": "知识科普",
+            "tags": ["AI", "Agent", "解释"],
+        }
+        script_result = script_module.generate_script(
+            topic,
+            platform=platform,
+            video_duration=video_duration,
+            style=style,
+        )
+
+        hook = (script_result.get("hook") or "").strip()
+        body = (script_result.get("body") or "").strip()
+        cta = (script_result.get("cta") or "").strip()
+        if hook:
+            lines.append(hook)
+        lines.extend(_split_spoken_lines(body))
+        if cta:
+            lines.append(cta)
+    except Exception:
+        lines = []
+
+    if not lines:
+        lines = _split_spoken_lines(question)
+
+    lines = [line for line in lines if not _is_bad_script_line(line)]
+    if not lines:
+        lines = [question]
+
+    semantic_seed = "。".join(lines)
+    semantic_segments = generate_semantic_segments(semantic_seed)
+    if not semantic_segments:
+        semantic_segments = [{"text": line, "intent": "steady", "emotion": "neutral", "rhythm": "flow", "focus": "subject", "duration": 2.0} for line in lines]
+
+    result: list[dict] = []
+    total = max(len(lines), 1)
+    for index, line in enumerate(lines):
+        semantic = semantic_segments[min(index, len(semantic_segments) - 1)]
+        start = index / total
+        end = (index + 1) / total
+        result.append({
+            "text": line,
+            "intent": semantic.get("intent", "steady"),
+            "emotion": semantic.get("emotion", "neutral"),
+            "rhythm": semantic.get("rhythm", "flow"),
+            "focus": semantic.get("focus", "subject"),
+            "motionProfile": semantic.get("motionProfile", "glide"),
+            "energy": semantic.get("energy", 0.5),
+            "start": round(start, 4),
+            "end": round(end, 4),
+            "type": "NARRATION",
+            "contentBinding": {
+                "caption": line,
+                "genPrompt": question,
+            },
+        })
+
+    return result
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Layer 3 — Change Arbiter
 # ─────────────────────────────────────────────────────────────────────────────

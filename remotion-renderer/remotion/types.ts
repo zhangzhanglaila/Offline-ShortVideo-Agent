@@ -250,6 +250,14 @@ export interface ShotInteraction {
   distance?: number;
 }
 
+export interface AudioTrack {
+  id: string;
+  src: string;
+  start: number;
+  duration: number;
+  text?: string;
+}
+
 export interface Shot {
   /** 镜头在视频中的起始帧 */
   start: number;
@@ -281,6 +289,7 @@ export interface VideoLayout {
   durationInFrames?: number;
   background?: string;  // 背景色或渐变
   elements: VideoElement[];
+  audioTracks?: AudioTrack[];
   /** 导演意图（指导渲染层的动态状态） */
   director?: DirectorIntent;
   /** word-level 字幕（由 agentOrchestrator 注入，用于逐词高亮渲染） */

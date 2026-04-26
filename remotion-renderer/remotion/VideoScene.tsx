@@ -27,7 +27,7 @@
  *   v16: full-sequence scoring + Monte Carlo rollout ≈ Deterministic MCTS
  */
 import React, { useMemo } from "react";
-import { AbsoluteFill, useCurrentFrame, useVideoConfig, interpolate, Easing, Img, spring } from "remotion";
+import { AbsoluteFill, Audio, Sequence, useCurrentFrame, useVideoConfig, interpolate, Easing, Img, spring } from "remotion";
 import { FONT_FAMILY } from "./constants";
 import type { VideoLayout, VideoElement, TextElement, ImageElement, StickerElement, BackgroundElement, ShapeElement, Shot } from "./types";
 import { getCameraShotTransform } from "./cameraExpression";
@@ -2713,6 +2713,11 @@ export const VideoScene: React.FC<{ layout: VideoLayout }> = ({ layout }) => {
       }}
     >
       {/* 情绪色调覆盖层（intense=红晕，calm=蓝调） */}
+      {(layout.audioTracks ?? []).map((track) => (
+        <Sequence key={track.id} from={track.start} durationInFrames={track.duration}>
+          <Audio src={track.src} />
+        </Sequence>
+      ))}
       <div
         style={{
           position: "absolute",
