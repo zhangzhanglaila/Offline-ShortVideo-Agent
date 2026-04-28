@@ -35,6 +35,7 @@ import { evaluateDirector, type DirectorState } from "./directorEval";
 import { getLayoutDurationInFrames } from "./layoutUtils";
 import { getLayerAnimationStyle } from "./layerAnimation";
 import { buildFeatureVector, w0, b0, w1, b1, w2, b2, norm_X_mean, norm_X_std, norm_y_mean, norm_y_std } from "./rewardModel";
+import { GraphScene } from "./GraphScene";
 import { ShotDensityStack } from "./shotDensity";
 import {
   getLinearTransitionProgress,
@@ -2042,6 +2043,14 @@ const TextLayer: React.FC<{ element: TextElement; frame: number }> = ({ element,
   const { fps } = useVideoConfig();
   if (!isVisible) return null;
   const t = frame / fps;
+  const textAlign = (element.textAlign as "center" | "left" | "right") ?? "center";
+  const horizontalTransform =
+    textAlign === "center"
+      ? "translateX(-50%)"
+      : textAlign === "right"
+        ? "translateX(-100%)"
+        : "";
+  const combinedTransform = [horizontalTransform, transform].filter(Boolean).join(" ").trim();
 
   // ── 逐词高亮渲染 ─────────────────────────────────────────
   // 只在 wordCues 存在时才启用词级渲染
@@ -2062,14 +2071,17 @@ const TextLayer: React.FC<{ element: TextElement; frame: number }> = ({ element,
             fontSize: element.fontSize,
             fontWeight: element.fontWeight ?? 600,
             color: element.color,
-            textAlign: (element.textAlign as "center") ?? "center",
+            textAlign,
             lineHeight: element.lineHeight ?? 1.3,
             maxWidth: element.maxWidth,
+            width: element.maxWidth,
             opacity,
-            transform,
+            transform: combinedTransform,
             filter,
             textShadow: `0 2px 12px rgba(0,0,0,0.8)`,
             zIndex: element.zIndex,
+            whiteSpace: "normal",
+            wordBreak: "break-word",
           }}
         >
           {/* 整句渲染，当前词高亮 */}
@@ -2090,14 +2102,17 @@ const TextLayer: React.FC<{ element: TextElement; frame: number }> = ({ element,
         fontSize: element.fontSize,
         fontWeight: element.fontWeight ?? 600,
         color: element.color,
-        textAlign: (element.textAlign as "center") ?? "center",
+        textAlign,
         lineHeight: element.lineHeight ?? 1.3,
         maxWidth: element.maxWidth,
+        width: element.maxWidth,
         opacity,
-        transform,
+        transform: combinedTransform,
         filter,
         textShadow: `0 2px 12px rgba(0,0,0,0.8)`,
         zIndex: element.zIndex,
+        whiteSpace: "normal",
+        wordBreak: "break-word",
       }}
     >
       {element.text}
@@ -2729,6 +2744,9 @@ export const VideoScene: React.FC<{ layout: VideoLayout }> = ({ layout }) => {
       />
       {/* v10.3: Shot 渲染层（镜头系统 + 切换连续性） */}
       {/* 渲染在 elements 下方（zIndex=-1），当前+下一 shot 同时渲染，transition 区间渐变 */}
+      {layout.scene_type === "graph" && layout.graph ? (
+        <GraphScene graph={layout.graph} width={width} height={height} />
+      ) : null}
       {(() => {
         const { current, next, currentTransform, nextTransform, nextShotTransform, nextEmotionTransform, currentOpacity, nextOpacity, isTransitioning } =
           useShotsAroundFrame(layout.shots, cameraOverride, transitionPlan, emotions);

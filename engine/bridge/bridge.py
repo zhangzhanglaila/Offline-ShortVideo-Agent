@@ -9,6 +9,7 @@ invariants so every frame has exactly one valid shot.
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import uuid
 from pathlib import Path
@@ -17,6 +18,27 @@ from typing import Any
 FPS = 30
 MIN_SHOT_FRAMES = 1
 DEFAULT_TTS_VOICE = "zh-CN-XiaoxiaoNeural"
+VISUAL_STOPWORDS = {
+    "是什么", "什么是", "为什么", "怎么实现", "底层", "原理", "我们", "你", "我",
+    "的", "了", "是", "在", "中", "和", "以及", "一个", "一种", "这个", "那个",
+}
+VISUAL_QUERY_MAP = {
+    "redis": "redis database",
+    "redis底层": "redis database architecture",
+    "原理": "architecture",
+    "底层": "system architecture",
+    "数据库": "database server",
+    "内存": "memory computing",
+    "缓存": "cache server",
+    "数据结构": "data structure",
+    "跳表": "skip list",
+    "哈希表": "hash table",
+    "键值": "key value database",
+    "网络": "network server",
+}
+BAD_VISUAL_TERMS = {
+    "nature", "landscape", "mountain", "sunset", "beach", "forest", "river", "travel",
+}
 
 _MODE_CAMERA_MAP = {
     'chaos': 'shake',
@@ -120,20 +142,118 @@ def _segment_text(seg: dict[str, Any]) -> str:
     )
 
 
+def _extract_visual_keywords(text: str) -> list[str]:
+    compact = re.sub(r"[，。！？、,.!?\s]+", " ", text or "").strip()
+    tokens = [token.strip() for token in compact.split(" ") if token.strip()]
+    keywords: list[str] = []
+    for token in tokens:
+        if token in VISUAL_STOPWORDS:
+            continue
+        if len(token) >= 2:
+            keywords.append(token)
+    if not keywords:
+        return ["technology"]
+    unique: list[str] = []
+    seen: set[str] = set()
+    for keyword in keywords:
+        if keyword not in seen:
+            unique.append(keyword)
+            seen.add(keyword)
+    return unique[:4]
+
+
+def _normalize_visual_query(keywords: list[str], topic: str = "") -> str:
+    results: list[str] = []
+    lowered_topic = (topic or "").lower()
+    if "redis" in lowered_topic:
+        results.append("redis database architecture")
+    for keyword in keywords:
+        lowered = keyword.lower()
+        if lowered == "redis":
+            results.append("redis database")
+        else:
+            results.append(VISUAL_QUERY_MAP.get(keyword, keyword))
+    query = " ".join(results).strip()
+    return query or "technology interface"
+
+
+def _is_bad_visual_meta(meta_text: str) -> bool:
+    lowered = (meta_text or "").lower()
+    return any(term in lowered for term in BAD_VISUAL_TERMS)
+
+
 def _project_root() -> Path:
+    cwd = Path.cwd()
+    if (cwd / "remotion-renderer").exists() and (cwd / "engine").exists():
+        return cwd
     return Path(__file__).resolve().parents[2]
 
 
 def _ensure_public_audio_copy(source_path: Path, file_name: str) -> str:
     project_root = _project_root()
     public_dir = project_root / "remotion-renderer" / "public" / "generated-audio"
-    build_public_dir = project_root / "remotion-renderer" / "build" / "public" / "generated-audio"
+    build_dir = project_root / "remotion-renderer" / "build" / "generated-audio"
     public_dir.mkdir(parents=True, exist_ok=True)
     shutil.copy2(source_path, public_dir / file_name)
-    if build_public_dir.parent.exists():
-        build_public_dir.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(source_path, build_public_dir / file_name)
+    if build_dir.parent.exists():
+        build_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source_path, build_dir / file_name)
     return f"/generated-audio/{file_name}"
+
+
+def _ensure_public_image_copy(source_path: Path, file_name: str) -> str:
+    project_root = _project_root()
+    public_dir = project_root / "remotion-renderer" / "public" / "generated-images"
+    build_dir = project_root / "remotion-renderer" / "build" / "generated-images"
+    public_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source_path, public_dir / file_name)
+    if build_dir.parent.exists():
+        build_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source_path, build_dir / file_name)
+    return f"/generated-images/{file_name}"
+
+
+def _resolve_semantic_image(seg: dict[str, Any], idx: int, fallback: str) -> str:
+    text = _segment_text(seg)
+    topic = str(seg.get("topic") or seg.get("contentBinding", {}).get("genPrompt") or text)
+    keywords = _extract_visual_keywords(f"{topic} {text}")
+    query = _normalize_visual_query(keywords, topic=topic)
+    seg["visualQuery"] = query
+    try:
+        from core.image_fetch_module import get_image_fetch_module
+
+        image_module = get_image_fetch_module()
+        candidates: list[dict[str, Any]] = []
+        if image_module.PEXELS_API_KEY:
+            candidates.extend(image_module.fetch_from_pexels(query, per_page=6))
+        if len(candidates) < 3 and image_module.UNSPLASH_ACCESS_KEY:
+            candidates.extend(image_module.fetch_from_unsplash(query, per_page=4))
+
+        filtered = []
+        for item in candidates:
+            meta = " ".join(
+                str(item.get(key, ""))
+                for key in ("alt", "photographer", "avg_color", "description")
+            )
+            if not _is_bad_visual_meta(meta):
+                filtered.append(item)
+
+        picked = filtered[0] if filtered else (candidates[0] if candidates else None)
+        if picked:
+            raw_url = (
+                (picked.get("src", {}) or {}).get("large2x")
+                or (picked.get("src", {}) or {}).get("large")
+                or (picked.get("urls", {}) or {}).get("regular")
+                or picked.get("url")
+            )
+            if raw_url:
+                downloaded = image_module.download_image(raw_url, filename=f"semantic_{idx:03d}_{uuid.uuid4().hex[:8]}.jpg")
+                if downloaded:
+                    return _ensure_public_image_copy(Path(downloaded), Path(downloaded).name)
+    except Exception:
+        pass
+
+    return fallback
 
 
 def _estimate_text_duration_ms(text: str, fallback_ms: int = 1800) -> int:
@@ -588,7 +708,8 @@ def segment_to_shot(seg: dict[str, Any], idx: int, total_frames: int) -> tuple[d
 
     job_idx = seg.get('jobIndex', 0) if isinstance(seg.get('jobIndex'), int) else idx
     picsum_seed = 100 + (job_idx % 50)
-    image_src = f"https://picsum.photos/seed/{picsum_seed}/1080"
+    fallback_src = f"https://picsum.photos/seed/{picsum_seed}/1080"
+    image_src = _resolve_semantic_image(seg, idx, fallback_src)
 
     crop_w = 0.6 + (1.0 - min(zoom, 2.0) / 2.0) * 0.4
     crop_h = 0.6 + (1.0 - min(zoom, 2.0) / 2.0) * 0.4
@@ -626,6 +747,7 @@ def segment_to_shot(seg: dict[str, Any], idx: int, total_frames: int) -> tuple[d
         'caption': text,
         'text': text,
         'audioSrc': seg.get('audioSrc'),
+        'visualQuery': seg.get('visualQuery'),
         'genPrompt': seg.get('contentBinding', {}).get('genPrompt', ''),
         'renderIR': seg.get('renderIR', {}),
         'sceneTransition': seg.get('sceneTransition'),
@@ -681,11 +803,13 @@ def segment_to_element(seg: dict[str, Any], idx: int, total_frames: int) -> dict
         'type': 'text',
         'text': caption,
         'x': 540,
-        'y': 1600,
-        'fontSize': 42,
+        'y': 1460,
+        'fontSize': 40,
         'color': style.get('text', '#c8dcff'),
         'fontWeight': 600,
         'textAlign': 'center',
+        'lineHeight': 1.35,
+        'maxWidth': 860,
         'start': start_f,
         'duration': duration_f,
         'zIndex': 10,

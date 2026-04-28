@@ -5,8 +5,12 @@ import {renderMedia, selectComposition} from "@remotion/renderer";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, "..");
-const layoutPath = path.join(rootDir, "output", "agent_what_is_layout.json");
-const outputPath = path.join(rootDir, "output", "agent_what_is_semantic.mp4");
+const layoutPath = process.argv[2]
+	? path.resolve(process.argv[2])
+	: path.join(rootDir, "output", "agent_what_is_layout.json");
+const outputPath = process.argv[3]
+	? path.resolve(process.argv[3])
+	: path.join(rootDir, "output", "agent_what_is_semantic.mp4");
 const serveUrl = path.join(__dirname, "build");
 
 const layout = JSON.parse(fs.readFileSync(layoutPath, "utf8"));

@@ -258,6 +258,59 @@ export interface AudioTrack {
   text?: string;
 }
 
+export interface GraphNode {
+  id: string;
+  label: string;
+  role?: string;
+  group?: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  color?: string;
+  fill?: string;
+}
+
+export interface GraphEdge {
+  id: string;
+  from: string;
+  to: string;
+  label?: string;
+  kind?: string;
+  color?: string;
+  points?: [number, number, number, number];
+}
+
+export interface GraphStep {
+  id: string;
+  caption?: string;
+  nodeIds: string[];
+  edgeIds: string[];
+  start: number;
+  duration: number;
+}
+
+export interface GraphTimelineEvent {
+  id: string;
+  time?: number;
+  action: "highlight_node" | "highlight_edge" | "highlight_path" | "pulse";
+  text?: string;
+  nodeIds: string[];
+  edgeIds: string[];
+  start: number;
+  duration: number;
+}
+
+export interface GraphSceneData {
+  scene_type: "graph";
+  title: string;
+  summary?: string;
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  steps: GraphStep[];
+  timeline?: GraphTimelineEvent[];
+}
+
 export interface Shot {
   /** 镜头在视频中的起始帧 */
   start: number;
@@ -288,6 +341,10 @@ export interface VideoLayout {
   fps: number;
   durationInFrames?: number;
   background?: string;  // 背景色或渐变
+  scene_type?: "graph";
+  graph?: GraphSceneData;
+  nodes?: GraphNode[];
+  edges?: GraphEdge[];
   elements: VideoElement[];
   audioTracks?: AudioTrack[];
   /** 导演意图（指导渲染层的动态状态） */

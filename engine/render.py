@@ -334,6 +334,69 @@ def _is_bad_script_line(text: str) -> bool:
     )
 
 
+def _is_explainer_question_v2(question: str) -> bool:
+    lowered = (question or "").lower()
+    return (
+        "redis" in lowered
+        or any(token in question for token in ["是什么", "什么是", "原理", "底层", "为什么", "怎么实现"])
+    )
+
+
+def _build_explainer_lines_v2(question: str) -> list[str]:
+    subject = re.sub(r"(是什么|什么是|底层原理|原理|为什么|怎么实现|\?|？)", "", question).strip() or question.strip()
+    if "redis" in question.lower():
+        return [
+            "Redis本质上是一个把数据放在内存里的高性能键值数据库。",
+            "它之所以快，核心在于内存访问、事件驱动，以及尽量减少不必要的拷贝和阻塞。",
+            "不同的数据类型，底层会组合使用哈希表、压缩结构、跳表和双端链表来存储。",
+            "所以理解Redis底层原理，重点不是背命令，而是看它怎样组织数据和处理读写。",
+        ]
+
+    return [
+        f"{subject}这类问题，本质上是在回答它到底是什么，以及为什么会这样工作。",
+        f"如果往底层拆，通常要先看{subject}的数据结构，再看它的执行流程和资源模型。",
+        f"真正理解{subject}，不是只记结论，而是知道它为什么这样设计。",
+    ]
+
+
+def _looks_like_marketing_line(text: str) -> bool:
+    lowered = (text or "").lower()
+    marketing_markers = [
+        "学会这个",
+        "你也可以做到",
+        "点赞",
+        "点个赞",
+        "还不会",
+        "必须知道",
+        "别再",
+        "看完你就懂",
+        "赶紧收藏",
+        "关注我",
+    ]
+    return any(marker in lowered for marker in marketing_markers)
+
+
+def _is_explainer_question(question: str) -> bool:
+    return any(token in question for token in ["是什么", "什么是", "原理", "底层", "为什么", "怎么实现"])
+
+
+def _build_explainer_lines(question: str) -> list[str]:
+    subject = re.sub(r"(是什么|什么是|底层原理|原理|为什么|怎么实现|\?|？)", "", question).strip() or question.strip()
+    if "redis" in question.lower():
+        return [
+            "Redis本质上是一个把数据放在内存里的高性能键值数据库。",
+            "它之所以快，核心是内存访问、事件驱动和尽量减少不必要的拷贝。",
+            "不同的数据类型，在底层会组合使用哈希表、压缩结构和跳表来存储。",
+            "所以理解Redis底层原理，重点不是背命令，而是看它怎样组织数据和处理读写。",
+        ]
+
+    return [
+        f"{subject}本质上是在回答，它到底是什么，以及为什么会这样工作。",
+        f"如果往底层拆，通常要先看{subject}的数据结构，再看它的执行流程。",
+        f"真正理解{subject}，不是只记结论，而是知道它为什么这样设计。",
+    ]
+
+
 def generate_spoken_semantic_segments(
     question: str,
     platform: str = "抖音",
@@ -381,6 +444,11 @@ def generate_spoken_semantic_segments(
         lines = _split_spoken_lines(question)
 
     lines = [line for line in lines if not _is_bad_script_line(line)]
+    if _is_explainer_question_v2(question) and (
+        not lines or any(_looks_like_marketing_line(line) for line in lines)
+    ):
+        lines = _build_explainer_lines_v2(question)
+
     if not lines:
         lines = [question]
 
