@@ -250,7 +250,9 @@
       "Bash(sed -n '680,692p' D:/Offline-ShortVideo-Agent/core/animation_module.py)",
       "Bash(sed -n '470,476p' D:/Offline-ShortVideo-Agent/core/animation_module.py)",
       "Bash(PYTHONPATH=D:/Offline-ShortVideo-Agent python engine/bridge/graph_pipeline.py \"人工智能如何工作\" --render --duration-ms 8000)",
-      "Bash(PYTHONPATH=D:/Offline-ShortVideo-Agent python engine/bridge/graph_pipeline.py \"Redis缓存原理\" --render --duration-ms 8000)"
+      "Bash(PYTHONPATH=D:/Offline-ShortVideo-Agent python engine/bridge/graph_pipeline.py \"Redis缓存原理\" --render --duration-ms 8000)",
+      "Bash(PYTHONPATH=D:/Offline-ShortVideo-Agent python engine/bridge/graph_pipeline.py \"Redis缓存原理\" --render --duration-ms 10000 --no-enable-audio)",
+      "Bash(PYTHONPATH=D:/Offline-ShortVideo-Agent python engine/bridge/graph_pipeline.py \"Redis缓存原理\" --render --duration-ms 10000 --enable-audio)"
     ]
   }
 }

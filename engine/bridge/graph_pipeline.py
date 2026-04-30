@@ -694,34 +694,50 @@ def build_graph_video_layout(
         animation_plan["steps"] = scaled_steps
     graph["animation_plan"] = animation_plan
 
-    elements = [
-        {
-            "id": f"graph_caption_{index}",
-            "type": "text",
-            "text": step.get("text") or step.get("caption") or graph.get("summary") or graph.get("title"),
-            "x": 540,
-            "y": 1450,
-            "fontSize": 38,
-            "color": "#dbeafe",
-            "fontWeight": 650,
-            "textAlign": "center",
-            "lineHeight": 1.35,
-            "maxWidth": 860,
-            "start": step["start"],
-            "duration": step["duration"],
-            "zIndex": 20,
-            "animation": {"enter": "blur-in", "exit": "fade", "duration": 12},
-        }
-        for index, step in enumerate(steps)
-    ]
+    # === VIRAL DIRECTOR PLAN (硬覆盖，验证视觉表现) ===
+    _nids = [n["id"] for n in graph["nodes"]]
+    _eids = [e["id"] for e in graph["edges"]]
+    _core = _nids[1] if len(_nids) > 1 else _nids[0]
+    graph["animation_plan"] = {
+        "version": 1,
+        "steps": [
+            {"id": "intro_boom",    "action": "reveal",     "start": 0,   "duration": 25,  "nodeIds": [_core],   "edgeIds": [],     "intensity": 1.2},
+            {"id": "others_fade",   "action": "reveal",     "start": 20,  "duration": 40,  "nodeIds": _nids,     "edgeIds": [],     "intensity": 0.6},
+            {"id": "flow_in",       "action": "flow",       "start": 60,  "duration": 80,  "nodeIds": _nids,     "edgeIds": _eids,  "intensity": 1.0},
+            {"id": "redis_pulse",   "action": "pulse",      "start": 100, "duration": 120, "nodeIds": [_core],   "edgeIds": [],     "intensity": 1.3},
+            {"id": "camera_focus",  "action": "camera_pan", "start": 140, "duration": 80,  "nodeIds": [],        "edgeIds": [],     "intensity": 1.0, "cameraFrom": _nids[0], "cameraTo": _core},
+            {"id": "final_glow",    "action": "highlight",  "start": 220, "duration": total_frames - 220, "nodeIds": _nids, "edgeIds": _eids, "intensity": 0.9},
+        ]
+    }
+    # === END VIRAL PLAN ===
 
-    # Add text overlay elements from animation_plan steps
-    for step in animation_plan.get("steps", []):
-        if step.get("text"):
+    # Subtitles: prefer audio-track-synced captions so text matches voiceover
+    elements: list[dict[str, Any]] = []
+    if audio_tracks:
+        for track in audio_tracks:
             elements.append({
-                "id": f"anim_caption_{step['id']}",
+                "id": f"subtitle_{track['id']}",
                 "type": "text",
-                "text": step["text"],
+                "text": track["text"],
+                "x": 540,
+                "y": 1450,
+                "fontSize": 38,
+                "color": "#f8fbff",
+                "fontWeight": 680,
+                "textAlign": "center",
+                "lineHeight": 1.35,
+                "maxWidth": 860,
+                "start": track["start"],
+                "duration": track["duration"],
+                "zIndex": 20,
+                "animation": {"enter": "blur-in", "exit": "fade", "duration": 8},
+            })
+    else:
+        for index, step in enumerate(steps):
+            elements.append({
+                "id": f"graph_caption_{index}",
+                "type": "text",
+                "text": step.get("text") or step.get("caption") or graph.get("summary") or graph.get("title"),
                 "x": 540,
                 "y": 1450,
                 "fontSize": 38,
@@ -735,6 +751,28 @@ def build_graph_video_layout(
                 "zIndex": 20,
                 "animation": {"enter": "blur-in", "exit": "fade", "duration": 12},
             })
+
+    # Add text overlay elements from animation_plan steps (only when no audio subtitles)
+    if not audio_tracks:
+        for step in graph["animation_plan"].get("steps", []):
+            if step.get("text"):
+                elements.append({
+                    "id": f"anim_caption_{step['id']}",
+                    "type": "text",
+                    "text": step["text"],
+                    "x": 540,
+                    "y": 1450,
+                    "fontSize": 38,
+                    "color": "#dbeafe",
+                    "fontWeight": 650,
+                    "textAlign": "center",
+                    "lineHeight": 1.35,
+                    "maxWidth": 860,
+                    "start": step["start"],
+                    "duration": step["duration"],
+                    "zIndex": 20,
+                    "animation": {"enter": "blur-in", "exit": "fade", "duration": 12},
+                })
 
     return {
         "width": width,
