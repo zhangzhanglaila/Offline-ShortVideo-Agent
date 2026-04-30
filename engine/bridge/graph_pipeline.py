@@ -11,12 +11,16 @@ import argparse
 import json
 import math
 import re
+import shutil
 import subprocess
+import uuid
+from pathlib import Path
 from typing import Any
 
 FPS = 30
 DEFAULT_WIDTH = 1080
 DEFAULT_HEIGHT = 1920
+DEFAULT_TTS_VOICE = "zh-CN-XiaoxiaoNeural"
 
 
 def _extract_json_object(text: str) -> dict[str, Any] | None:
@@ -378,11 +382,138 @@ def apply_graph_layout(
     }
 
 
+def _project_root() -> Path:
+    cwd = Path.cwd()
+    if (cwd / "remotion-renderer").exists() and (cwd / "engine").exists():
+        return cwd
+    return Path(__file__).resolve().parents[2]
+
+
+def _ensure_public_audio_copy(source_path: Path, file_name: str) -> str:
+    project_root = _project_root()
+    public_dir = project_root / "remotion-renderer" / "public" / "generated-audio"
+    build_dir = project_root / "remotion-renderer" / "build" / "generated-audio"
+    public_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source_path, public_dir / file_name)
+    if build_dir.parent.exists():
+        build_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source_path, build_dir / file_name)
+    return f"/generated-audio/{file_name}"
+
+
+def _generate_explainer_script(topic: str, num_sentences: int = 5) -> list[str]:
+    """LLM generates natural explainer narration (separate from visual captions)."""
+    subject = _topic_subject(topic)
+    prompt = f"""用讲解视频风格解释以下内容，要求口语化自然，像一个人在讲解。
+
+{topic}
+
+要求：
+1. 每句 10-20 字
+2. 逻辑清晰：先讲是什么 → 再讲为什么重要 → 最后讲怎么工作
+3. 一共 {num_sentences} 句
+4. 中文，不用序号或标记
+5. 不要讲"今天我们来"这类开场
+
+只输出纯文本，每行一句。""".strip()
+
+    try:
+        from agent.llm.ollama_client import get_llm_client
+
+        client = get_llm_client()
+        response = client.chat(
+            [{"role": "user", "content": prompt}],
+            temperature=0.4,
+            timeout=60,
+            max_tokens=300,
+        )
+        lines = [
+            line.strip()
+            for line in (response or "").strip().split("\n")
+            if line.strip()
+        ]
+        if lines:
+            return lines[:num_sentences]
+    except Exception:
+        pass
+
+    # Fallback: rule-based explainer sentences
+    if "redis" in topic.lower():
+        return [
+            "Redis其实就是一个把数据放在内存里的数据库。",
+            "它之所以特别快，是因为所有读写都在内存中完成。",
+            "不同的数据结构，底层用了哈希表、跳表和压缩列表来存储。",
+            "理解Redis的关键，不是背命令，而是看它怎么组织数据。",
+            "这样设计，让它既能做缓存，又能做消息队列和排行榜。",
+        ]
+    return [
+        f"{subject}，本质上是一个高效的数据处理系统。",
+        f"它的核心设计思路，是用空间换时间和用简单换可靠。",
+        f"在底层，它会根据不同的场景选择最合适的数据结构。",
+        f"真正理解{subject}，关键是看它如何组织数据和调度任务。",
+    ]
+
+
+def _generate_explainer_audio_tracks(
+    script_sentences: list[str],
+    total_ms: int,
+    voice: str = DEFAULT_TTS_VOICE,
+    rate: int = 0,
+) -> list[dict[str, Any]]:
+    """Generate TTS for natural script sentences, evenly distributed across duration."""
+    try:
+        from core.tts_module import get_tts_module
+    except Exception:
+        return []
+
+    tts = get_tts_module(voice)
+    tts.set_rate(rate)
+    backend = tts.get_backend_name() if hasattr(tts, "get_backend_name") else "none"
+
+    output_root = _project_root() / "output" / "generated-audio"
+    output_root.mkdir(parents=True, exist_ok=True)
+    ext = ".mp3" if backend in {"edge", "gtts", "baidu", "xunfei"} else ".wav"
+
+    audio_tracks: list[dict[str, Any]] = []
+    num = max(len(script_sentences), 1)
+    segment_ms = total_ms / num
+
+    for index, sentence in enumerate(script_sentences):
+        text = sentence.strip()
+        if not text:
+            continue
+
+        start_ms = round(index * segment_ms)
+        start_frame = round(start_ms / 1000 * FPS)
+
+        file_name = f"explain_{index:03d}_{uuid.uuid4().hex[:8]}{ext}"
+        source_path = output_root / file_name
+        try:
+            if tts.generate_audio(text, str(source_path)) and source_path.exists():
+                measured_s = tts.get_audio_duration(str(source_path))
+                measured_frames = max(1, round(measured_s * FPS))
+                src = _ensure_public_audio_copy(source_path, file_name)
+                audio_tracks.append({
+                    "id": f"explain_audio_{index}",
+                    "src": src,
+                    "start": start_frame,
+                    "duration": measured_frames,
+                    "text": text,
+                })
+        except Exception:
+            continue
+
+    return audio_tracks
+
+
 def build_graph_video_layout(
     text: str,
     total_ms: int = 12000,
     width: int = DEFAULT_WIDTH,
     height: int = DEFAULT_HEIGHT,
+    enable_audio: bool = False,
+    voice: str = DEFAULT_TTS_VOICE,
+    rate: int = 0,
 ) -> dict[str, Any]:
     total_frames = max(1, round(total_ms / 1000 * FPS))
     dsl = generate_scene_dsl(text)
@@ -433,6 +564,14 @@ def build_graph_video_layout(
         for index, step in enumerate(steps)
     ]
 
+    audio_tracks: list[dict[str, Any]] = []
+    explainer_script: list[str] = []
+    if enable_audio:
+        explainer_script = _generate_explainer_script(text, num_sentences=5)
+        audio_tracks = _generate_explainer_audio_tracks(
+            explainer_script, total_ms=total_ms, voice=voice, rate=rate
+        )
+
     return {
         "width": width,
         "height": height,
@@ -445,7 +584,8 @@ def build_graph_video_layout(
         "edges": graph["edges"],
         "elements": elements,
         "shots": [],
-        "audioTracks": [],
+        "audioTracks": audio_tracks,
+        "explainerScript": explainer_script,
     }
 
 
@@ -454,8 +594,17 @@ def render_graph_video(
     layout_out: str = "output/graph_layout.json",
     video_out: str = "output/graph_scene.mp4",
     total_ms: int = 12000,
+    enable_audio: bool = False,
+    voice: str = DEFAULT_TTS_VOICE,
+    rate: int = 0,
 ) -> tuple[str, str]:
-    layout = build_graph_video_layout(text, total_ms=total_ms)
+    layout = build_graph_video_layout(
+        text,
+        total_ms=total_ms,
+        enable_audio=enable_audio,
+        voice=voice,
+        rate=rate,
+    )
     with open(layout_out, "w", encoding="utf-8") as file:
         json.dump(layout, file, ensure_ascii=False, indent=2)
 
@@ -482,6 +631,12 @@ def main() -> None:
     parser.add_argument("--render", action="store_true", help="Render the generated graph layout to mp4")
     parser.add_argument("--video-out", default="output/graph_scene.mp4", help="Output mp4 path when --render is set")
     parser.add_argument("--duration-ms", type=int, default=12000)
+    parser.add_argument("--enable-audio", action="store_true", default=True,
+                        help="Generate TTS narration audio (default: on, use --no-enable-audio to skip)")
+    parser.add_argument("--no-enable-audio", action="store_false", dest="enable_audio",
+                        help="Skip TTS narration audio generation")
+    parser.add_argument("--voice", default=DEFAULT_TTS_VOICE, help=f"TTS voice (default: {DEFAULT_TTS_VOICE})")
+    parser.add_argument("--rate", type=int, default=0, help="TTS speed (-10 to +10)")
     args = parser.parse_args()
 
     if args.render:
@@ -490,11 +645,20 @@ def main() -> None:
             layout_out=args.out,
             video_out=args.video_out,
             total_ms=args.duration_ms,
+            enable_audio=args.enable_audio,
+            voice=args.voice,
+            rate=args.rate,
         )
         print(json.dumps({"layout": layout_out, "video": video_out}, ensure_ascii=False))
         return
 
-    layout = build_graph_video_layout(args.text, total_ms=args.duration_ms)
+    layout = build_graph_video_layout(
+        args.text,
+        total_ms=args.duration_ms,
+        enable_audio=args.enable_audio,
+        voice=args.voice,
+        rate=args.rate,
+    )
     with open(args.out, "w", encoding="utf-8") as file:
         json.dump(layout, file, ensure_ascii=False, indent=2)
     print(args.out)

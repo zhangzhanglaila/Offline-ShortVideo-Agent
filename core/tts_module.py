@@ -133,7 +133,6 @@ class TTSModule:
         if TTS_FORCE_BACKEND:
             if self._backend_available(TTS_FORCE_BACKEND):
                 return TTS_FORCE_BACKEND
-            return "none"
         if EDGE_TTS_AVAILABLE:
             return "edge"
         elif XUNFEI_APPID and XUNFEI_APIKEY and XUNFEI_APISECRET and XUNFEI_AVAILABLE:
@@ -272,6 +271,20 @@ class TTSModule:
             print(f"百度TTS失败：{e}")
             return False
 
+    def _generate_baidu_no_proxy(self, text: str, output_path: str) -> bool:
+        if not BAIDU_AVAILABLE:
+            return False
+        saved = {}
+        proxy_keys = ['http_proxy', 'https_proxy', 'HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'all_proxy']
+        for k in proxy_keys:
+            saved[k] = os.environ.pop(k, None)
+        try:
+            return self._generate_baidu(text, output_path)
+        finally:
+            for k, v in saved.items():
+                if v is not None:
+                    os.environ[k] = v
+
     # ========== SAPI ==========
     def _generate_sapi(self, text: str, output_path: str) -> bool:
         """使用Windows SAPI生成音频"""
@@ -372,6 +385,20 @@ class TTSModule:
             print(f"gTTS失败: {str(e)}")
             return False
 
+    def _generate_gtts_no_proxy(self, text: str, output_path: str) -> bool:
+        if not GTTS_AVAILABLE:
+            return False
+        saved = {}
+        proxy_keys = ['http_proxy', 'https_proxy', 'HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'all_proxy']
+        for k in proxy_keys:
+            saved[k] = os.environ.pop(k, None)
+        try:
+            return self._generate_gtts(text, output_path)
+        finally:
+            for k, v in saved.items():
+                if v is not None:
+                    os.environ[k] = v
+
     # ========== 主生成函数 ==========
     def generate_audio(self, text: str, output_path: str) -> bool:
         """
@@ -381,91 +408,28 @@ class TTSModule:
             return False
 
         Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-        force_backend = bool(TTS_FORCE_BACKEND)
+        # Fallback chain: try preferred backend first, then all others
+        def _try_single(backend_name: str, text: str, output_path: str) -> bool:
+            return {
+                "xunfei": self._generate_xunfei,
+                "baidu": self._generate_baidu_no_proxy,
+                "edge": self._generate_edge_no_proxy,
+                "gtts": self._generate_gtts_no_proxy,
+                "sapi": self._generate_sapi,
+            }.get(backend_name, lambda t, p: False)(text, output_path)
 
-        # 讯飞
-        if self.backend == "xunfei":
-            result = self._generate_xunfei(text, output_path)
-            if not result and (not force_backend) and BAIDU_AVAILABLE:
-                print("讯飞TTS失败，尝试百度...")
-                result = self._generate_baidu(text, output_path)
-            if not result and (not force_backend) and EDGE_TTS_AVAILABLE:
-                print("百度TTS失败，尝试edge-tts...")
-                result = self._generate_edge_no_proxy(text, output_path)
-            if not result and (not force_backend) and GTTS_AVAILABLE:
-                print("edge-tts失败，尝试gTTS...")
-                result = self._generate_gtts(text, output_path)
-            if not result and (not force_backend) and WIN_SAPI_AVAILABLE:
-                print("gTTS失败，尝试SAPI...")
-                result = self._generate_sapi(text, output_path)
-            return result
-        # 百度
-        elif self.backend == "baidu":
-            result = self._generate_baidu(text, output_path)
-            if not result and (not force_backend) and XUNFEI_AVAILABLE:
-                print("百度TTS失败，尝试讯飞...")
-                result = self._generate_xunfei(text, output_path)
-            if not result and (not force_backend) and EDGE_TTS_AVAILABLE:
-                print("讯飞失败，尝试edge-tts...")
-                result = self._generate_edge_no_proxy(text, output_path)
-            if not result and (not force_backend) and GTTS_AVAILABLE:
-                print("edge-tts失败，尝试gTTS...")
-                result = self._generate_gtts(text, output_path)
-            if not result and (not force_backend) and WIN_SAPI_AVAILABLE:
-                print("gTTS失败，尝试SAPI...")
-                result = self._generate_sapi(text, output_path)
-            return result
-        # edge
-        elif self.backend == "edge":
-            result = self._generate_edge_no_proxy(text, output_path)
-            if not result and (not force_backend) and BAIDU_AVAILABLE:
-                print("Edge-TTS失败，尝试百度...")
-                result = self._generate_baidu(text, output_path)
-            if not result and (not force_backend) and XUNFEI_AVAILABLE:
-                print("百度TTS失败，尝试讯飞...")
-                result = self._generate_xunfei(text, output_path)
-            if not result and (not force_backend) and GTTS_AVAILABLE:
-                print("讯飞失败，尝试gTTS...")
-                result = self._generate_gtts(text, output_path)
-            if not result and (not force_backend) and WIN_SAPI_AVAILABLE:
-                print("gTTS失败，尝试SAPI...")
-                result = self._generate_sapi(text, output_path)
-            return result
-        # SAPI
-        elif self.backend == "sapi":
-            result = self._generate_sapi(text, output_path)
-            if not result and (not force_backend) and GTTS_AVAILABLE:
-                print("SAPI失败，尝试gTTS...")
-                result = self._generate_gtts(text, output_path)
-            if not result and (not force_backend) and EDGE_TTS_AVAILABLE:
-                print("gTTS失败，尝试edge-tts...")
-                result = self._generate_edge_no_proxy(text, output_path)
-            if not result and (not force_backend) and BAIDU_AVAILABLE:
-                print("edge-tts失败，尝试百度...")
-                result = self._generate_baidu(text, output_path)
-            if not result and (not force_backend) and XUNFEI_AVAILABLE:
-                print("百度失败，尝试讯飞...")
-                result = self._generate_xunfei(text, output_path)
-            return result
-        # gTTS
-        elif self.backend == "gtts":
-            result = self._generate_gtts(text, output_path)
-            if not result and (not force_backend) and WIN_SAPI_AVAILABLE:
-                print("gTTS失败，尝试SAPI...")
-                result = self._generate_sapi(text, output_path)
-            if not result and (not force_backend) and EDGE_TTS_AVAILABLE:
-                print("SAPI失败，尝试edge-tts...")
-                result = self._generate_edge_no_proxy(text, output_path)
-            if not result and (not force_backend) and BAIDU_AVAILABLE:
-                print("edge-tts失败，尝试百度...")
-                result = self._generate_baidu(text, output_path)
-            if not result and (not force_backend) and XUNFEI_AVAILABLE:
-                print("百度失败，尝试讯飞...")
-                result = self._generate_xunfei(text, output_path)
-            return result
-        else:
-            print("错误: 没有可用的TTS后端")
-            return False
+        chain = [self.backend] + [b for b in ["edge", "baidu", "xunfei", "gtts", "sapi"] if b != self.backend]
+        for backend_name in chain:
+            if not TTSModule._backend_available(backend_name):
+                continue
+            if backend_name != self.backend:
+                print(f"TTS {self.backend}不可用/失败，降级到 {backend_name}...")
+            result = _try_single(backend_name, text, output_path)
+            if result:
+                return True
+
+        print("错误: 没有可用的TTS后端")
+        return False
 
     def generate_from_segments(self, segments: List[Dict], output_dir: str,
                                voice: Optional[str] = None) -> Tuple[bool, List[str]]:
