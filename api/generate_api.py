@@ -49,12 +49,10 @@ def generate_visual_prompts(storyboard: list, topic_title: str) -> list:
     try:
         import os
         import requests as _http
+        from config import get_cloud_llm_config
 
-        api_key = os.environ.get("OPENAI_API_KEY", "")
-        base_url = os.environ.get("OPENAI_API_BASE", "https://api.deepseek.com/v1")
-        model = os.environ.get("OPENAI_API_MODEL", "deepseek-chat")
-
-        if not api_key or api_key == "sk-your-key-here":
+        cfg = get_cloud_llm_config()
+        if not cfg["api_key"] or cfg["api_key"] == "sk-your-key-here":
             print("[VisualPrompt] 未配置 DeepSeek API Key，跳过视觉增强")
             raise ValueError("No API key")
 
@@ -78,7 +76,7 @@ def generate_visual_prompts(storyboard: list, topic_title: str) -> list:
             "Content-Type": "application/json"
         }
         payload = {
-            "model": model,
+            "model": cfg["model"],
             "messages": [{"role": "user", "content": prompt}],
             "temperature": 0.3,
             "max_tokens": 512
@@ -87,7 +85,7 @@ def generate_visual_prompts(storyboard: list, topic_title: str) -> list:
         session = _http.Session()
         session.trust_env = False
         resp = session.post(
-            f"{base_url}/chat/completions",
+            f'{cfg["api_base"]}/chat/completions',
             json=payload,
             headers=headers,
             timeout=5,

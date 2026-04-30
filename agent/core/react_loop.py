@@ -106,7 +106,7 @@ Final: [最终结果和建议]
         if params_match:
             try:
                 params = json.loads(params_match.group(1))
-            except:
+            except Exception:
                 pass
 
         # 提取Final

@@ -15,6 +15,7 @@ from config import (
     OUTPUT_AUDIO_BITRATE, OUTPUT_VIDEO_BITRATE, BGM_DIR, MATERIAL_DIR,
     BGM_VOLUME, BG_MUTE_DURATION
 )
+from core.utils.ffmpeg_runner import run_ffmpeg_safe
 
 # 日志回调 - 用于实时推送日志到前端
 _video_log_callback = None
@@ -349,63 +350,14 @@ class VideoModule:
         try:
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
             return float(result.stdout.strip())
-        except:
+        except Exception:
             return 0
 
     def _run_ffmpeg(self, cmd: List[str]) -> bool:
-        """执行FFmpeg命令"""
-        try:
-            # 打印执行的命令（方便调试）
-            cmd_str = ' '.join(cmd)
-            print(f"执行FFmpeg命令: {cmd_str[:200]}...")
-            _log(f"执行FFmpeg命令: {cmd_str[:100]}...", 'info')
-
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=300
-            )
-            if result.returncode != 0:
-                # FFmpeg版本信息在前几行，真正的错误在后面
-                stderr_lines = result.stderr.strip().split('\n')
-                # 跳过版本信息行，找到真正的错误
-                error_lines = []
-                skip_patterns = ['ffmpeg version', 'built with', 'configuration:', 'Copyright',
-                                 'libavformat', 'libavcodec', 'libavutil', 'libavfilter',
-                                 'libswscale', 'libswresample', 'libpostproc', 'FFmpeg']
-                for line in stderr_lines:
-                    line_stripped = line.strip()
-                    if not line_stripped:
-                        continue
-                    # 跳过空行和版本信息
-                    skip = False
-                    for pattern in skip_patterns:
-                        if pattern.lower() in line_stripped.lower():
-                            skip = True
-                            break
-                    if skip:
-                        continue
-                    error_lines.append(line_stripped)
-
-                if error_lines:
-                    error_msg = ' | '.join(error_lines[:5])  # 最多显示5行
-                    print(f"FFmpeg执行失败: {error_msg}")
-                    _log(f"FFmpeg执行失败: {error_msg}", 'error')
-                else:
-                    print(f"FFmpeg执行失败 (返回码: {result.returncode})")
-                    _log(f"FFmpeg执行失败 (返回码: {result.returncode})", 'error')
-                return False
-            _log("FFmpeg执行成功", 'info')
-            return True
-        except subprocess.TimeoutExpired:
-            print("FFmpeg执行超时 (超过5分钟)")
-            _log("FFmpeg执行超时 (超过5分钟)", 'error')
-            return False
-        except Exception as e:
-            print(f"FFmpeg执行异常: {str(e)}")
-            _log(f"FFmpeg执行异常: {str(e)}", 'error')
-            return False
+        cmd_str = ' '.join(cmd)
+        print(f"执行FFmpeg命令: {cmd_str[:200]}...")
+        _log(f"执行FFmpeg命令: {cmd_str[:100]}...", 'info')
+        return run_ffmpeg_safe(cmd, log_callback=_log)
 
     def _cleanup_temp_files(self, *paths):
         """清理临时文件"""
@@ -414,7 +366,7 @@ class VideoModule:
             if p.exists():
                 try:
                     p.unlink()
-                except:
+                except Exception:
                     pass
 
     def get_available_bgm(self) -> List[str]:

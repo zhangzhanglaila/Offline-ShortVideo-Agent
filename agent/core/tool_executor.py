@@ -96,7 +96,7 @@ class ToolExecutor:
                     params_str = match.group(2)
                     params = json.loads(params_str)
                     return {"tool": tool_name, "params": params}
-                except:
+                except Exception:
                     continue
 
         # 尝试直接解析整个JSON块
@@ -106,7 +106,7 @@ class ToolExecutor:
                 obj = json.loads(json_match.group())
                 if "tool" in obj and "params" in obj:
                     return obj
-            except:
+            except Exception:
                 pass
 
         return None

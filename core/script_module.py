@@ -131,22 +131,20 @@ class ScriptModule:
         import os
         try:
             import requests
-            # 优先使用 DeepSeek
-            api_key = os.environ.get('DEEPSEEK_API_KEY', '') or os.environ.get('OPENAI_API_KEY', '')
-            api_base = os.environ.get('DEEPSEEK_API_BASE', '') or os.environ.get('OPENAI_API_BASE', 'https://api.deepseek.com/v1')
-            model = os.environ.get('DEEPSEEK_MODEL', 'deepseek-chat')
+            from config import get_cloud_llm_config
 
-            if not api_key:
+            cfg = get_cloud_llm_config()
+            if not cfg["api_key"]:
                 return "{'error': '未配置云端API密钥', 'script': {}}"
 
             response = requests.post(
-                f'{api_base}/chat/completions',
+                f'{cfg["api_base"]}/chat/completions',
                 headers={
-                    'Authorization': f'Bearer {api_key}',
+                    'Authorization': f'Bearer {cfg["api_key"]}',
                     'Content-Type': 'application/json'
                 },
                 json={
-                    'model': model,
+                    'model': cfg["model"],
                     'messages': [{'role': 'user', 'content': prompt}],
                     'max_tokens': 1024,
                     'temperature': 0.8
@@ -271,7 +269,7 @@ class ScriptModule:
             json_match = re.search(r'\{[\s\S]*\}', response)
             if json_match:
                 return json.loads(json_match.group())
-        except:
+        except Exception:
             pass
 
         # 降级返回

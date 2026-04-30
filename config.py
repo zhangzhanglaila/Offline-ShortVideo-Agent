@@ -39,6 +39,24 @@ OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY', '')
 OPENAI_API_BASE = os.environ.get('OPENAI_API_BASE', 'https://api.openai.com/v1')
 OPENAI_MODEL = os.environ.get('OPENAI_API_MODEL', 'gpt-4o')
 
+# DeepSeek 专用配置（可选覆盖）
+DEEPSEEK_API_KEY = os.environ.get('DEEPSEEK_API_KEY', '')
+DEEPSEEK_API_BASE = os.environ.get('DEEPSEEK_API_BASE', 'https://api.deepseek.com/v1')
+DEEPSEEK_MODEL = os.environ.get('DEEPSEEK_MODEL', 'deepseek-chat')
+
+
+def get_cloud_llm_config() -> dict:
+    """获取云端LLM配置（优先DeepSeek，其次通用OpenAI）。
+
+    所有需要调用云端大模型的模块统一使用此函数，
+    禁止在各自模块内直接读取环境变量。
+    """
+    return {
+        "api_key": DEEPSEEK_API_KEY or OPENAI_API_KEY,
+        "api_base": DEEPSEEK_API_BASE if DEEPSEEK_API_KEY else OPENAI_API_BASE,
+        "model": DEEPSEEK_MODEL if DEEPSEEK_API_KEY else OPENAI_MODEL,
+    }
+
 # Agent企业级配置
 AGENT_CONFIG = {
     "max_retries": 3,              # 最大重试次数

@@ -89,7 +89,7 @@ def _init_agent_event_listener():
                 for client_q in _log_clients:
                     try:
                         client_q.put_nowait(entry)
-                    except:
+                    except Exception:
                         pass
 
         emitter = get_event_emitter()
@@ -109,7 +109,7 @@ def push_log(msg, level='info'):
         for q in _log_clients:
             try:
                 q.put_nowait(entry)
-            except:
+            except Exception:
                 pass
 
 # 设置视频/字幕模块的日志回调，将日志实时推送到前端
@@ -636,7 +636,7 @@ def api_works():
                                     if line.startswith('【标题】'):
                                         title = line.replace('【标题】', '').strip()
                                         break
-                            except:
+                            except Exception:
                                 pass
 
                         works.append({
@@ -767,7 +767,7 @@ def api_generate_with_materials():
         try:
             if Path(output_path).exists() and output_path != final_video:
                 Path(output_path).unlink()
-        except:
+        except Exception:
             pass
 
         return jsonify({
@@ -867,7 +867,7 @@ def api_generate():
                 Path(output_path).unlink()
             if Path(final_video).exists() and final_video != output_path:
                 pass  # 保留最终视频
-        except:
+        except Exception:
             pass
 
         return jsonify({

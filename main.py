@@ -60,7 +60,7 @@ class ShortVideoAgent:
     def _get_topics_stats(self) -> Dict:
         try:
             return self.topics.get_statistics()
-        except:
+        except Exception:
             return {"total": 0}
 
     def step1_browse_topics(self, category: Optional[str] = None,
@@ -477,20 +477,20 @@ def main():
     try:
         import faster_whisper
         print("  ✓ faster-whisper")
-    except:
+    except Exception:
         print("  ⚠ faster-whisper 未安装 (可选)")
 
     try:
         import subprocess
         subprocess.run(["ffmpeg", "-version"], capture_output=True)
         print("  ✓ FFmpeg")
-    except:
+    except Exception:
         print("  ⚠ FFmpeg 未安装 (必须)")
 
     try:
         import ollama
         print("  ✓ Ollama Python客户端")
-    except:
+    except Exception:
         print("  ⚠ Ollama Python客户端未安装 (可选)")
 
     try:
@@ -499,7 +499,7 @@ def main():
             print("  ✓ Playwright")
         else:
             print("  ⚠ Playwright 未安装 (可选，爬虫功能需要)")
-    except:
+    except Exception:
         print("  ⚠ Playwright 未安装 (可选，爬虫功能需要)")
 
     print("\n启动程序...")

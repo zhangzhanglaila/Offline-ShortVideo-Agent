@@ -235,7 +235,7 @@ async def get_session(session_id: str):
                 agent.restore_session(session_id)
                 messages = agent.memory.short_term.get_conversation_format()
                 session_data['messages'] = messages
-            except:
+            except Exception:
                 pass
             return JSONResponse({'success': True, 'data': session_data})
         return JSONResponse({'success': False, 'error': 'Session not found'}, status_code=404)

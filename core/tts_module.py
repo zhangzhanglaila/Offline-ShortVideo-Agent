@@ -18,8 +18,24 @@ import urllib.error
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple
+from contextlib import contextmanager
 from dotenv import load_dotenv
 load_dotenv()
+
+_PROXY_KEYS = ['http_proxy', 'https_proxy', 'HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'all_proxy']
+
+
+@contextmanager
+def no_proxy():
+    saved = {}
+    for k in _PROXY_KEYS:
+        saved[k] = os.environ.pop(k, None)
+    try:
+        yield
+    finally:
+        for k, v in saved.items():
+            if v is not None:
+                os.environ[k] = v
 
 # 讯飞TTS (通过WebSocket v2)
 XUNFEI_AVAILABLE = False
@@ -173,13 +189,8 @@ class TTSModule:
 
         try:
             import websockets
-            import os
-            # 清除代理
-            saved = {}
-            for k in ['http_proxy', 'https_proxy', 'HTTP_PROXY', 'HTTPS_PROXY']:
-                saved[k] = os.environ.pop(k, None)
 
-            try:
+            with no_proxy():
                 # 生成授权URL (官方标准)
                 date_gmt = datetime.utcnow().strftime("%a, %d %b %Y %H:%M:%S GMT")
                 signature_origin = f"host: tts-api.xfyun.cn\ndate: {date_gmt}\nGET /v2/tts HTTP/1.1"
@@ -233,11 +244,6 @@ class TTSModule:
 
                 return asyncio.run(run_tts())
 
-            finally:
-                for k, v in saved.items():
-                    if v is not None:
-                        os.environ[k] = v
-
         except Exception as e:
             print(f"讯飞TTS失败：{str(e)}")
             return False
@@ -274,16 +280,8 @@ class TTSModule:
     def _generate_baidu_no_proxy(self, text: str, output_path: str) -> bool:
         if not BAIDU_AVAILABLE:
             return False
-        saved = {}
-        proxy_keys = ['http_proxy', 'https_proxy', 'HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'all_proxy']
-        for k in proxy_keys:
-            saved[k] = os.environ.pop(k, None)
-        try:
+        with no_proxy():
             return self._generate_baidu(text, output_path)
-        finally:
-            for k, v in saved.items():
-                if v is not None:
-                    os.environ[k] = v
 
     # ========== SAPI ==========
     def _generate_sapi(self, text: str, output_path: str) -> bool:
@@ -306,7 +304,7 @@ class TTSModule:
                     if self.voice_id.lower() in voice.GetDescription().lower():
                         speaker.Voice = voice
                         break
-            except:
+            except Exception:
                 pass
 
             stream = win32com.client.Dispatch('SAPI.SpFileStream')
@@ -322,7 +320,7 @@ class TTSModule:
             try:
                 import pythoncom
                 pythoncom.CoUninitialize()
-            except:
+            except Exception:
                 pass
             return False
 
@@ -362,16 +360,8 @@ class TTSModule:
     def _generate_edge_no_proxy(self, text: str, output_path: str, voice: str = None) -> bool:
         if not EDGE_TTS_AVAILABLE:
             return False
-        saved = {}
-        proxy_keys = ['http_proxy', 'https_proxy', 'HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'all_proxy']
-        for k in proxy_keys:
-            saved[k] = os.environ.pop(k, None)
-        try:
+        with no_proxy():
             return self._generate_edge(text, output_path, voice)
-        finally:
-            for k, v in saved.items():
-                if v is not None:
-                    os.environ[k] = v
 
     # ========== gTTS ==========
     def _generate_gtts(self, text: str, output_path: str) -> bool:
@@ -388,16 +378,8 @@ class TTSModule:
     def _generate_gtts_no_proxy(self, text: str, output_path: str) -> bool:
         if not GTTS_AVAILABLE:
             return False
-        saved = {}
-        proxy_keys = ['http_proxy', 'https_proxy', 'HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'all_proxy']
-        for k in proxy_keys:
-            saved[k] = os.environ.pop(k, None)
-        try:
+        with no_proxy():
             return self._generate_gtts(text, output_path)
-        finally:
-            for k, v in saved.items():
-                if v is not None:
-                    os.environ[k] = v
 
     # ========== 主生成函数 ==========
     def generate_audio(self, text: str, output_path: str) -> bool:
@@ -540,7 +522,7 @@ class TTSModule:
         try:
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
             return float(result.stdout.strip())
-        except:
+        except Exception:
             return 0.0
 
 

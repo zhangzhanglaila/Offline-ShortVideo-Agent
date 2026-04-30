@@ -173,7 +173,7 @@ class LongTermMemory:
         if row:
             try:
                 return json.loads(row[0])
-            except:
+            except Exception:
                 return row[0]
         return None
 
@@ -244,7 +244,7 @@ class LongTermMemory:
                     if msg.get('role') == 'user':
                         first_question = msg.get('content', '')[:50]
                         break
-            except:
+            except Exception:
                 first_question = ''
             sessions.append({
                 'session_id': session_id,

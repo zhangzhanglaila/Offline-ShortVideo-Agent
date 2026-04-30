@@ -240,7 +240,17 @@
       "Bash(where chromium:*)",
       "Bash(where chrome:*)",
       "Read(//c/Users/H/AppData/Local/**)",
-      "Bash(wmic process:*)"
+      "Bash(wmic process:*)",
+      "Bash(xargs wc *)",
+      "Bash(sed -n '360,368p' D:/Offline-ShortVideo-Agent/core/tts_module.py)",
+      "Bash(sed -n '386,394p' D:/Offline-ShortVideo-Agent/core/tts_module.py)",
+      "Bash(sed -n '360,365p' D:/Offline-ShortVideo-Agent/core/tts_module.py)",
+      "Bash(sed -n '386,390p' D:/Offline-ShortVideo-Agent/core/tts_module.py)",
+      "Bash(sed -n '190,196p' D:/Offline-ShortVideo-Agent/core/tts_module.py)",
+      "Bash(sed -n '680,692p' D:/Offline-ShortVideo-Agent/core/animation_module.py)",
+      "Bash(sed -n '470,476p' D:/Offline-ShortVideo-Agent/core/animation_module.py)",
+      "Bash(PYTHONPATH=D:/Offline-ShortVideo-Agent python engine/bridge/graph_pipeline.py \"人工智能如何工作\" --render --duration-ms 8000)",
+      "Bash(PYTHONPATH=D:/Offline-ShortVideo-Agent python engine/bridge/graph_pipeline.py \"Redis缓存原理\" --render --duration-ms 8000)"
     ]
   }
 }

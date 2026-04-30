@@ -33,8 +33,6 @@ downloads/
 *.mp3
 *.mp4
 
-".env"
-".env"
 .env
 
 # Remotion 渲染器（开发时构建产物）
@@ -54,8 +52,6 @@ remotion/
 remotionOriginal/
 
 # 实验性/未完成的模块（调试产物）
-core/spring_easing.py
-core/spring_diagram_animation_module.py
 core/diagram_animation_module.py
 core/diagram_anagram_module.py
 

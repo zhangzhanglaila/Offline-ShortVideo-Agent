@@ -301,6 +301,35 @@ export interface GraphTimelineEvent {
   duration: number;
 }
 
+// ============================================================
+// Animation Plan Types (director script layer)
+// ============================================================
+export type AnimationActionType =
+  | "reveal"
+  | "flow"
+  | "highlight"
+  | "pulse"
+  | "camera_pan"
+  | "miss_effect";
+
+export interface AnimationPlanStep {
+  id: string;
+  action: AnimationActionType;
+  start: number;
+  duration: number;
+  nodeIds: string[];
+  edgeIds: string[];
+  text?: string;
+  intensity?: number;
+  cameraFrom?: string;
+  cameraTo?: string;
+}
+
+export interface AnimationPlan {
+  version: 1;
+  steps: AnimationPlanStep[];
+}
+
 export interface GraphSceneData {
   scene_type: "graph";
   title: string;
@@ -309,6 +338,7 @@ export interface GraphSceneData {
   edges: GraphEdge[];
   steps: GraphStep[];
   timeline?: GraphTimelineEvent[];
+  animation_plan?: AnimationPlan;
 }
 
 export interface Shot {

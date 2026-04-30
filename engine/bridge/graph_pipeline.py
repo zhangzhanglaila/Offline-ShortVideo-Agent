@@ -11,11 +11,12 @@ import argparse
 import json
 import math
 import re
-import shutil
 import subprocess
 import uuid
 from pathlib import Path
 from typing import Any
+
+from engine.shared.path_utils import get_project_root, ensure_public_audio_copy
 
 FPS = 30
 DEFAULT_WIDTH = 1080
@@ -382,25 +383,6 @@ def apply_graph_layout(
     }
 
 
-def _project_root() -> Path:
-    cwd = Path.cwd()
-    if (cwd / "remotion-renderer").exists() and (cwd / "engine").exists():
-        return cwd
-    return Path(__file__).resolve().parents[2]
-
-
-def _ensure_public_audio_copy(source_path: Path, file_name: str) -> str:
-    project_root = _project_root()
-    public_dir = project_root / "remotion-renderer" / "public" / "generated-audio"
-    build_dir = project_root / "remotion-renderer" / "build" / "generated-audio"
-    public_dir.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(source_path, public_dir / file_name)
-    if build_dir.parent.exists():
-        build_dir.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(source_path, build_dir / file_name)
-    return f"/generated-audio/{file_name}"
-
-
 def _generate_explainer_script(topic: str, num_sentences: int = 5) -> list[str]:
     """LLM generates natural explainer narration (separate from visual captions)."""
     subject = _topic_subject(topic)
@@ -454,13 +436,145 @@ def _generate_explainer_script(topic: str, num_sentences: int = 5) -> list[str]:
     ]
 
 
+def _call_llm_for_animation_plan(dsl: dict[str, Any]) -> dict[str, Any] | None:
+    """Generate animation_plan from existing Scene DSL (second LLM call)."""
+    nodes_summary = [
+        {"id": n["id"], "label": n["label"], "role": n.get("role", "")}
+        for n in dsl["nodes"]
+    ]
+    edges_summary = [
+        {"id": e["id"], "from": e["from"], "to": e["to"], "label": e.get("label", ""), "kind": e.get("kind", "")}
+        for e in dsl["edges"]
+    ]
+    steps_summary = [
+        {"id": s["id"], "caption": s.get("caption", ""), "nodeIds": s["nodeIds"], "edgeIds": s["edgeIds"]}
+        for s in dsl["steps"]
+    ]
+
+    prompt = f"""
+You are a video animation director for a graph explainer video.
+
+Given this graph structure, create an animation_plan (a "director script") that describes
+exactly how to animate the graph reveal.
+
+GRAPH STRUCTURE:
+Nodes: {json.dumps(nodes_summary, ensure_ascii=False)}
+Edges: {json.dumps(edges_summary, ensure_ascii=False)}
+Steps (narration beats): {json.dumps(steps_summary, ensure_ascii=False)}
+Title: {dsl.get("title", "")}
+
+Return JSON only. Schema:
+{{
+  "version": 1,
+  "steps": [
+    {{
+      "id": "unique_step_id",
+      "action": "reveal|flow|highlight|pulse|camera_pan|miss_effect",
+      "start": 0,
+      "duration": 90,
+      "nodeIds": ["node_id"],
+      "edgeIds": ["edge_id"],
+      "text": "optional caption",
+      "intensity": 0.8
+    }}
+  ]
+}}
+
+DIRECTOR RULES:
+1. First step MUST be "reveal" — bring all nodes on screen with staggered spring entrances.
+   Use nodeIds containing ALL node IDs.
+2. After reveal, alternate between "flow" (animate data along new edges) and "highlight"
+   (glow the relevant nodes) to match the narration steps.
+3. Use "pulse" on key nodes when the narrator emphasizes them (2-3 times max).
+4. Use "camera_pan" when transitioning between distant parts of the graph (1-2 times max).
+5. "miss_effect" is for decorative accents — use sparingly (0-2 times).
+6. Every step in the narration steps should map to at least one animation_plan step.
+7. Durations: reveal=60-90 frames, flow=30-60, highlight=30-60, pulse=20-30,
+   camera_pan=45-75, miss_effect=15-25.
+8. Stagger start times so animations flow smoothly (no gaps).
+9. intensity ranges from 0.3 (subtle) to 1.0 (dramatic).
+10. Total steps: 6-12.
+
+ANIMATION PLAN:
+""".strip()
+
+    try:
+        from agent.llm.ollama_client import get_llm_client
+
+        client = get_llm_client()
+        response = client.chat(
+            [{"role": "user", "content": prompt}],
+            temperature=0.35,
+            timeout=60,
+            max_tokens=1200,
+        )
+        return _extract_json_object(response)
+    except Exception:
+        return None
+
+
+def _fallback_animation_plan(dsl: dict[str, Any]) -> dict[str, Any]:
+    """Derive animation_plan from existing timeline when LLM fails."""
+    steps = []
+    timeline = dsl.get("timeline") or dsl.get("steps") or []
+
+    # Step 1: Reveal all nodes
+    all_node_ids = [n["id"] for n in dsl["nodes"]]
+    steps.append({
+        "id": "anim_reveal_all",
+        "action": "reveal",
+        "start": 0,
+        "duration": 75,
+        "nodeIds": all_node_ids,
+        "edgeIds": [],
+        "intensity": 0.85,
+    })
+
+    # Map timeline entries to flow + highlight steps
+    for i, event in enumerate(timeline):
+        start_frame = int(event.get("start", i * 2000 // 1000 * 30))
+        duration = int(event.get("duration", 2000 // 1000 * 30))
+
+        node_ids = event.get("nodeIds", [])
+        edge_ids = event.get("edgeIds", [])
+        text = event.get("text") or event.get("caption") or ""
+
+        # Flow step for edges
+        if edge_ids:
+            steps.append({
+                "id": f"anim_flow_{i}",
+                "action": "flow",
+                "start": start_frame,
+                "duration": max(30, duration // 2),
+                "nodeIds": node_ids,
+                "edgeIds": edge_ids,
+                "text": text,
+                "intensity": 0.8,
+            })
+
+        # Highlight step for nodes
+        if node_ids:
+            steps.append({
+                "id": f"anim_highlight_{i}",
+                "action": "highlight",
+                "start": start_frame + max(30, duration // 2),
+                "duration": max(30, duration - max(30, duration // 2)),
+                "nodeIds": node_ids,
+                "edgeIds": edge_ids,
+                "text": text,
+                "intensity": 0.75,
+            })
+
+    return {"version": 1, "steps": steps}
+
+
 def _generate_explainer_audio_tracks(
     script_sentences: list[str],
     total_ms: int,
     voice: str = DEFAULT_TTS_VOICE,
     rate: int = 0,
 ) -> list[dict[str, Any]]:
-    """Generate TTS for natural script sentences, evenly distributed across duration."""
+    """Generate TTS for natural script sentences, serial (no overlap)."""
     try:
         from core.tts_module import get_tts_module
     except Exception:
@@ -470,29 +584,30 @@ def _generate_explainer_audio_tracks(
     tts.set_rate(rate)
     backend = tts.get_backend_name() if hasattr(tts, "get_backend_name") else "none"
 
-    output_root = _project_root() / "output" / "generated-audio"
+    output_root = get_project_root() / "output" / "generated-audio"
     output_root.mkdir(parents=True, exist_ok=True)
     ext = ".mp3" if backend in {"edge", "gtts", "baidu", "xunfei"} else ".wav"
 
+    GAP_MS = 300  # small pause between sentences for natural pacing
+
     audio_tracks: list[dict[str, Any]] = []
-    num = max(len(script_sentences), 1)
-    segment_ms = total_ms / num
+    current_ms = 0.0
 
     for index, sentence in enumerate(script_sentences):
         text = sentence.strip()
         if not text:
             continue
 
-        start_ms = round(index * segment_ms)
-        start_frame = round(start_ms / 1000 * FPS)
+        start_frame = round(current_ms / 1000 * FPS)
 
         file_name = f"explain_{index:03d}_{uuid.uuid4().hex[:8]}{ext}"
         source_path = output_root / file_name
         try:
             if tts.generate_audio(text, str(source_path)) and source_path.exists():
                 measured_s = tts.get_audio_duration(str(source_path))
+                measured_ms = measured_s * 1000
                 measured_frames = max(1, round(measured_s * FPS))
-                src = _ensure_public_audio_copy(source_path, file_name)
+                src = ensure_public_audio_copy(source_path, file_name)
                 audio_tracks.append({
                     "id": f"explain_audio_{index}",
                     "src": src,
@@ -500,6 +615,7 @@ def _generate_explainer_audio_tracks(
                     "duration": measured_frames,
                     "text": text,
                 })
+                current_ms += measured_ms + GAP_MS
         except Exception:
             continue
 
@@ -543,6 +659,41 @@ def build_graph_video_layout(
         steps.append({**step, "start": start, "duration": duration})
     graph["steps"] = steps
 
+    # Generate audio first so total_frames reflects true duration
+    audio_tracks: list[dict[str, Any]] = []
+    explainer_script: list[str] = []
+    if enable_audio:
+        explainer_script = _generate_explainer_script(text, num_sentences=5)
+        audio_tracks = _generate_explainer_audio_tracks(
+            explainer_script, total_ms=total_ms, voice=voice, rate=rate
+        )
+        audio_end = max(
+            (t["start"] + t["duration"] for t in audio_tracks),
+            default=0,
+        )
+        if audio_end > total_frames:
+            total_frames = audio_end
+
+    # Generate animation plan (director script)
+    animation_plan = _call_llm_for_animation_plan(graph) or _fallback_animation_plan(graph)
+    # Scale plan step times to total_frames
+    raw_plan_steps = animation_plan.get("steps", [])
+    if raw_plan_steps:
+        max_plan_end = max(
+            s.get("start", 0) + s.get("duration", 30)
+            for s in raw_plan_steps
+        ) or total_frames
+        scale = total_frames / max_plan_end
+        scaled_steps = []
+        for s in raw_plan_steps:
+            scaled_steps.append({
+                **s,
+                "start": round(s.get("start", 0) * scale),
+                "duration": max(1, round(s.get("duration", 30) * scale)),
+            })
+        animation_plan["steps"] = scaled_steps
+    graph["animation_plan"] = animation_plan
+
     elements = [
         {
             "id": f"graph_caption_{index}",
@@ -564,13 +715,26 @@ def build_graph_video_layout(
         for index, step in enumerate(steps)
     ]
 
-    audio_tracks: list[dict[str, Any]] = []
-    explainer_script: list[str] = []
-    if enable_audio:
-        explainer_script = _generate_explainer_script(text, num_sentences=5)
-        audio_tracks = _generate_explainer_audio_tracks(
-            explainer_script, total_ms=total_ms, voice=voice, rate=rate
-        )
+    # Add text overlay elements from animation_plan steps
+    for step in animation_plan.get("steps", []):
+        if step.get("text"):
+            elements.append({
+                "id": f"anim_caption_{step['id']}",
+                "type": "text",
+                "text": step["text"],
+                "x": 540,
+                "y": 1450,
+                "fontSize": 38,
+                "color": "#dbeafe",
+                "fontWeight": 650,
+                "textAlign": "center",
+                "lineHeight": 1.35,
+                "maxWidth": 860,
+                "start": step["start"],
+                "duration": step["duration"],
+                "zIndex": 20,
+                "animation": {"enter": "blur-in", "exit": "fade", "duration": 12},
+            })
 
     return {
         "width": width,

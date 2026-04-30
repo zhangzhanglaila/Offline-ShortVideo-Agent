@@ -642,11 +642,9 @@ class DualModeVideoGenerator:
         import requests
         import os
         try:
-            api_key = os.environ.get('DEEPSEEK_API_KEY', '') or os.environ.get('OPENAI_API_KEY', '')
-            api_base = os.environ.get('DEEPSEEK_API_BASE', '') or os.environ.get('OPENAI_API_BASE', 'https://api.deepseek.com/v1')
-            model = os.environ.get('DEEPSEEK_MODEL', 'deepseek-chat')
-
-            if not api_key:
+            from config import get_cloud_llm_config
+            cfg = get_cloud_llm_config()
+            if not cfg["api_key"]:
                 return None
 
             cat_hint = f"赛道：{category}，" if category else ""
@@ -663,13 +661,13 @@ class DualModeVideoGenerator:
 只输出JSON，不要其他文字："""
 
             response = requests.post(
-                f'{api_base}/chat/completions',
+                f'{cfg["api_base"]}/chat/completions',
                 headers={
-                    'Authorization': f'Bearer {api_key}',
+                    'Authorization': f'Bearer {cfg["api_key"]}',
                     'Content-Type': 'application/json'
                 },
                 json={
-                    'model': model,
+                    'model': cfg["model"],
                     'messages': [{'role': 'user', 'content': prompt}],
                     'max_tokens': 256,
                     'temperature': 0.8
@@ -739,7 +737,7 @@ class DualModeVideoGenerator:
         try:
             result = subprocess.run(cmd, capture_output=True, encoding='utf-8', errors='replace', timeout=300)
             success = result.returncode == 0 and Path(output_path).exists()
-        except:
+        except Exception:
             success = False
 
         # 清理
@@ -865,7 +863,7 @@ class DualModeVideoGenerator:
         try:
             result = subprocess.run(cmd_audio, capture_output=True, text=True, timeout=600)
             return result.returncode == 0 and Path(output_path).exists()
-        except:
+        except Exception:
             return False
 
     def _concat_videos(self, video_paths: List[str], output_path: str) -> bool:
@@ -890,7 +888,7 @@ class DualModeVideoGenerator:
         try:
             result = subprocess.run(cmd, capture_output=True, encoding='utf-8', errors='replace', timeout=600)
             return result.returncode == 0 and Path(output_path).exists()
-        except:
+        except Exception:
             return False
         finally:
             try:
@@ -917,7 +915,7 @@ class DualModeVideoGenerator:
         try:
             result = subprocess.run(cmd, capture_output=True, encoding='utf-8', errors='replace', timeout=600)
             return result.returncode == 0 and Path(output_path).exists()
-        except:
+        except Exception:
             return False
 
     def _parse_diagram_layout(self, script_text: str, topic: Dict) -> List[Dict]:

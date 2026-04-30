@@ -91,7 +91,7 @@ class ToolResult:
             if isinstance(self.result, (list, dict)):
                 try:
                     return json.dumps(self.result, ensure_ascii=False, indent=2)[:2000]
-                except:
+                except Exception:
                     pass
             return str(self.result)[:2000]
         else:
@@ -129,11 +129,11 @@ class BaseTool(ABC):
                 if p.type == "int":
                     try:
                         int(value)
-                    except:
+                    except Exception:
                         return False, f"参数 {p.name} 必须是整数"
                 elif p.type == "float":
                     try:
                         float(value)
-                    except:
+                    except Exception:
                         return False, f"参数 {p.name} 必须是数字"
         return True, None

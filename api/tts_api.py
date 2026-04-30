@@ -64,7 +64,7 @@ async def api_generate_tts(request: Request):
             try:
                 rate_int = int(rate_str)
                 tts.set_rate(rate_int)
-            except:
+            except Exception:
                 pass
 
         success = tts.generate_audio(text, output_path)

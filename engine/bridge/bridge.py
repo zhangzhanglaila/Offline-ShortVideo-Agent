@@ -15,6 +15,8 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from engine.shared.path_utils import get_project_root, ensure_public_audio_copy
+
 FPS = 30
 MIN_SHOT_FRAMES = 1
 DEFAULT_TTS_VOICE = "zh-CN-XiaoxiaoNeural"
@@ -182,27 +184,8 @@ def _is_bad_visual_meta(meta_text: str) -> bool:
     return any(term in lowered for term in BAD_VISUAL_TERMS)
 
 
-def _project_root() -> Path:
-    cwd = Path.cwd()
-    if (cwd / "remotion-renderer").exists() and (cwd / "engine").exists():
-        return cwd
-    return Path(__file__).resolve().parents[2]
-
-
-def _ensure_public_audio_copy(source_path: Path, file_name: str) -> str:
-    project_root = _project_root()
-    public_dir = project_root / "remotion-renderer" / "public" / "generated-audio"
-    build_dir = project_root / "remotion-renderer" / "build" / "generated-audio"
-    public_dir.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(source_path, public_dir / file_name)
-    if build_dir.parent.exists():
-        build_dir.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(source_path, build_dir / file_name)
-    return f"/generated-audio/{file_name}"
-
-
 def _ensure_public_image_copy(source_path: Path, file_name: str) -> str:
-    project_root = _project_root()
+    project_root = get_project_root()
     public_dir = project_root / "remotion-renderer" / "public" / "generated-images"
     build_dir = project_root / "remotion-renderer" / "build" / "generated-images"
     public_dir.mkdir(parents=True, exist_ok=True)
@@ -279,7 +262,7 @@ def _build_audio_payload(
     tts.set_rate(rate)
     backend = tts.get_backend_name() if hasattr(tts, "get_backend_name") else "none"
 
-    output_root = _project_root() / "output" / "generated-audio"
+    output_root = get_project_root() / "output" / "generated-audio"
     output_root.mkdir(parents=True, exist_ok=True)
 
     prepared_segments: list[dict[str, Any]] = []
@@ -302,7 +285,7 @@ def _build_audio_payload(
                 if tts.generate_audio(text, str(source_path)) and source_path.exists():
                     measured = int(round(tts.get_audio_duration(str(source_path)) * 1000))
                     duration_ms = max(1000, measured)
-                    audio_src = _ensure_public_audio_copy(source_path, file_name)
+                    audio_src = ensure_public_audio_copy(source_path, file_name)
             except Exception:
                 audio_src = None
 

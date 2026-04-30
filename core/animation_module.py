@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import List, Dict, Optional, Tuple
 
 from config import OUTPUT_WIDTH, OUTPUT_HEIGHT, OUTPUT_FPS, OUTPUT_CRF
+from core.utils.ffmpeg_runner import run_ffmpeg_safe
 
 
 class AnimationModule:
@@ -469,47 +470,7 @@ class AnimationModule:
         return self._run_ffmpeg(cmd)
 
     def _run_ffmpeg(self, cmd: List[str]) -> bool:
-        """执行FFmpeg命令"""
-        try:
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                encoding='utf-8',
-                errors='replace',
-                timeout=300
-            )
-            if result.returncode != 0:
-                stderr_lines = result.stderr.strip().split('\n')
-                error_lines = []
-                skip_patterns = ['ffmpeg version', 'built with', 'configuration:', 'Copyright',
-                                 'libavformat', 'libavcodec', 'libavutil', 'libavfilter',
-                                 'libswscale', 'libswresample', 'libpostproc', 'FFmpeg']
-                for line in stderr_lines:
-                    line_stripped = line.strip()
-                    if not line_stripped:
-                        continue
-                    skip = False
-                    for pattern in skip_patterns:
-                        if pattern.lower() in line_stripped.lower():
-                            skip = True
-                            break
-                    if skip:
-                        continue
-                    error_lines.append(line_stripped)
-                if error_lines:
-                    print(f"[FFmpeg错误] {' | '.join(error_lines[:3])}")
-                else:
-                    print(f"[FFmpeg错误] 返回码 {result.returncode}")
-                return False
-            return True
-        except subprocess.TimeoutExpired:
-            print("FFmpeg执行超时")
-            return False
-        except Exception as e:
-            print(f"FFmpeg执行失败: {str(e)}")
-            return False
-
-    # ==================== 技术讲座风格（Geek Tech Layout）====================
+        return run_ffmpeg_safe(cmd)
 
     def _render_code_image(self, code: str, lang: str = "python",
                            width: int = 500, height: int = 600,
@@ -722,63 +683,15 @@ class AnimationModule:
                 pass
 
     def _run_ffmpeg(self, cmd: List[str]) -> bool:
-        """执行FFmpeg命令"""
-        try:
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                encoding='utf-8',
-                errors='replace',
-                timeout=300
-            )
-            if result.returncode != 0:
-                stderr_lines = result.stderr.strip().split('\n')
-                error_lines = []
-                skip_patterns = ['ffmpeg version', 'built with', 'configuration:', 'Copyright',
-                                 'libavformat', 'libavcodec', 'libavutil', 'libavfilter',
-                                 'libswscale', 'libswresample', 'libpostproc', 'FFmpeg']
-                for line in stderr_lines:
-                    line_stripped = line.strip()
-                    if not line_stripped:
-                        continue
-                    skip = False
-                    for pattern in skip_patterns:
-                        if pattern.lower() in line_stripped.lower():
-                            skip = True
-                            break
-                    if skip:
-                        continue
-                    error_lines.append(line_stripped)
-                if error_lines:
-                    print(f"[FFmpeg错误] {' | '.join(error_lines[:3])}")
-                else:
-                    print(f"[FFmpeg错误] 返回码 {result.returncode}")
-                return False
-            return True
-        except subprocess.TimeoutExpired:
-            print("FFmpeg执行超时")
-            return False
-        except Exception as e:
-            print(f"FFmpeg执行失败: {str(e)}")
-            return False
+        return run_ffmpeg_safe(cmd)
 
 
 # ==================== 便捷函数 ====================
-_module_instance = None
+_anim_instance = None
 
 
 def get_animation_module() -> AnimationModule:
-    """获取动画模块单例"""
-    global _module_instance
-    if _module_instance is None:
-        _module_instance = AnimationModule()
-    return _module_instance
-
-
-def create_animated_clip(image_path: str, output_path: str,
-                        duration: float = 3.0,
-                        animation: str = "ken_burns") -> bool:
-    """快速创建动画片段"""
-    return get_animation_module().create_pan_zoom_clip(
-        image_path, output_path, duration=duration, effect=animation
-    )
+    global _anim_instance
+    if _anim_instance is None:
+        _anim_instance = AnimationModule()
+    return _anim_instance
