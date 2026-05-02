@@ -252,7 +252,14 @@
       "Bash(PYTHONPATH=D:/Offline-ShortVideo-Agent python engine/bridge/graph_pipeline.py \"人工智能如何工作\" --render --duration-ms 8000)",
       "Bash(PYTHONPATH=D:/Offline-ShortVideo-Agent python engine/bridge/graph_pipeline.py \"Redis缓存原理\" --render --duration-ms 8000)",
       "Bash(PYTHONPATH=D:/Offline-ShortVideo-Agent python engine/bridge/graph_pipeline.py \"Redis缓存原理\" --render --duration-ms 10000 --no-enable-audio)",
-      "Bash(PYTHONPATH=D:/Offline-ShortVideo-Agent python engine/bridge/graph_pipeline.py \"Redis缓存原理\" --render --duration-ms 10000 --enable-audio)"
+      "Bash(PYTHONPATH=D:/Offline-ShortVideo-Agent python engine/bridge/graph_pipeline.py \"Redis缓存原理\" --render --duration-ms 10000 --enable-audio)",
+      "Bash(ffmpeg -y -i output/graph_scene.mp4 -ss 3 -vframes 1 output/frame_3s.png)",
+      "Bash(ffmpeg -y -i output/graph_scene.mp4 -ss 3 -vframes 1 -update 1 output/frame_3s.png)",
+      "Bash(ffmpeg -y -i output/graph_scene.mp4 -ss 3 -vframes 1 -update 1 output/frame_3s.jpg)",
+      "Bash(ffmpeg -y -i output/graph_scene.mp4 -ss 2 -vframes 1 -update 1 output/frame_2s.jpg)",
+      "Bash(ffmpeg -y -i output/graph_scene.mp4 -ss 1 -vframes 1 -update 1 output/frame_1s.jpg)",
+      "Bash(ffmpeg -y -i output/graph_scene.mp4 -ss 0.5 -vframes 1 -update 1 output/frame_0_5s.jpg)",
+      "Bash(ffmpeg -y -ss 0.5 -i output/graph_scene.mp4 -vframes 1 -update 1 output/frame_0_5s_v2.jpg)"
     ]
   }
 }

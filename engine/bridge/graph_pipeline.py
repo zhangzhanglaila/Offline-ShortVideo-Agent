@@ -8,6 +8,7 @@ relationships instead of rotating through searched images.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import re
@@ -588,38 +589,462 @@ def _generate_explainer_audio_tracks(
     output_root.mkdir(parents=True, exist_ok=True)
     ext = ".mp3" if backend in {"edge", "gtts", "baidu", "xunfei"} else ".wav"
 
-    GAP_MS = 300  # small pause between sentences for natural pacing
-
     audio_tracks: list[dict[str, Any]] = []
-    current_ms = 0.0
 
     for index, sentence in enumerate(script_sentences):
         text = sentence.strip()
         if not text:
             continue
 
-        start_frame = round(current_ms / 1000 * FPS)
-
         file_name = f"explain_{index:03d}_{uuid.uuid4().hex[:8]}{ext}"
         source_path = output_root / file_name
         try:
             if tts.generate_audio(text, str(source_path)) and source_path.exists():
                 measured_s = tts.get_audio_duration(str(source_path))
-                measured_ms = measured_s * 1000
                 measured_frames = max(1, round(measured_s * FPS))
                 src = ensure_public_audio_copy(source_path, file_name)
                 audio_tracks.append({
                     "id": f"explain_audio_{index}",
                     "src": src,
-                    "start": start_frame,
+                    "start": 0,  # P4.1: normalized to serial by _normalize_audio_tracks
                     "duration": measured_frames,
                     "text": text,
                 })
-                current_ms += measured_ms + GAP_MS
         except Exception:
             continue
 
     return audio_tracks
+
+
+def _build_hook_text(topic: str, first_sentence: str) -> str:
+    """Derive a punchy hook from topic + first audio sentence.
+
+    Uses curated templates for stronger curiosity gap and variety.
+    Template selection is deterministic (hash-based) so the same topic
+    always produces the same hook.
+    """
+    subject = _topic_subject(topic)
+    clean = first_sentence.strip().rstrip("。，！？,.!?")
+
+    # If the first sentence is already a question, use it directly
+    if "？" in clean or "?" in clean:
+        return clean
+
+    templates = [
+        f"你真的了解{subject}吗？",
+        f"{subject}其实比你想的更复杂",
+        f"{subject}是怎么工作的？",
+        f"{subject}的底层原理，90%的人都不知道",
+        f"一个视频讲清楚{subject}",
+        f"为什么{subject}这么重要？",
+        f"{subject}到底做了什么？",
+    ]
+
+    # Deterministic selection via hash of the topic
+    idx = hash(topic) % len(templates)
+    return templates[idx]
+
+
+def _build_summary_items(graph: dict[str, Any]) -> list[str]:
+    """Extract 3-4 verb-phrase summary items from graph semantics.
+
+    Instead of abstract nouns (e.g. "高速缓存"), output actionable
+    verb phrases (e.g. "缓存热点数据") so cards read like capabilities.
+    """
+    nodes = graph.get("nodes", [])
+    edges = graph.get("edges", [])
+    roles = [n.get("role", "").lower() for n in nodes]
+    labels = [n.get("label", "") for n in nodes]
+    rl_pairs = list(zip(roles, labels))
+
+    # Priority 1: verb-phrase mapping from role + label keywords
+    verb_map: dict[str, str] = {
+        "cache": "缓存热点数据",
+        "缓存": "缓存高频访问数据",
+        "queue": "处理异步消息队列",
+        "消息": "实现消息队列系统",
+        "rank": "实时计算排行榜",
+        "排行": "实时排名与数据统计",
+        "lock": "保证分布式锁一致性",
+        "锁": "协调分布式资源锁",
+        "store": "持久化关键业务数据",
+        "存储": "高效存储与索引数据",
+        "db": "管理数据库读写请求",
+        "source": "接收外部输入数据",
+        "result": "输出最终计算结果",
+        "processor": "调度核心处理流程",
+        "proxy": "代理并路由请求流量",
+        "router": "智能分发请求到后端",
+    }
+
+    items: list[str] = []
+    seen: set[str] = set()
+
+    for r, l in rl_pairs:
+        for keyword, verb_phrase in verb_map.items():
+            if keyword in r or keyword in l:
+                if verb_phrase not in seen:
+                    items.append(verb_phrase)
+                    seen.add(verb_phrase)
+                break
+
+    # Priority 2: derive from edge semantics (action + target)
+    if len(items) < 3:
+        for edge in edges:
+            kind = (edge.get("kind") or "").lower()
+            label_text = (edge.get("label") or "").lower()
+            action_map = {
+                "request": "发起请求",
+                "store": "存储数据",
+                "lookup": "查询索引",
+                "return": "返回结果",
+                "control": "调度控制",
+                "flow": "流转消息",
+            }
+            action = action_map.get(kind, action_map.get(label_text, ""))
+            if action and action not in seen:
+                items.append(action)
+                seen.add(action)
+            if len(items) >= 4:
+                break
+
+    # Fallback: generic capability phrases
+    if len(items) < 3:
+        fallbacks = ["高性能处理", "弹性可扩展", "高可用保障", "低延迟响应"]
+        for fb in fallbacks:
+            if fb not in seen and len(items) < 4:
+                items.append(fb)
+
+    return items[:4]
+
+
+def classify_graph(graph: dict[str, Any]) -> dict[str, Any]:
+    """Node hierarchy + edge importance for visual grammar.
+
+    Returns:
+        hero: str                 — central node ID
+        secondary: list[str]      — directly connected to hero
+        others: list[str]         — everything else
+        primary_edges: list[str]  — edges touching hero
+        secondary_edges: list[str] — edges among secondary nodes
+        tertiary_edges: list[str] — everything else
+    """
+    nodes = graph.get("nodes", [])
+    edges = graph.get("edges", [])
+    node_map: dict[str, dict[str, Any]] = {n["id"]: n for n in nodes}
+
+    if not nodes:
+        return {"hero": "", "secondary": [], "others": [],
+                "primary_edges": [], "secondary_edges": [], "tertiary_edges": []}
+
+    nids = list(node_map.keys())
+    if len(nids) == 1:
+        return {"hero": nids[0], "secondary": [], "others": [],
+                "primary_edges": [], "secondary_edges": [], "tertiary_edges": []}
+
+    # Centrality scoring (same as original pick_main_node)
+    in_deg: dict[str, int] = {nid: 0 for nid in nids}
+    out_deg: dict[str, int] = {nid: 0 for nid in nids}
+    for e in edges:
+        frm = e.get("from", "")
+        to = e.get("to", "")
+        if frm in out_deg:
+            out_deg[frm] += 1
+        if to in in_deg:
+            in_deg[to] += 1
+
+    CENTRAL_ROLES = {"processor", "storage", "server", "core", "cache", "engine"}
+    best_id = nids[0]
+    best_score = -1
+    for n in nodes:
+        nid = n["id"]
+        role = (n.get("role") or "").lower()
+        role_boost = 3 if role in CENTRAL_ROLES else 0
+        label = (n.get("label") or "").lower()
+        label_boost = 2 if any(
+            kw in label for kw in ("redis", "缓存", "cache", "核心", "引擎", "server", "db")
+        ) else 0
+        score = in_deg[nid] * 2 + out_deg[nid] + role_boost + label_boost
+        if score > best_score:
+            best_score = score
+            best_id = nid
+
+    hero = best_id
+
+    # Build adjacency
+    neighbors: dict[str, set[str]] = {nid: set() for nid in nids}
+    for e in edges:
+        frm = e.get("from", "")
+        to = e.get("to", "")
+        if frm in neighbors and to in neighbors:
+            neighbors[frm].add(to)
+            neighbors[to].add(frm)
+
+    secondary_set = neighbors.get(hero, set())
+    others_set = set(nids) - {hero} - secondary_set
+
+    primary_edges: list[str] = []
+    secondary_edges_list: list[str] = []
+    tertiary_edges: list[str] = []
+    for e in edges:
+        eid = e["id"]
+        frm = e.get("from", "")
+        to = e.get("to", "")
+        if hero in (frm, to):
+            primary_edges.append(eid)
+        elif frm in secondary_set or to in secondary_set:
+            secondary_edges_list.append(eid)
+        else:
+            tertiary_edges.append(eid)
+
+    return {
+        "hero": hero,
+        "secondary": list(secondary_set),
+        "others": list(others_set),
+        "primary_edges": primary_edges,
+        "secondary_edges": secondary_edges_list,
+        "tertiary_edges": tertiary_edges,
+    }
+
+
+def build_default_plan(
+    graph: dict[str, Any],
+    total_frames: int,
+    audio_tracks: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Deterministic 6-beat animation plan for any graph.
+
+    Beat structure:
+        Beat 1 — Hero solo reveal (intensity 1.2)
+        Beat 2 — Ensemble reveal   (intensity 0.6)
+        Beat 3 — Edge flow          (intensity 1.0)
+        Beat 4 — Hero pulse         (intensity 1.3)
+        Beat 5 — Camera pan to hero (intensity 1.0)
+        Beat 6 — Final highlight    (intensity 0.9, fills remaining)
+
+    When audio_tracks are provided, beats are anchored to audio boundaries
+    so visuals and voiceover stay in sync.
+    """
+    cg = classify_graph(graph)
+    main = cg["hero"]
+    secondary = cg["secondary"]
+    primary_edges = cg["primary_edges"]
+    secondary_edges = cg["secondary_edges"]
+    nids = [n["id"] for n in graph["nodes"]]
+    all_eids = [e["id"] for e in graph["edges"]]
+
+    # Pick cameraFrom: prefer a node that has an edge *into* the hero
+    camera_from = secondary[0] if secondary else (nids[0] if nids else "")
+    hero_incoming = [
+        e.get("from", "") for e in graph.get("edges", [])
+        if e.get("to", "") == main
+    ]
+    if hero_incoming:
+        camera_from = hero_incoming[0]
+
+    if audio_tracks and len(audio_tracks) >= 3:
+        # Audio-driven: anchor each beat to a voiceover sentence boundary
+        at = audio_tracks
+        def at_end(i: int) -> int:
+            return at[i]["start"] + at[i]["duration"]
+
+        # Beat 1 — hero solo: first ~1.5s of sentence 0
+        b1 = at[0]["start"]
+        b1_end = min(b1 + 49, at_end(0) - 4)
+
+        # Beat 2 — ensemble reveal: rest of sentence 0 → end of sentence 1
+        b2 = b1_end
+        b2_end = at_end(min(1, len(at) - 1))
+
+        # Beat 3 — edge flow: sentence 1 → end of sentence 2
+        b3 = at[1]["start"] if len(at) > 1 else b2_end
+        b3_end = at_end(min(2, len(at) - 1))
+
+        # Beat 4 — hero pulse: sentence 2 → end of sentence 3
+        b4 = at[2]["start"] if len(at) > 2 else b3_end
+        b4_end = at_end(min(3, len(at) - 1))
+
+        # Beat 5 — camera pan: sentence 3 → cover sentence 4
+        b5 = at[3]["start"] if len(at) > 3 else b4_end
+        b5_end = at_end(min(4, len(at) - 1))
+
+        # Beat 6 — finale: last sentence → video end
+        b6 = at[-1]["start"]
+        b6_end = total_frames
+    else:
+        # Fallback: proportional scaling (no audio)
+        scale = max(1, total_frames / 360)
+        def beat(s: float, d: float) -> tuple[int, int]:
+            return (round(s * scale), max(1, round(d * scale)))
+        b1, b1_end = 0, 0
+        b1, b1_end = beat(0, 25)
+        b2, b2_end = beat(20, 40)
+        b3, b3_end = beat(60, 80)
+        b4, b4_end = beat(100, 120)
+        b5, b5_end = beat(140, 80)
+        b6 = round(220 * scale)
+        b6_end = total_frames
+        b1_end += b1
+        b2_end += b2
+        b3_end += b3
+        b4_end += b4
+        b5_end += b5
+
+    steps = [
+        {"id": "intro_hero",     "action": "reveal",     "start": b1,    "duration": b1_end - b1,     "nodeIds": [main],           "edgeIds": [],              "intensity": 1.2},
+        {"id": "intro_ensemble", "action": "reveal",     "start": b2,    "duration": b2_end - b2,     "nodeIds": nids,             "edgeIds": [],              "intensity": 0.6},
+        {"id": "flow_primary",   "action": "flow",       "start": b3,    "duration": b3_end - b3,     "nodeIds": [main] + secondary,"edgeIds": primary_edges,    "intensity": 1.0},
+        {"id": "hero_pulse",     "action": "pulse",      "start": b4,    "duration": b4_end - b4,     "nodeIds": [main],           "edgeIds": [],              "intensity": 1.3},
+        {"id": "camera_hero",    "action": "camera_pan", "start": b5,    "duration": b5_end - b5,     "nodeIds": [],               "edgeIds": [],              "intensity": 1.0, "cameraFrom": camera_from, "cameraTo": main},
+        {"id": "finale",         "action": "highlight",  "start": b6,    "duration": b6_end - b6,     "nodeIds": nids,             "edgeIds": all_eids,        "intensity": 0.9},
+    ]
+
+    # ── Shot system: each beat becomes a camera shot ──
+    shots = [
+        {"focus": "node",    "targetIds": [main],           "camera": "zoom-in",  "start": b1, "duration": b1_end - b1},
+        {"focus": "overview","targetIds": nids,             "camera": "pull-out", "start": b2, "duration": b2_end - b2},
+        {"focus": "edge",    "targetIds": primary_edges,    "camera": "pan",      "start": b3, "duration": b3_end - b3},
+        {"focus": "node",    "targetIds": [main],           "camera": "push-in",  "start": b4, "duration": b4_end - b4},
+        {"focus": "group",   "targetIds": [main] + secondary,"camera": "pan",     "start": b5, "duration": b5_end - b5},
+        {"focus": "overview","targetIds": nids,             "camera": "static",   "start": b6, "duration": b6_end - b6},
+    ]
+    # Attach first-sentence text to first shot when audio available
+    if audio_tracks:
+        shots[0]["text"] = audio_tracks[0].get("text", "")
+
+    return {
+        "version": 1,
+        "nodeTiers": {"hero": main, "secondary": secondary, "others": cg["others"]},
+        "steps": steps,
+        "shots": shots,
+    }
+
+
+def _normalize_audio_tracks(tracks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """P4.1: Force serial timeline — no overlap, each track chains after the previous."""
+    if not tracks:
+        return tracks
+    tracks = sorted(tracks, key=lambda x: x["start"])
+    fixed: list[dict[str, Any]] = []
+    cursor = 0
+    GAP_MS = 100
+    GAP_FRAMES = max(1, round(GAP_MS / 1000 * FPS))
+
+    for t in tracks:
+        fixed.append({**t, "start": cursor, "duration": t["duration"]})
+        cursor += t["duration"] + GAP_FRAMES
+
+    return fixed
+
+
+def _director_cache_path() -> Path:
+    return get_project_root() / "output" / ".director_cache.json"
+
+
+def _load_director_cache() -> dict[str, Any]:
+    path = _director_cache_path()
+    if path.exists():
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except (json.JSONDecodeError, OSError):
+            pass
+    return {"plans": {}, "hits": 0, "misses": 0}
+
+
+def _save_director_cache(cache: dict[str, Any]) -> None:
+    path = _director_cache_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    # Prune to max 200 entries
+    plans = cache.get("plans", {})
+    if isinstance(plans, dict) and len(plans) > 200:
+        # Keep only the most recent 150
+        keys = list(plans.keys())[-150:]
+        cache["plans"] = {k: plans[k] for k in keys}
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(cache, f, ensure_ascii=False, indent=2)
+
+
+def _compute_director_cache_key(topic: str, graph: dict[str, Any]) -> str:
+    """Stable cache key from topic + graph topology (node/edge IDs)."""
+    nids = sorted(n["id"] for n in graph.get("nodes", []))
+    eids = sorted(e["id"] for e in graph.get("edges", []))
+    payload = json.dumps({"t": topic.strip().lower(), "n": nids, "e": eids}, ensure_ascii=False)
+    return hashlib.sha256(payload.encode()).hexdigest()[:16]
+
+
+def _extract_audio_emphasis(
+    audio_tracks: list[dict[str, Any]],
+    graph: dict[str, Any],
+) -> list[str]:
+    """P6.2: Extract node emphasis from audio narration text.
+
+    Scans audio track text for node labels — when the narrator mentions
+    a node name, that node gets visual emphasis. Runs as a complement
+    to LLM director emphasis (or standalone when LLM is disabled).
+    """
+    if not audio_tracks:
+        return []
+    all_text = " ".join(t.get("text", "") for t in audio_tracks).lower()
+    if not all_text:
+        return []
+    emphasized: list[str] = []
+    for node in graph.get("nodes", []):
+        label = (node.get("label", "")).lower()
+        nid = node["id"]
+        # Check if node label appears in audio text (substring match)
+        if label and len(label) >= 2 and label in all_text:
+            emphasized.append(nid)
+    return emphasized
+
+
+def _log_director_diff(director_plan, translated_scenes: list[dict[str, Any]]) -> None:
+    """P3.4: Print director-vs-executor comparison for every shot.
+
+    Format:
+        [Scene] hook — "grab attention"
+          [LLM] introduce_node → Redis
+          [Translator] camera=zoom-in focus=node targetIds=[redis]
+          [LLM] show_flow → Client→Redis
+          [Translator] camera=pan focus=edge targetIds=[e1]
+          [FALLBACK] emphasize → UnknownLabel  → camera=static focus=overview
+    """
+    print("\n" + "=" * 72)
+    print("  DIRECTOR vs EXECUTOR")
+    print("=" * 72)
+
+    for si, sp in enumerate(director_plan.scenes):
+        ts = translated_scenes[si] if si < len(translated_scenes) else None
+        dropped = ts.get("_dropped", 0) if ts else 0
+        all_fb = ts.get("_allFallback", False) if ts else False
+        tag = " [ALL FALLBACK]" if all_fb else (f" [{dropped} dropped]" if dropped else "")
+        print(f"\n  [Scene {si+1}] {sp.type} — \"{sp.goal}\"{tag}")
+
+        if not ts:
+            print("    [MISS] Scene dropped by translator (no valid shots)")
+            continue
+
+        translated_shots = ts.get("shots", [])
+
+        for shot_idx, si_obj in enumerate(sp.shots):
+            intent = si_obj.intent
+            target = si_obj.target
+
+            match = translated_shots[shot_idx] if shot_idx < len(translated_shots) else None
+
+            if match:
+                is_fb = match.get("_fallback", False)
+                prefix = "[FALLBACK]" if is_fb else "[LLM]"
+                print(f"    {prefix} {intent} → {target}")
+                print(f"    [Translator] camera={match['camera']} focus={match['focus']} targetIds={match['targetIds']}")
+            else:
+                print(f"    [DROP] {intent} → {target}  (guard 3: count limit)")
+
+    emphasis = getattr(director_plan, "emphasis", []) or []
+    if emphasis:
+        print(f"\n  [Emphasis keywords] {emphasis}")
+    print(f"  [Pace] {director_plan.pace}")
+    print("=" * 72 + "\n")
 
 
 def build_graph_video_layout(
@@ -630,6 +1055,7 @@ def build_graph_video_layout(
     enable_audio: bool = False,
     voice: str = DEFAULT_TTS_VOICE,
     rate: int = 0,
+    use_llm_director: bool = False,
 ) -> dict[str, Any]:
     total_frames = max(1, round(total_ms / 1000 * FPS))
     dsl = generate_scene_dsl(text)
@@ -667,6 +1093,17 @@ def build_graph_video_layout(
         audio_tracks = _generate_explainer_audio_tracks(
             explainer_script, total_ms=total_ms, voice=voice, rate=rate
         )
+        audio_tracks = _normalize_audio_tracks(audio_tracks)
+        # P4.1 guard + debug: print timeline + assert no overlap
+        print("  [Audio] Normalized timeline:")
+        for i, t in enumerate(audio_tracks):
+            end = t["start"] + t["duration"]
+            gap = audio_tracks[i + 1]["start"] - end if i + 1 < len(audio_tracks) else 0
+            print(f"    track[{i}] start={t['start']:>5} end={end:>5} dur={t['duration']:>4} gap={gap:>3}")
+            if gap < 0:
+                raise RuntimeError(
+                    f"Audio overlap: track[{i}] end={end} > next start={audio_tracks[i+1]['start']}"
+                )
         audio_end = max(
             (t["start"] + t["duration"] for t in audio_tracks),
             default=0,
@@ -674,42 +1111,97 @@ def build_graph_video_layout(
         if audio_end > total_frames:
             total_frames = audio_end
 
-    # Generate animation plan (director script)
-    animation_plan = _call_llm_for_animation_plan(graph) or _fallback_animation_plan(graph)
-    # Scale plan step times to total_frames
-    raw_plan_steps = animation_plan.get("steps", [])
-    if raw_plan_steps:
-        max_plan_end = max(
-            s.get("start", 0) + s.get("duration", 30)
-            for s in raw_plan_steps
-        ) or total_frames
-        scale = total_frames / max_plan_end
-        scaled_steps = []
-        for s in raw_plan_steps:
-            scaled_steps.append({
-                **s,
-                "start": round(s.get("start", 0) * scale),
-                "duration": max(1, round(s.get("duration", 30) * scale)),
-            })
-        animation_plan["steps"] = scaled_steps
-    graph["animation_plan"] = animation_plan
+    # Step 2: Director — rule-based baseline (always computed as fallback)
+    graph["animation_plan"] = build_default_plan(graph, total_frames, audio_tracks if audio_tracks else None)
+    graph["shots"] = graph["animation_plan"].get("shots", [])
 
-    # === VIRAL DIRECTOR PLAN (硬覆盖，验证视觉表现) ===
-    _nids = [n["id"] for n in graph["nodes"]]
-    _eids = [e["id"] for e in graph["edges"]]
-    _core = _nids[1] if len(_nids) > 1 else _nids[0]
-    graph["animation_plan"] = {
-        "version": 1,
-        "steps": [
-            {"id": "intro_boom",    "action": "reveal",     "start": 0,   "duration": 25,  "nodeIds": [_core],   "edgeIds": [],     "intensity": 1.2},
-            {"id": "others_fade",   "action": "reveal",     "start": 20,  "duration": 40,  "nodeIds": _nids,     "edgeIds": [],     "intensity": 0.6},
-            {"id": "flow_in",       "action": "flow",       "start": 60,  "duration": 80,  "nodeIds": _nids,     "edgeIds": _eids,  "intensity": 1.0},
-            {"id": "redis_pulse",   "action": "pulse",      "start": 100, "duration": 120, "nodeIds": [_core],   "edgeIds": [],     "intensity": 1.3},
-            {"id": "camera_focus",  "action": "camera_pan", "start": 140, "duration": 80,  "nodeIds": [],        "edgeIds": [],     "intensity": 1.0, "cameraFrom": _nids[0], "cameraTo": _core},
-            {"id": "final_glow",    "action": "highlight",  "start": 220, "duration": total_frames - 220, "nodeIds": _nids, "edgeIds": _eids, "intensity": 0.9},
-        ]
-    }
-    # === END VIRAL PLAN ===
+    # Step 3 (P3): LLM Director Brain — optional semantic intent layer
+    # LLM only outputs "what to show", translator converts to "how to show".
+    # When disabled or LLM fails, rule-based plan from Step 2 is used.
+    llm_scenes: list[dict[str, Any]] | None = None
+    if use_llm_director:
+        # ── P3.5: Failure cache — skip LLM for previously failed hashes ──
+        cache_key = _compute_director_cache_key(text, graph)
+        director_cache = _load_director_cache()
+
+        if cache_key in director_cache.get("plans", {}):
+            cached = director_cache["plans"][cache_key]
+            director_cache["hits"] = director_cache.get("hits", 0) + 1
+            _save_director_cache(director_cache)
+            if cached is not None:
+                # Previous LLM call succeeded — replay cached result
+                llm_scenes = cached.get("scenes")
+                if llm_scenes:
+                    graph["_emphasis"] = cached.get("emphasis", [])
+                    graph["_pace"] = cached.get("pace", "medium")
+                    graph["_debug"] = True
+                    all_llm_shots: list[dict[str, Any]] = []
+                    for sc in llm_scenes:
+                        if sc["type"] == "graph":
+                            for s in sc.get("shots", []):
+                                if "start" in s and "duration" in s:
+                                    all_llm_shots.append(s)
+                    if all_llm_shots:
+                        graph["shots"] = all_llm_shots
+                    print(f"  [Cache] hit → {len(llm_scenes)} scenes (skipped LLM)")
+            else:
+                # Previous LLM call failed — skip entirely, use fallback
+                print(f"  [Cache] hit → previous failure (skipped LLM)")
+        else:
+            director_cache["misses"] = director_cache.get("misses", 0) + 1
+            try:
+                from engine.bridge.director_plan import (
+                    call_llm_for_director_plan,
+                    plan_to_scenes_and_shots,
+                )
+
+                director_plan = call_llm_for_director_plan(text, graph)
+                if director_plan:
+                    translated = plan_to_scenes_and_shots(
+                        director_plan, graph, total_frames,
+                        audio_tracks if audio_tracks else [],
+                    )
+                    llm_scenes = translated.get("scenes")
+                    if llm_scenes:
+                        # ── P3.4: Director vs Executor observability log ──
+                        _log_director_diff(director_plan, llm_scenes)
+                        # Debug overlay in rendered video
+                        graph["_debug"] = True
+                        # Inject emphasis into graph for visual boost
+                        graph["_emphasis"] = translated.get("emphasis", [])
+                        graph["_pace"] = translated.get("pace", "medium")
+                        # Override graph shots with LLM-directed shots
+                        all_llm_shots: list[dict[str, Any]] = []
+                        for sc in llm_scenes:
+                            if sc["type"] == "graph":
+                                for s in sc.get("shots", []):
+                                    if "start" in s and "duration" in s:
+                                        all_llm_shots.append(s)
+                        if all_llm_shots:
+                            graph["shots"] = all_llm_shots
+                        # Cache success
+                        director_cache["plans"][cache_key] = {
+                            "scenes": llm_scenes,
+                            "emphasis": translated.get("emphasis", []),
+                            "pace": translated.get("pace", "medium"),
+                        }
+                        _save_director_cache(director_cache)
+                else:
+                    # Cache failure (null = known failure, skip next time)
+                    director_cache["plans"][cache_key] = None
+                    _save_director_cache(director_cache)
+            except Exception:
+                director_cache["plans"][cache_key] = None
+                _save_director_cache(director_cache)
+                llm_scenes = None
+
+    # P6.2: Audio-driven keyword → node emphasis (complements or substitutes LLM)
+    if audio_tracks:
+        audio_keywords = _extract_audio_emphasis(audio_tracks, graph)
+        existing = set(graph.get("_emphasis", []) if isinstance(graph.get("_emphasis"), list) else [])
+        existing.update(audio_keywords)
+        if existing:
+            graph["_emphasis"] = list(existing)
 
     # Subtitles: prefer audio-track-synced captions so text matches voiceover
     elements: list[dict[str, Any]] = []
@@ -774,6 +1266,101 @@ def build_graph_video_layout(
                     "animation": {"enter": "blur-in", "exit": "fade", "duration": 12},
                 })
 
+    # Build multi-scene sequence: hook → explain (graph) → summary (cards)
+    # Scene timing is driven entirely by audio segments — no manual calculation.
+    scenes: list[dict[str, Any]] = []
+    if audio_tracks and len(audio_tracks) >= 3:
+        # hook scene = first audio sentence
+        hook_track = audio_tracks[0]
+        # graph scene = middle explanation sentences (audio_tracks[1:-1])
+        middle_tracks = audio_tracks[1:-1]
+        graph_start = middle_tracks[0]["start"]
+        graph_end = middle_tracks[-1]["start"] + middle_tracks[-1]["duration"]
+        # cards scene = last audio sentence
+        cards_track = audio_tracks[-1]
+
+        # Use LLM intent for hook text + cards title when available
+        hook_text = _build_hook_text(text, hook_track.get("text", ""))
+        cards_title = "它能做什么？"
+        cards_items = _build_summary_items(graph)
+
+        if llm_scenes:
+            for lsc in llm_scenes:
+                if lsc["type"] == "hook" and lsc.get("goal"):
+                    hook_text = lsc["goal"]
+                if lsc["type"] == "cards" and lsc.get("goal"):
+                    cards_title = lsc["goal"]
+
+        scenes = [
+            {
+                "id": "scene_hook",
+                "type": "hook",
+                "start": hook_track["start"],
+                "duration": hook_track["duration"],
+                "text": hook_text,
+                "audioTracks": [hook_track],
+            },
+            {
+                "id": "scene_graph",
+                "type": "graph",
+                "start": graph_start,
+                "duration": graph_end - graph_start,
+                "graph": graph,
+                "audioTracks": middle_tracks,
+            },
+            {
+                "id": "scene_cards",
+                "type": "cards",
+                "start": cards_track["start"],
+                "duration": cards_track["duration"],
+                "title": cards_title,
+                "items": cards_items,
+                "audioTracks": [cards_track],
+            },
+        ]
+    else:
+        # Single scene fallback (no audio)
+        scenes = [
+            {
+                "id": "scene_graph",
+                "type": "graph",
+                "start": 0,
+                "duration": total_frames,
+                "graph": graph,
+            },
+        ]
+
+    # Audio-driven crossfade overlap: use actual audio end/start for pause calc
+    for i in range(len(scenes) - 1):
+        curr_audio = scenes[i].get("audioTracks", [])
+        next_audio = scenes[i + 1].get("audioTracks", [])
+        curr_audio_end = max(
+            (t["start"] + t["duration"] for t in curr_audio),
+            default=scenes[i]["start"] + scenes[i]["duration"],
+        )
+        next_audio_start = min(
+            (t["start"] for t in next_audio),
+            default=scenes[i + 1]["start"],
+        )
+        pause_frames = max(0, next_audio_start - curr_audio_end)
+        # Map pause to overlap: 0→4, long pause→12
+        # P6.3: minimum 6-frame crossfade for visual breathing
+        overlap = max(6, min(12, round(pause_frames * 0.75)))
+        scenes[i]["overlapOut"] = overlap
+        scenes[i + 1]["overlapIn"] = overlap
+
+    # Seal gaps: extend each scene's duration to meet the next scene start,
+    # so crossfade transitions have no black frames between scenes.
+    for i in range(len(scenes) - 1):
+        next_start = scenes[i + 1]["start"]
+        current_end = scenes[i]["start"] + scenes[i]["duration"]
+        if next_start > current_end:
+            scenes[i]["duration"] = next_start - scenes[i]["start"]
+
+    # P4.1: Strip per-scene audioTracks — audio rendered at top level, no nesting risk
+    for scene in scenes:
+        scene.pop("audioTracks", None)
+
     return {
         "width": width,
         "height": height,
@@ -786,9 +1373,28 @@ def build_graph_video_layout(
         "edges": graph["edges"],
         "elements": elements,
         "shots": [],
+        "scenes": scenes,
         "audioTracks": audio_tracks,
         "explainerScript": explainer_script,
     }
+
+
+def render_layout_json(layout_path: str, video_out: str) -> str:
+    """Render a pre-built layout JSON to video. No rebuild, no TTS regeneration."""
+    result = subprocess.run(
+        [
+            "node",
+            "render-agent-semantic.mjs",
+            f"..\\{layout_path}",
+            f"..\\{video_out}",
+        ],
+        cwd="remotion-renderer",
+        check=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise RuntimeError("Remotion graph render failed")
+    return video_out
 
 
 def render_graph_video(
@@ -799,6 +1405,7 @@ def render_graph_video(
     enable_audio: bool = False,
     voice: str = DEFAULT_TTS_VOICE,
     rate: int = 0,
+    use_llm_director: bool = False,
 ) -> tuple[str, str]:
     layout = build_graph_video_layout(
         text,
@@ -806,6 +1413,7 @@ def render_graph_video(
         enable_audio=enable_audio,
         voice=voice,
         rate=rate,
+        use_llm_director=use_llm_director,
     )
     with open(layout_out, "w", encoding="utf-8") as file:
         json.dump(layout, file, ensure_ascii=False, indent=2)
@@ -839,6 +1447,8 @@ def main() -> None:
                         help="Skip TTS narration audio generation")
     parser.add_argument("--voice", default=DEFAULT_TTS_VOICE, help=f"TTS voice (default: {DEFAULT_TTS_VOICE})")
     parser.add_argument("--rate", type=int, default=0, help="TTS speed (-10 to +10)")
+    parser.add_argument("--llm-director", action="store_true", default=False,
+                        help="Use LLM for semantic director intent (off by default)")
     args = parser.parse_args()
 
     if args.render:
@@ -850,6 +1460,7 @@ def main() -> None:
             enable_audio=args.enable_audio,
             voice=args.voice,
             rate=args.rate,
+            use_llm_director=args.llm_director,
         )
         print(json.dumps({"layout": layout_out, "video": video_out}, ensure_ascii=False))
         return
@@ -860,6 +1471,7 @@ def main() -> None:
         enable_audio=args.enable_audio,
         voice=args.voice,
         rate=args.rate,
+        use_llm_director=args.llm_director,
     )
     with open(args.out, "w", encoding="utf-8") as file:
         json.dump(layout, file, ensure_ascii=False, indent=2)

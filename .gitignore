@@ -47,8 +47,7 @@ remotion-renderer/public/fonts/*.woff2
 # v18: RL reward dataset（不提交，生产数据）
 remotion-renderer/dataset/
 
-# 外部参考项目（不参与构建，remotion-renderer 完全自洽）
-remotion/
+# 外部参考项目（不参与构建）
 remotionOriginal/
 
 # 实验性/未完成的模块（调试产物）

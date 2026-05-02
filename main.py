@@ -619,5 +619,126 @@ def main():
             print("无效选项")
 
 
+def run_graph_pipeline_cli() -> None:
+    """P7: Graph video pipeline — single-command entry point.
+
+    Usage:
+        python main.py --topic "Redis pipeline"
+        python main.py --topic "HTTP request flow" --llm-director
+        python main.py --topic "Binary tree traversal" --duration-ms 15000
+    """
+    import argparse
+    import json
+    import re
+    from pathlib import Path
+    from engine.bridge.graph_pipeline import (
+        build_graph_video_layout,
+        render_layout_json,
+        FPS,
+    )
+    from engine.shared.path_utils import get_project_root
+
+    parser = argparse.ArgumentParser(
+        description="Generate explainable graph videos from a topic using AI + Remotion."
+    )
+    parser.add_argument("--topic", required=True, help="Topic to explain (e.g. 'Redis pipeline')")
+    parser.add_argument("--duration-ms", type=int, default=12000, help="Target duration in ms")
+    parser.add_argument("--voice", default="zh-CN-XiaoxiaoNeural", help="TTS voice")
+    parser.add_argument("--rate", type=int, default=0, help="TTS speed (-10 to +10)")
+    parser.add_argument("--llm-director", action="store_true", help="Use LLM for director intent")
+    parser.add_argument("--out-dir", default=None, help="Output directory (default: output/<topic-slug>/)")
+    args = parser.parse_args()
+
+    # Slugify topic for directory name
+    topic_slug = re.sub(r"[^a-zA-Z0-9一-鿿]+", "-", args.topic.strip()).strip("-").lower()
+    if not topic_slug:
+        topic_slug = "video"
+
+    root = get_project_root()
+    if args.out_dir:
+        out_dir = Path(args.out_dir)
+    else:
+        out_dir = root / "output" / topic_slug
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    layout_path = str(out_dir / "layout.json")
+    video_path = str(out_dir / "video.mp4")
+
+    print(f"\n{'='*60}")
+    print(f"  Graph Video Pipeline")
+    print(f"  Topic: {args.topic}")
+    print(f"  Output: {out_dir}")
+    print(f"{'='*60}\n")
+
+    # Build layout
+    print("[1/3] Building scene layout...")
+    layout = build_graph_video_layout(
+        args.topic,
+        total_ms=args.duration_ms,
+        enable_audio=True,
+        voice=args.voice,
+        rate=args.rate,
+        use_llm_director=args.llm_director,
+    )
+
+    # Save layout
+    with open(layout_path, "w", encoding="utf-8") as f:
+        json.dump(layout, f, ensure_ascii=False, indent=2)
+    print(f"  -> layout.json ({len(json.dumps(layout, ensure_ascii=False))} bytes)")
+
+    # Save script
+    script_path = out_dir / "script.txt"
+    explainer = layout.get("explainerScript", [])
+    if explainer:
+        with open(script_path, "w", encoding="utf-8") as f:
+            for line in explainer:
+                f.write(line + "\n")
+        print(f"  -> script.txt ({len(explainer)} lines)")
+
+    # Save audio tracks + print timeline verification
+    audio_path = out_dir / "audio_tracks.json"
+    audio_tracks = layout.get("audioTracks", [])
+    if audio_tracks:
+        with open(audio_path, "w", encoding="utf-8") as f:
+            json.dump(audio_tracks, f, ensure_ascii=False, indent=2)
+        print(f"  -> audio_tracks.json ({len(audio_tracks)} tracks)")
+        # P4.1: Print audio timeline for manual overlap check
+        print(f"\n  Audio timeline (frames):")
+        for i, t in enumerate(audio_tracks):
+            end = t["start"] + t["duration"]
+            gap = audio_tracks[i + 1]["start"] - end if i + 1 < len(audio_tracks) else 0
+            text_preview = t.get("text", "")[:40]
+            print(f"    [{i}] start={t['start']:>5}  end={end:>5}  dur={t['duration']:>4}  gap={gap:>3}  \"{text_preview}...\"")
+            if gap < 0:
+                print(f"         ^^^ OVERLAP DETECTED! gap={gap}")
+
+    # Render video from saved layout (no rebuild, no double TTS)
+    print("\n[2/3] Rendering video with Remotion...")
+    try:
+        render_layout_json(layout_path, video_path)
+        print(f"  -> video.mp4")
+    except Exception as e:
+        print(f"  Render failed: {e}")
+        print(f"  Layout saved to {layout_path} — render manually:")
+        print(f"    cd remotion-renderer && node render-agent-semantic.mjs ..\\{layout_path} ..\\{video_path}")
+        return
+
+    # Summary
+    total_frames = layout.get("durationInFrames", 0)
+    duration_sec = total_frames / FPS
+    scene_count = len(layout.get("scenes", []))
+    print(f"\n[3/3] Done!")
+    print(f"  Duration: {duration_sec:.1f}s ({total_frames} frames)")
+    print(f"  Scenes: {scene_count}")
+    print(f"  Audio tracks: {len(audio_tracks)}")
+    print(f"\n  Output: {out_dir}")
+    for f in sorted(out_dir.iterdir()):
+        print(f"    {f.name} ({f.stat().st_size:,} bytes)")
+    print()
+
+
 if __name__ == "__main__":
-    main()
+    if "--topic" in sys.argv:
+        run_graph_pipeline_cli()
+    else:
+        main()

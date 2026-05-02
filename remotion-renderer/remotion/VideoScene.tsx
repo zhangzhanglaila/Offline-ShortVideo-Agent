@@ -36,6 +36,8 @@ import { getLayoutDurationInFrames } from "./layoutUtils";
 import { getLayerAnimationStyle } from "./layerAnimation";
 import { buildFeatureVector, w0, b0, w1, b1, w2, b2, norm_X_mean, norm_X_std, norm_y_mean, norm_y_std } from "./rewardModel";
 import { GraphScene } from "./GraphScene";
+import { HookScene } from "./HookScene";
+import { CardScene } from "./CardScene";
 import { ShotDensityStack } from "./shotDensity";
 import {
   getLinearTransitionProgress,
@@ -2624,6 +2626,33 @@ function getElements(layout: VideoLayoutInput): VideoElement[] {
   return [];
 }
 
+// ── v22.5: Scene crossfade wrapper with audio-driven overlap ──
+const DEFAULT_OVERLAP = 8;
+const SceneFade: React.FC<{
+  durationInFrames: number;
+  fadeInFrames?: number;
+  fadeOutFrames?: number;
+  children: React.ReactNode;
+}> = ({
+  durationInFrames,
+  fadeInFrames = DEFAULT_OVERLAP,
+  fadeOutFrames = DEFAULT_OVERLAP,
+  children,
+}) => {
+  const frame = useCurrentFrame();
+  const fadeIn = fadeInFrames > 0
+    ? interpolate(frame, [0, fadeInFrames], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" })
+    : 1;
+  const fadeOut = fadeOutFrames > 0
+    ? interpolate(frame, [durationInFrames - fadeOutFrames, durationInFrames], [1, 0], { extrapolateLeft: "clamp", extrapolateRight: "clamp" })
+    : 1;
+  return (
+    <div style={{ position: "absolute", inset: 0, opacity: fadeIn * fadeOut }}>
+      {children}
+    </div>
+  );
+};
+
 export const VideoScene: React.FC<{ layout: VideoLayout }> = ({ layout }) => {
   const frame = useCurrentFrame();
   const { width, height, background } = layout;
@@ -2728,11 +2757,6 @@ export const VideoScene: React.FC<{ layout: VideoLayout }> = ({ layout }) => {
       }}
     >
       {/* 情绪色调覆盖层（intense=红晕，calm=蓝调） */}
-      {(layout.audioTracks ?? []).map((track) => (
-        <Sequence key={track.id} from={track.start} durationInFrames={track.duration}>
-          <Audio src={track.src} />
-        </Sequence>
-      ))}
       <div
         style={{
           position: "absolute",
@@ -2742,11 +2766,51 @@ export const VideoScene: React.FC<{ layout: VideoLayout }> = ({ layout }) => {
           pointerEvents: "none",
         }}
       />
-      {/* v10.3: Shot 渲染层（镜头系统 + 切换连续性） */}
-      {/* 渲染在 elements 下方（zIndex=-1），当前+下一 shot 同时渲染，transition 区间渐变 */}
-      {layout.scene_type === "graph" && layout.graph ? (
-        <GraphScene graph={layout.graph} width={width} height={height} />
-      ) : null}
+      {/* P4.1: Global audio tracks — rendered at absolute top level (no scene nesting) */}
+      {layout.audioTracks?.map((track) => (
+        <Sequence key={track.id} from={track.start} durationInFrames={track.duration}>
+          <Audio src={track.src} />
+        </Sequence>
+      ))}
+      {/* v22.5: Multi-Scene pipeline with audio-driven crossfade overlap */}
+      {layout.scenes?.length ? (
+        layout.scenes.map((scene, i, all) => {
+          const total = all.length;
+          const isFirst = i === 0;
+          const isLast = i === total - 1;
+          const overlapBefore = isFirst ? 0 : (scene.overlapIn ?? DEFAULT_OVERLAP);
+          const overlapAfter = isLast ? 0 : (scene.overlapOut ?? DEFAULT_OVERLAP);
+          const visualStart = scene.start - overlapBefore;
+          const visualDuration = scene.duration + overlapBefore + overlapAfter;
+
+          return (
+            <React.Fragment key={scene.id}>
+              {/* Visual: extended with overlap for crossfade */}
+              <Sequence from={visualStart} durationInFrames={visualDuration}>
+                <SceneFade
+                  durationInFrames={visualDuration}
+                  fadeInFrames={overlapBefore}
+                  fadeOutFrames={overlapAfter}
+                >
+                  {scene.type === "hook" && <HookScene text={scene.text} durationInFrames={scene.duration} />}
+                  {scene.type === "graph" && scene.graph && (
+                    <GraphScene graph={scene.graph} width={width} height={height} />
+                  )}
+                  {scene.type === "cards" && (
+                    <CardScene title={scene.title ?? ""} items={scene.items ?? []} durationInFrames={scene.duration} />
+                  )}
+                </SceneFade>
+              </Sequence>
+            </React.Fragment>
+          );
+        })
+      ) : (
+        /* v10.3: Shot 渲染层（镜头系统 + 切换连续性） */
+        /* 渲染在 elements 下方（zIndex=-1），当前+下一 shot 同时渲染，transition 区间渐变 */
+        layout.scene_type === "graph" && layout.graph ? (
+          <GraphScene graph={layout.graph} width={width} height={height} />
+        ) : null
+      )}
       {(() => {
         const { current, next, currentTransform, nextTransform, nextShotTransform, nextEmotionTransform, currentOpacity, nextOpacity, isTransitioning } =
           useShotsAroundFrame(layout.shots, cameraOverride, transitionPlan, emotions);

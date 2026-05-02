@@ -325,9 +325,27 @@ export interface AnimationPlanStep {
   cameraTo?: string;
 }
 
+export interface NodeTiers {
+  hero: string;
+  secondary: string[];
+  others: string[];
+}
+
 export interface AnimationPlan {
   version: 1;
   steps: AnimationPlanStep[];
+  nodeTiers?: NodeTiers;
+}
+
+export interface GraphShot {
+  start: number;
+  duration: number;
+  /** "node" | "edge" | "group" | "overview" */
+  focus: string;
+  targetIds: string[];
+  camera: "zoom-in" | "push-in" | "pan" | "static" | "pull-out";
+  text?: string;
+  intent?: string;
 }
 
 export interface GraphSceneData {
@@ -339,6 +357,12 @@ export interface GraphSceneData {
   steps: GraphStep[];
   timeline?: GraphTimelineEvent[];
   animation_plan?: AnimationPlan;
+  shots?: GraphShot[];
+  _debug?: boolean;
+  /** LLM director emphasis keywords for visual boost */
+  _emphasis?: string[];
+  /** LLM director pace setting */
+  _pace?: string;
 }
 
 export interface Shot {
@@ -365,6 +389,22 @@ export interface Shot {
 // ============================================================
 // 视频布局（新版）
 // ============================================================
+export interface SceneData {
+  id: string;
+  type: "hook" | "graph" | "cards";
+  start: number;
+  duration: number;
+  text?: string;
+  title?: string;
+  items?: string[];
+  graph?: GraphSceneData;
+  audioTracks?: AudioTrack[];
+  /** Frames of crossfade overlap into the next scene */
+  overlapOut?: number;
+  /** Frames of crossfade overlap from the previous scene */
+  overlapIn?: number;
+}
+
 export interface VideoLayout {
   width: number;
   height: number;
@@ -376,6 +416,7 @@ export interface VideoLayout {
   nodes?: GraphNode[];
   edges?: GraphEdge[];
   elements: VideoElement[];
+  scenes?: SceneData[];
   audioTracks?: AudioTrack[];
   /** 导演意图（指导渲染层的动态状态） */
   director?: DirectorIntent;
