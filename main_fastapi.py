@@ -17,6 +17,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 import config
@@ -59,14 +60,43 @@ def create_app() -> FastAPI:
             included.append(mod_name)
     app.state.included_routers = included
 
-    # 静态文件：/static/output/... → output/...（视频、素材等）
+    # 静态文件：/static/output/... → output/...（生成的视频）
     output_dir = Path(config.OUTPUT_DIR)
     output_dir.mkdir(parents=True, exist_ok=True)
     app.mount("/static/output", StaticFiles(directory=str(output_dir)), name="static-output")
 
+    # 静态文件：/static/materials/... → assets/素材池_待剪辑/（用户上传的素材）
+    material_dir = Path(config.MATERIAL_DIR)
+    material_dir.mkdir(parents=True, exist_ok=True)
+    app.mount("/static/materials", StaticFiles(directory=str(material_dir)), name="static-materials")
+
+    # 静态文件：/static/thumbnails/... → assets/thumbnails/（视频缩略图）
+    thumbnails_dir = Path(config.THUMBNAILS_DIR)
+    thumbnails_dir.mkdir(parents=True, exist_ok=True)
+    app.mount("/static/thumbnails", StaticFiles(directory=str(thumbnails_dir)), name="static-thumbnails")
+
+    # 静态文件：/static/bgm/... → assets/bgm/（背景音乐）
+    bgm_dir = Path(config.BGM_DIR)
+    bgm_dir.mkdir(parents=True, exist_ok=True)
+    app.mount("/static/bgm", StaticFiles(directory=str(bgm_dir)), name="static-bgm")
+
     @app.get("/api/health")
     async def health():
         return {"status": "ok", "routers": included}
+
+    # 前端：web/index.html 作为 SPA fallback，所有非 /api/* /static/* 请求返回它
+    web_dir = Path(__file__).parent / "web"
+    if web_dir.is_dir():
+        @app.get("/", include_in_schema=False)
+        async def web_root():
+            return FileResponse(str(web_dir / "index.html"))
+
+        @app.get("/{path:path}", include_in_schema=False)
+        async def web_fallback(path: str):
+            # /api/* /static/* 已被精确路由匹配，这里只处理前端路由
+            if path.startswith("api/") or path.startswith("static/"):
+                return {"detail": "Not Found"}
+            return FileResponse(str(web_dir / "index.html"))
 
     return app
 
