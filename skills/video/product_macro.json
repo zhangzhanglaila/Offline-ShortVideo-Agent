@@ -1,0 +1,42 @@
+{
+  "id": "product_macro",
+  "name": "产品微距",
+  "description": "微距 + 环绕 + 柔光箱，电商/带货展示的标准打法",
+  "tags": [
+    "电商",
+    "产品",
+    "商业"
+  ],
+  "featured": true,
+  "prompt_template": "{subject}放置在{surface}上，微距特写，缓慢环绕，柔光箱打光，背景虚化，商业广告质感，超高清细节",
+  "params": [
+    {
+      "key": "subject",
+      "label": "产品",
+      "placeholder": "一瓶磨砂玻璃香水",
+      "required": true,
+      "default": ""
+    },
+    {
+      "key": "surface",
+      "label": "台面",
+      "placeholder": "黑色大理石台面",
+      "required": false,
+      "default": "深色台面"
+    }
+  ],
+  "defaults": {
+    "size": "9:16",
+    "resolution": "1080P",
+    "duration": 5
+  },
+  "comfyui": {
+    "workflow": "workflows/video/wan22_t2v.json",
+    "steps": 24,
+    "seed": 11
+  },
+  "examples": [
+    "一杯冰美式",
+    "一副无线耳机"
+  ]
+}

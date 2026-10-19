@@ -1,0 +1,35 @@
+{
+  "id": "anime_style",
+  "name": "日系动画",
+  "description": "赛璐璐上色 + 明亮天空，二次元/轻剧情",
+  "tags": [
+    "动漫",
+    "二次元",
+    "轻剧情"
+  ],
+  "featured": false,
+  "prompt_template": "{subject}，日系动画风格，赛璐璐上色，明亮色调，镜头缓慢推进，背景虚化，新海诚式天空",
+  "params": [
+    {
+      "key": "subject",
+      "label": "画面内容",
+      "placeholder": "放学后站在天台的少女",
+      "required": true,
+      "default": ""
+    }
+  ],
+  "defaults": {
+    "size": "9:16",
+    "resolution": "1080P",
+    "duration": 5
+  },
+  "comfyui": {
+    "workflow": "workflows/video/wan22_t2v.json",
+    "steps": 30,
+    "seed": 53
+  },
+  "examples": [
+    "夏日电车与海边",
+    "樱花树下的少年"
+  ]
+}

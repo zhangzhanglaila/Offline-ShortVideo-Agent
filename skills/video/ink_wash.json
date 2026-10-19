@@ -1,0 +1,35 @@
+{
+  "id": "ink_wash",
+  "name": "国风水墨",
+  "description": "留白 + 墨色晕染 + 宣纸质感，文化/诗词类内容",
+  "tags": [
+    "国风",
+    "文化",
+    "东方"
+  ],
+  "featured": false,
+  "prompt_template": "{subject}，中国水墨画风格，留白构图，墨色晕染，宣纸质感，镜头缓慢横移，意境悠远",
+  "params": [
+    {
+      "key": "subject",
+      "label": "画面主体",
+      "placeholder": "一叶扁舟与远山",
+      "required": true,
+      "default": ""
+    }
+  ],
+  "defaults": {
+    "size": "9:16",
+    "resolution": "1080P",
+    "duration": 5
+  },
+  "comfyui": {
+    "workflow": "workflows/video/wan22_t2v.json",
+    "steps": 28,
+    "seed": 23
+  },
+  "examples": [
+    "竹林听雨",
+    "孤舟蓑笠翁"
+  ]
+}

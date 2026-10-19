@@ -99,6 +99,7 @@ Multi-agent, fully offline short-video compiler: turns one keyword into a script
 | 智能导演（人在回路） | Web `🧠 智能导演` | 边生成边确认：改句 / 删句 / 加句 / 分支 / 合并 / 增量重渲 |
 | 选题库 + RAG | Web / API | 1,200 条爆款选题、搜索增强、热度推荐 |
 | AI 生图 / 生视频 | Web `🎨 AI 素材` / 管线 | ComfyUI（本地免费）/ 百炼 WanX / DashScope / OpenAI；生视频支持 SSE 进度流 |
+| 生视频技能 | Web `🎨 AI 素材` | 12 个精选提示词配方（电影感推镜/赛博朋克/产品微距…），选一个只填主体；可自定义 `skills/video/*.json` |
 | HTML 模板系统 | Web `🧩 模板` / API | 31 个竖 / 横 / 方形模板，Playwright 实时预览 |
 | 选题库扩充 | Web `选题中心` | 联网爬取 + RAG 扩充，一键补库 |
 | 动态化 D1–D6 | 管线 | Ken Burns、文字动效、分层编排、转场、视频背景、BGM |
@@ -321,6 +322,11 @@ ffmpeg -version
 - 补挂 `topic_pipeline_api`：前端「一键生成 / 步进式流水线」端点此前未注册，主流程无法走通
 - 未注册的 `/api/*` 改为显式 404；新增前端-API 契约测试，防止路由漏挂
 
+**2026-10 新增**
+
+- `🎨 AI 素材` 页：AI 生图 / AI 生视频（SSE 进度流）
+- 视频技能系统：12 个精选提示词配方，支持 `skills/video/*.json` 自定义，见 [`skills/README.md`](skills/README.md)
+
 **v1.1.0（2026-04）**
 
 - 新增 2D 流程图动画引擎、技术讲座风格
@@ -445,6 +451,7 @@ Output: video + multi-platform packages + report
 | Director (human-in-the-loop) | Web `🧠 智能导演` | approve or rewrite sentence by sentence, branch / merge, incremental re-render |
 | Topic library + RAG | Web / API | 1,200 built-in topics, search augmentation, trend ranking |
 | AI image / video | Web `🎨 AI 素材` / pipeline | ComfyUI (local, free) / Bailian WanX / DashScope / OpenAI; video generation streams SSE progress |
+| Video skills | Web `🎨 AI 素材` | 12 curated prompt recipes; pick one and fill the subject only; add your own in `skills/video/*.json` |
 | HTML templates | Web `🧩 模板` / API | 31 portrait / landscape / square templates with live preview via Playwright |
 | Topic library expansion | Web `选题中心` | crawl + RAG expansion, one click |
 | Motion D1–D6 | Pipeline | Ken Burns, text entrances, layered composition, transitions, video backgrounds, BGM |
@@ -631,6 +638,11 @@ It degrades to text cards or gradient placeholders, retries up to twice, and alw
 
 - Mounted `topic_pipeline_api`: the endpoints behind the Web "generate" and stepwise pipeline were never registered, so the main flow could not run
 - Unmatched `/api/*` now returns an explicit 404; added a frontend↔API contract test to catch unrouted endpoints
+
+**Added (2026-10)**
+
+- `🎨 AI 素材` page: AI image / AI video generation (SSE progress)
+- Video skill system: 12 curated prompt recipes, extensible via `skills/video/*.json` — see [`skills/README.md`](skills/README.md)
 
 **v1.1.0 (2026-04)**
 

@@ -11,6 +11,15 @@ from .base import (
 )
 from .dashscope_generator import DashScopeVideoGenerator
 from .comfyui_generator import ComfyUIVideoGenerator  # E5
+from .skills import (
+    VideoSkill,
+    SkillError,
+    SkillNotFound,
+    SkillParamError,
+    get_skill,
+    load_skills,
+    render_prompt,
+)
 
 __all__ = [
     'AIVideoGenerationService',
@@ -23,4 +32,11 @@ __all__ = [
     'VideoTaskStatus',
     'DashScopeVideoGenerator',
     'ComfyUIVideoGenerator',
+    'VideoSkill',
+    'SkillError',
+    'SkillNotFound',
+    'SkillParamError',
+    'get_skill',
+    'load_skills',
+    'render_prompt',
 ]

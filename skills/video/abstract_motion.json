@@ -1,0 +1,35 @@
+{
+  "id": "abstract_motion",
+  "name": "抽象动态",
+  "description": "流体 + 渐变 + 缓慢变形，适合做转场/片头",
+  "tags": [
+    "抽象",
+    "转场",
+    "片头"
+  ],
+  "featured": false,
+  "prompt_template": "{subject}，抽象流体形态，渐变色彩流动，缓慢变形，黑色背景，高对比，动态图形设计感",
+  "params": [
+    {
+      "key": "subject",
+      "label": "形态描述",
+      "placeholder": "流动的渐变粒子云",
+      "required": true,
+      "default": ""
+    }
+  ],
+  "defaults": {
+    "size": "9:16",
+    "resolution": "1080P",
+    "duration": 5
+  },
+  "comfyui": {
+    "workflow": "workflows/video/wan22_t2v.json",
+    "steps": 30,
+    "seed": 43
+  },
+  "examples": [
+    "液态金属流动",
+    "彩色烟雾扩散"
+  ]
+}

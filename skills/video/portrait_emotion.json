@@ -1,0 +1,35 @@
+{
+  "id": "portrait_emotion",
+  "name": "人物情绪",
+  "description": "面部特写 + 眼神光 + 缓慢靠近，情绪向内容",
+  "tags": [
+    "人物",
+    "情绪",
+    "特写"
+  ],
+  "featured": false,
+  "prompt_template": "{subject}，面部特写，眼神光，缓慢靠近，情绪张力，浅景深，自然肤色，电影级调色",
+  "params": [
+    {
+      "key": "subject",
+      "label": "人物与情绪",
+      "placeholder": "一位眼眶微红的年轻女性",
+      "required": true,
+      "default": ""
+    }
+  ],
+  "defaults": {
+    "size": "9:16",
+    "resolution": "1080P",
+    "duration": 5
+  },
+  "comfyui": {
+    "workflow": "workflows/video/wan22_t2v.json",
+    "steps": 26,
+    "seed": 47
+  },
+  "examples": [
+    "老人望向远方",
+    "少年握紧拳头"
+  ]
+}

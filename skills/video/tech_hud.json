@@ -1,0 +1,35 @@
+{
+  "id": "tech_hud",
+  "name": "科技 HUD",
+  "description": "深色底 + 数据流光 + 环绕镜头，数码/软件讲解",
+  "tags": [
+    "科技",
+    "数码",
+    "讲解"
+  ],
+  "featured": false,
+  "prompt_template": "{subject}，深色背景，HUD 数据面板与流光线条环绕，蓝青色科技光效，镜头缓慢环绕，未来感，高对比",
+  "params": [
+    {
+      "key": "subject",
+      "label": "展示主体",
+      "placeholder": "悬浮的芯片模块",
+      "required": true,
+      "default": ""
+    }
+  ],
+  "defaults": {
+    "size": "9:16",
+    "resolution": "1080P",
+    "duration": 5
+  },
+  "comfyui": {
+    "workflow": "workflows/video/wan22_t2v.json",
+    "steps": 26,
+    "seed": 31
+  },
+  "examples": [
+    "数据流穿过服务器",
+    "手机内部结构"
+  ]
+}

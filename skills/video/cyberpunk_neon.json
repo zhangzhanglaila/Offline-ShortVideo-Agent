@@ -1,0 +1,35 @@
+{
+  "id": "cyberpunk_neon",
+  "name": "赛博朋克霓虹",
+  "description": "雨夜 + 霓虹反射 + 蓝紫调，科技/游戏内容的高辨识度风格",
+  "tags": [
+    "赛博朋克",
+    "科技",
+    "氛围"
+  ],
+  "featured": true,
+  "prompt_template": "{subject}，雨夜街道，霓虹灯反射在湿滑地面，蓝紫色调，镜头缓慢横移，赛博朋克风格，电影感，高对比度，体积光",
+  "params": [
+    {
+      "key": "subject",
+      "label": "画面主体",
+      "placeholder": "雨夜街道上的霓虹招牌",
+      "required": true,
+      "default": ""
+    }
+  ],
+  "defaults": {
+    "size": "9:16",
+    "resolution": "1080P",
+    "duration": 5
+  },
+  "comfyui": {
+    "workflow": "workflows/video/wan22_t2v.json",
+    "steps": 28,
+    "seed": 7
+  },
+  "examples": [
+    "机械义体特写",
+    "霓虹招牌下的行人"
+  ]
+}

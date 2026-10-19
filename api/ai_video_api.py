@@ -105,6 +105,49 @@ async def video_models():
     })
 
 
+class SkillRenderRequest(BaseModel):
+    """技能渲染请求：只传用户填写的参数。"""
+    params: dict = Field(default_factory=dict)
+
+
+@router.get("/api/ai/video/skills")
+async def video_skills():
+    """列出内置视频技能（精选优先）。"""
+    from services.ai_video.skills import load_skills
+
+    skills = load_skills()
+    return JSONResponse({
+        "skills": [s.to_dict() for s in skills],
+        "total": len(skills),
+    })
+
+
+@router.post("/api/ai/video/skills/{skill_id}/render")
+async def render_video_skill(skill_id: str, req: SkillRenderRequest):
+    """把用户参数套进技能模板，返回最终提示词与推荐生成参数。"""
+    from services.ai_video.skills import (
+        SkillNotFound,
+        SkillParamError,
+        get_skill,
+        render_prompt,
+    )
+
+    try:
+        skill = get_skill(skill_id)
+    except SkillNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+    try:
+        result = render_prompt(skill, req.params)
+    except SkillParamError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={"message": str(exc), "missing": exc.missing},
+        )
+
+    return JSONResponse(result)
+
+
 @router.post("/api/ai/video/estimate-cost")
 async def estimate_video_cost(req: GenerateVideoRequest):
     """估算生视频成本（元）。"""

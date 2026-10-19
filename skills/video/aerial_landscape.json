@@ -1,0 +1,35 @@
+{
+  "id": "aerial_landscape",
+  "name": "航拍风光",
+  "description": "俯视 + 前推 + 晨曦侧光，纪录片/旅行开场",
+  "tags": [
+    "风光",
+    "纪录片",
+    "旅行"
+  ],
+  "featured": false,
+  "prompt_template": "{place}，航拍俯视，镜头缓慢前推，晨雾弥漫，金色晨光侧照，广阔纵深，纪录片质感",
+  "params": [
+    {
+      "key": "place",
+      "label": "地点/景观",
+      "placeholder": "层叠的山谷与河流",
+      "required": true,
+      "default": ""
+    }
+  ],
+  "defaults": {
+    "size": "16:9",
+    "resolution": "1080P",
+    "duration": 5
+  },
+  "comfyui": {
+    "workflow": "workflows/video/wan22_t2v.json",
+    "steps": 28,
+    "seed": 19
+  },
+  "examples": [
+    "雪山日出",
+    "海岸线公路"
+  ]
+}

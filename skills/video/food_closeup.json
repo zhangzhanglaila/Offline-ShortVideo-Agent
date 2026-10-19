@@ -1,0 +1,35 @@
+{
+  "id": "food_closeup",
+  "name": "美食特写",
+  "description": "热气 + 油光 + 暖调推近，吃播/探店的高转化镜头",
+  "tags": [
+    "美食",
+    "特写",
+    "生活"
+  ],
+  "featured": true,
+  "prompt_template": "{dish}，特写镜头，热气升腾，油光反射，缓慢推近，暖色调，浅景深，美食广告质感",
+  "params": [
+    {
+      "key": "dish",
+      "label": "菜品",
+      "placeholder": "刚出锅的红烧肉",
+      "required": true,
+      "default": ""
+    }
+  ],
+  "defaults": {
+    "size": "9:16",
+    "resolution": "1080P",
+    "duration": 5
+  },
+  "comfyui": {
+    "workflow": "workflows/video/wan22_t2v.json",
+    "steps": 24,
+    "seed": 3
+  },
+  "examples": [
+    "淋着热油的拉面",
+    "冒热气的汤包"
+  ]
+}

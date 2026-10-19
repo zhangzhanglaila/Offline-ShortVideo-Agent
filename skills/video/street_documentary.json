@@ -1,0 +1,35 @@
+{
+  "id": "street_documentary",
+  "name": "街头纪实",
+  "description": "自然光 + 手持跟拍 + 人群虚化，真实感叙事",
+  "tags": [
+    "纪实",
+    "街头",
+    "叙事"
+  ],
+  "featured": false,
+  "prompt_template": "{subject}，街头纪实风格，自然光，人群虚化，手持跟拍，真实颗粒感，浅景深",
+  "params": [
+    {
+      "key": "subject",
+      "label": "画面主体",
+      "placeholder": "穿行在夜市的人群",
+      "required": true,
+      "default": ""
+    }
+  ],
+  "defaults": {
+    "size": "9:16",
+    "resolution": "1080P",
+    "duration": 5
+  },
+  "comfyui": {
+    "workflow": "workflows/video/wan22_t2v.json",
+    "steps": 24,
+    "seed": 41
+  },
+  "examples": [
+    "清晨的菜市场",
+    "雨中的公交站"
+  ]
+}

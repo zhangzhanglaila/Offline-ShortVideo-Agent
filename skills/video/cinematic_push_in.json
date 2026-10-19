@@ -1,0 +1,42 @@
+{
+  "id": "cinematic_push_in",
+  "name": "电影感推镜",
+  "description": "缓慢推近 + 浅景深 + 胶片颗粒，人物/产品开场最稳的配方",
+  "tags": [
+    "电影感",
+    "开场",
+    "人物"
+  ],
+  "featured": true,
+  "prompt_template": "{subject}，{action}，镜头缓慢推近，浅景深，柔和侧光，电影质感，35mm 胶片颗粒，高细节",
+  "params": [
+    {
+      "key": "subject",
+      "label": "画面主体",
+      "placeholder": "一位站在窗边的女性",
+      "required": true,
+      "default": ""
+    },
+    {
+      "key": "action",
+      "label": "动作/状态",
+      "placeholder": "轻轻转头看向镜头",
+      "required": false,
+      "default": "静止不动"
+    }
+  ],
+  "defaults": {
+    "size": "9:16",
+    "resolution": "1080P",
+    "duration": 5
+  },
+  "comfyui": {
+    "workflow": "workflows/video/wan22_t2v.json",
+    "steps": 24,
+    "seed": 42
+  },
+  "examples": [
+    "雨夜街道的霓虹灯",
+    "咖啡馆里的拿铁"
+  ]
+}

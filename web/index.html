@@ -2578,6 +2578,15 @@
                         <button class="bili-btn bili-btn-secondary" onclick="loadVideoModels(true)">🔄 刷新供应商</button>
                     </div>
                     <div class="card-body">
+                        <div style="margin-bottom: 14px;">
+                            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                                <span style="font-size: 13px; font-weight: 600; color: #232529;">精选技能</span>
+                                <span id="avg-skill-count" style="font-size: 11px; color: #909090;">加载中...</span>
+                                <button class="bili-btn bili-btn-secondary" style="font-size: 11px; padding: 2px 8px;" onclick="clearVideoSkill()">清除</button>
+                            </div>
+                            <div id="avg-skill-list" style="display: flex; gap: 8px; flex-wrap: wrap;"></div>
+                            <div id="avg-skill-params" style="display: none; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 10px; padding: 10px 12px; background: #F7F8FA; border-radius: 6px;"></div>
+                        </div>
                         <div style="display: flex; align-items: flex-start; gap: 12px; margin-bottom: 12px;">
                             <label style="line-height: 36px; white-space: nowrap;">提示词：</label>
                             <textarea id="avg-prompt" class="bili-input" rows="3" style="flex: 1; min-height: 84px; resize: vertical; box-sizing: border-box;"
@@ -2892,7 +2901,10 @@
             else if (page === 'templates') loadTemplates();
             else if (page === 'aiimage') {
                 loadAIModels();
-                if (aiMode === 'video') loadVideoModels();
+                if (aiMode === 'video') {
+                    loadVideoModels();
+                    loadVideoSkills();
+                }
             }
 
             // 页面切换动画完成后才解锁
@@ -5921,10 +5933,177 @@
             document.getElementById('ai-tab-image').className = 'bili-btn ' + (mode === 'image' ? 'bili-btn-primary' : 'bili-btn-secondary');
             document.getElementById('ai-tab-video').className = 'bili-btn ' + (mode === 'video' ? 'bili-btn-primary' : 'bili-btn-secondary');
             if (mode === 'video' && !videoModelsCache.providers.length) loadVideoModels();
+            if (mode === 'video' && !videoSkillsCache.length) loadVideoSkills();
         }
 
         // ==================== AI 生视频 ====================
         var videoModelsCache = { providers: [], models: {} };
+
+        // ==================== 生视频技能 ====================
+        var videoSkillsCache = [];
+        var currentVideoSkill = null;
+        var skillRenderTimer = null;
+
+        function loadVideoSkills() {
+            var countEl = document.getElementById('avg-skill-count');
+            if (!countEl) return;
+            countEl.textContent = '加载中...';
+            fetch(API + '/ai/video/skills').then(function(r) { return r.json(); }).then(function(d) {
+                videoSkillsCache = d.skills || [];
+                countEl.textContent = videoSkillsCache.length
+                    ? ('共 ' + videoSkillsCache.length + ' 个 · 选一个自动生成提示词')
+                    : '暂无技能';
+                renderVideoSkillList();
+            }).catch(function(e) {
+                countEl.textContent = '技能加载失败：' + e;
+            });
+        }
+
+        function renderVideoSkillList() {
+            var box = document.getElementById('avg-skill-list');
+            if (!box) return;
+            box.innerHTML = videoSkillsCache.map(function(s) {
+                var active = currentVideoSkill && currentVideoSkill.id === s.id;
+                return '<button class="bili-btn ' + (active ? 'bili-btn-primary' : 'bili-btn-secondary') + '" ' +
+                    'data-skill="' + tplEsc(s.id) + '" title="' + tplEsc(s.description || '') + '" ' +
+                    'style="font-size: 12px; padding: 4px 12px;">' +
+                    (s.featured ? '⭐ ' : '') + tplEsc(s.name) + '</button>';
+            }).join('');
+            var buttons = box.querySelectorAll('button');
+            for (var i = 0; i < buttons.length; i++) {
+                (function(btn) {
+                    btn.onclick = function() { applyVideoSkill(btn.getAttribute('data-skill')); };
+                })(buttons[i]);
+            }
+        }
+
+        function setSelectValue(id, value) {
+            var el = document.getElementById(id);
+            if (!el) return false;
+            for (var i = 0; i < el.options.length; i++) {
+                if (el.options[i].value === value) { el.value = value; return true; }
+            }
+            return false;
+        }
+
+        function applyVideoSkill(skillId) {
+            var skill = null;
+            for (var i = 0; i < videoSkillsCache.length; i++) {
+                if (videoSkillsCache[i].id === skillId) { skill = videoSkillsCache[i]; break; }
+            }
+            if (!skill) return;
+
+            currentVideoSkill = skill;
+            renderVideoSkillList();
+            renderSkillParams(skill);
+
+            // 切换技能时清掉上一条技能生成的提示词，避免"看着是A技能、实际是B技能"
+            document.getElementById('avg-prompt').value = '';
+
+            var d = skill.defaults || {};
+            if (d.size) setSelectValue('avg-size', d.size);
+            if (d.resolution) setSelectValue('avg-res', d.resolution);
+            if (d.duration) document.getElementById('avg-duration').value = d.duration;
+            if (d.provider && setSelectValue('avg-provider', d.provider)) {
+                onVideoProviderChange();
+            }
+            if (d.model) setSelectValue('avg-model', d.model);
+
+            scheduleSkillRender(0);
+        }
+
+        function renderSkillParams(skill) {
+            var box = document.getElementById('avg-skill-params');
+            if (!box) return;
+            var params = skill.params || [];
+            if (!params.length) {
+                box.style.display = 'none';
+                box.innerHTML = '';
+                return;
+            }
+            box.style.display = 'flex';
+            box.innerHTML = params.map(function(p) {
+                var required = p.required !== false;
+                return '<div style="display: flex; align-items: center; gap: 6px;">' +
+                    '<label style="font-size: 12px; color: #606773; white-space: nowrap;">' +
+                    tplEsc(p.label || p.key) + (required ? ' *' : '') + '</label>' +
+                    '<input id="avg-skill-' + tplEsc(p.key) + '" class="bili-input" style="width: 200px;" ' +
+                    'placeholder="' + tplEsc(p.placeholder || '') + '" value="' + tplEsc(p.default || '') + '">' +
+                    '</div>';
+            }).join('') + '<span id="avg-skill-status" style="font-size: 11px; color: #909090;"></span>';
+
+            params.forEach(function(p) {
+                var input = document.getElementById('avg-skill-' + p.key);
+                if (input) { input.oninput = function() { scheduleSkillRender(450); }; }
+            });
+        }
+
+        function scheduleSkillRender(delay) {
+            if (!currentVideoSkill) return;
+            if (skillRenderTimer) { clearTimeout(skillRenderTimer); }
+            skillRenderTimer = setTimeout(renderSkillPrompt, delay || 0);
+        }
+
+        function skillMissingRequired() {
+            var missing = [];
+            (currentVideoSkill.params || []).forEach(function(p) {
+                if (p.required === false) { return; }
+                var input = document.getElementById('avg-skill-' + p.key);
+                var value = input ? input.value.trim() : '';
+                var fallback = p.default ? String(p.default).trim() : '';
+                if (!value && !fallback) { missing.push(p.label || p.key); }
+            });
+            return missing;
+        }
+
+        function renderSkillPrompt() {
+            if (!currentVideoSkill) return;
+            var status = document.getElementById('avg-skill-status');
+
+            // 必填项没填时不要发请求（避免无意义的 400 和满屏报错）
+            var missing = skillMissingRequired();
+            if (missing.length) {
+                if (status) { status.textContent = '请填写：' + missing.join('、'); }
+                return;
+            }
+
+            var params = {};
+            (currentVideoSkill.params || []).forEach(function(p) {
+                var input = document.getElementById('avg-skill-' + p.key);
+                if (input) { params[p.key] = input.value.trim(); }
+            });
+
+            if (status) { status.textContent = '生成提示词...'; }
+
+            fetch(API + '/ai/video/skills/' + encodeURIComponent(currentVideoSkill.id) + '/render', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ params: params })
+            }).then(function(r) {
+                return r.json().then(function(d) { return { ok: r.ok, data: d }; });
+            }).then(function(res) {
+                if (!res.ok) {
+                    var detail = res.data.detail;
+                    var msg = typeof detail === 'string' ? detail : ((detail && detail.message) || '参数不完整');
+                    if (status) { status.textContent = msg; }
+                    return;
+                }
+                document.getElementById('avg-prompt').value = res.data.prompt;
+                if (status) { status.textContent = '已生成提示词，可继续手动修改'; }
+            }).catch(function(e) {
+                if (status) { status.textContent = '生成失败：' + e; }
+            });
+        }
+
+        function clearVideoSkill() {
+            currentVideoSkill = null;
+            var box = document.getElementById('avg-skill-params');
+            if (box) {
+                box.style.display = 'none';
+                box.innerHTML = '';
+            }
+            renderVideoSkillList();
+        }
 
         function loadVideoModels(force) {
             var status = document.getElementById('avg-status');

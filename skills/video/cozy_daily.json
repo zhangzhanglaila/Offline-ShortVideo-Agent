@@ -1,0 +1,35 @@
+{
+  "id": "cozy_daily",
+  "name": "治愈日常",
+  "description": "午后窗光 + 暖调 + 轻微手持感，生活方式/vlog",
+  "tags": [
+    "生活",
+    "治愈",
+    "vlog"
+  ],
+  "featured": false,
+  "prompt_template": "{subject}，午后阳光透过窗帘，暖色调，生活化构图，轻微手持感，治愈氛围，胶片质感",
+  "params": [
+    {
+      "key": "subject",
+      "label": "画面内容",
+      "placeholder": "窗边的一杯手冲咖啡",
+      "required": true,
+      "default": ""
+    }
+  ],
+  "defaults": {
+    "size": "9:16",
+    "resolution": "1080P",
+    "duration": 5
+  },
+  "comfyui": {
+    "workflow": "workflows/video/wan22_t2v.json",
+    "steps": 22,
+    "seed": 37
+  },
+  "examples": [
+    "翻开的书与猫",
+    "阳台上的绿植"
+  ]
+}
