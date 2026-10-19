@@ -89,6 +89,27 @@ Multi-agent, fully offline short-video compiler: turns one keyword into a script
 
 [⬆ 返回顶部 / Back to top](#offline-shortvideo-agent)
 
+### 功能全景
+
+| 能力 | 入口 | 说明 |
+|------|------|------|
+| 一键生成 | CLI / Web | 主题 → 脚本 → 素材 / AI 生图 → 成片 |
+| 步进式流水线 | Web 首页 | 脚本可编辑 → 配音 → 素材 → 渲染 → 状态轮询 |
+| 素材智能剪辑 (Mode B) | Web 首页 | 上传素材 → 拼接 / 转场 / 字幕 / BGM |
+| 智能导演（人在回路） | Web `🧠 智能导演` | 边生成边确认：改句 / 删句 / 加句 / 分支 / 合并 / 增量重渲 |
+| 选题库 + RAG | Web / API | 1,200 条爆款选题、搜索增强、热度推荐 |
+| AI 生图 / 生视频 | 管线 | ComfyUI（本地免费）/ 百炼 WanX / DashScope / OpenAI |
+| HTML 模板系统 | API | 31 个竖 / 横 / 方形模板，Playwright 截图渲染 |
+| 动态化 D1–D6 | 管线 | Ken Burns、文字动效、分层编排、转场、视频背景、BGM |
+| 多平台发布包 | CLI | 抖音 / 小红书 / B站：标题 + 简介 + 标签 + 时长裁剪 |
+| MCP Server | 独立进程 | STDIO / HTTP，把全部能力暴露给外部 Agent |
+| AI 助手 | Web `🤖 AI助手` | ReAct + 工具调用 + 记忆 + 流式输出 |
+| 作品库 / 数据中心 | Web | 自动抽帧缩略图、分类统计、缓存状态 |
+
+> 除上表外，仓库还包含一套「视频编译器」内核：四层 IR（Intent → Narrative → Scene → Timeline → Render）、
+> DAG 依赖失效与增量渲染、媒体内容寻址缓存、分支合并与撤销重做。它服务于智能导演，
+> 也是把一次性管道改造成可编辑工作台的基础。详见 [`thinking/`](thinking/)、[`runtime/`](runtime/)、[`compiler/`](compiler/)。
+
 ### 系统架构
 
 ```text
@@ -111,6 +132,8 @@ Multi-agent, fully offline short-video compiler: turns one keyword into a script
 - 4 个独立 Agent（1 主 + 3 子），异步事件驱动
 - 结构化 JSON 消息格式，完善的异常恢复
 - 动态化模块位于 `core/compose/motion/`（`ken_burns` / `text_animations` / `scene_composer` / `transitions` / `bgm`）
+- 两条渲染栈并存：**PIL 场景图 + FFmpeg**（Agent 一键生成）、**Remotion（React）**（智能导演、图示讲解）
+- Web 端由 `main_fastapi.py` 统一提供：自动挂载 `api/__all__` 中全部路由（15 个模块、118 条路由）
 
 详见 [`docs/01-architecture-design.md`](docs/01-architecture-design.md)。
 
@@ -292,6 +315,11 @@ ffmpeg -version
 - 动态化增强 D1–D6 收官：Ken Burns 运镜、文字动画、多元素编排、丰富转场、视频素材背景、背景音乐
 - 多 Agent 协作架构（Phase 0–5）全部完成
 
+**2026-10 修复**
+
+- 补挂 `topic_pipeline_api`：前端「一键生成 / 步进式流水线」端点此前未注册，主流程无法走通
+- 未注册的 `/api/*` 改为显式 404；新增前端-API 契约测试，防止路由漏挂
+
 **v1.1.0（2026-04）**
 
 - 新增 2D 流程图动画引擎、技术讲座风格
@@ -403,6 +431,30 @@ Output: video + multi-platform packages + report
 - Four independent agents (1 coordinator + 3 workers), async and event-driven
 - Structured JSON messaging with robust error recovery
 - Motion modules live in `core/compose/motion/` (`ken_burns` / `text_animations` / `scene_composer` / `transitions` / `bgm`)
+- Two rendering stacks coexist: **PIL scene graphs + FFmpeg** (one-shot agent flow) and **Remotion (React)** (interactive director, diagram explainers)
+- One FastAPI app (`main_fastapi.py`) mounts every router listed in `api/__all__` — 15 modules, 118 routes
+
+**What's inside**
+
+| Capability | Entry | Notes |
+|------------|-------|-------|
+| One-shot generation | CLI / Web | topic → script → material / AI image → final cut |
+| Stepwise pipeline | Web home | editable script → TTS → assets → render → status polling |
+| Smart material editing (Mode B) | Web home | upload clips → concat / transitions / subtitles / BGM |
+| Director (human-in-the-loop) | Web `🧠 智能导演` | approve or rewrite sentence by sentence, branch / merge, incremental re-render |
+| Topic library + RAG | Web / API | 1,200 built-in topics, search augmentation, trend ranking |
+| AI image / video | Pipeline | ComfyUI (local, free) / Bailian WanX / DashScope / OpenAI |
+| HTML templates | API | 31 portrait / landscape / square templates rendered via Playwright |
+| Motion D1–D6 | Pipeline | Ken Burns, text entrances, layered composition, transitions, video backgrounds, BGM |
+| Multi-platform packages | CLI | Douyin / RedNote / Bilibili titles, descriptions, tags, duration trimming |
+| MCP server | Standalone | STDIO / HTTP; exposes every capability to external agents |
+| AI assistant | Web `🤖 AI助手` | ReAct + tool calling + memory + streaming |
+| Works / analytics | Web | auto thumbnails, category stats, cache status |
+
+> Under the hood there is also a video *compiler*: four IR layers (Intent → Narrative → Scene → Timeline → Render),
+> DAG based invalidation with incremental rendering, content-addressed media cache, branching and undo/redo.
+> It powers the interactive director and is what turns a one-shot pipeline into an editable workbench.
+> See [`thinking/`](thinking/), [`runtime/`](runtime/), [`compiler/`](compiler/).
 
 See [`docs/01-architecture-design.md`](docs/01-architecture-design.md).
 
@@ -572,6 +624,11 @@ It degrades to text cards or gradient placeholders, retries up to twice, and alw
 
 - D-series dynamic upgrade D1–D6 shipped: Ken Burns motion, text animation, layered composition, rich transitions, video-material backgrounds, background music
 - Multi-agent architecture (Phase 0–5) complete
+
+**Fix (2026-10)**
+
+- Mounted `topic_pipeline_api`: the endpoints behind the Web "generate" and stepwise pipeline were never registered, so the main flow could not run
+- Unmatched `/api/*` now returns an explicit 404; added a frontend↔API contract test to catch unrouted endpoints
 
 **v1.1.0 (2026-04)**
 

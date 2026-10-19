@@ -41,10 +41,21 @@ def create_app() -> FastAPI:
     """构建并返回 FastAPI 应用（挂载全部 api 路由 + 静态文件）。"""
     app = FastAPI(title="AI 短视频生成系统", version="2.1")
 
-    # 开发期跨域放开（生产由 vite / 反向代理同源，无碍）
+    # 跨域：默认只放行本机前端。同源部署（main_fastapi 直接托管 web/index.html）
+    # 不需要 CORS；只有把前端跑在别的端口/域名时才需要。
+    #   CORS_ALLOW_ORIGINS="http://127.0.0.1:5173"  追加来源（逗号分隔）
+    #   CORS_ALLOW_ORIGINS="*"                      全放开（仅限本机调试）
+    _origins = os.environ.get(
+        "CORS_ALLOW_ORIGINS",
+        "http://127.0.0.1:5001,http://localhost:5001",
+    ).strip()
+    allow_origins = (
+        ["*"] if _origins == "*"
+        else [o.strip() for o in _origins.split(",") if o.strip()]
+    )
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=allow_origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

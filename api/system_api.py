@@ -9,6 +9,7 @@ import time
 import queue
 import asyncio
 import platform
+import subprocess
 import threading
 from pathlib import Path
 from fastapi import APIRouter
@@ -176,15 +177,30 @@ async def api_cache_clear():
 
 @router.get("/api/file/open")
 async def api_file_open(path: str = None):
-    """打开文件位置"""
+    """在系统文件管理器中打开文件所在目录。
+
+    安全约束：只允许打开项目目录内的路径，避免通过 URL 参数触发任意本地路径操作。
+    """
     try:
-        if path:
-            file_path = Path(path)
-            if file_path.exists():
-                if sys.platform == 'win32':
-                    os.startfile(str(file_path.parent))
-                else:
-                    os.system(f'open "{file_path.parent}"')
+        if not path:
+            return JSONResponse({'success': False, 'error': '缺少 path 参数'}, status_code=400)
+
+        file_path = Path(path).resolve()
+        root = Path(config.PROJECT_ROOT).resolve()
+        if file_path != root and root not in file_path.parents:
+            return JSONResponse(
+                {'success': False, 'error': '仅允许打开项目目录内的文件'},
+                status_code=403,
+            )
+        if not file_path.exists():
+            return JSONResponse({'success': False, 'error': '文件不存在'}, status_code=404)
+
+        if sys.platform == 'win32':
+            os.startfile(str(file_path.parent))
+        elif sys.platform == 'darwin':
+            subprocess.run(['open', str(file_path.parent)], check=False)
+        else:
+            subprocess.run(['xdg-open', str(file_path.parent)], check=False)
         return JSONResponse({'success': True})
     except Exception as e:
         return JSONResponse({'error': str(e)}, status_code=500)
