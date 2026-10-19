@@ -31,12 +31,14 @@ class TestPipelineDAG:
     def test_complete_node(self, dag):
         dag.add_node("tts", "TTSPass")
         dag.start("tts")
-        time.sleep(0.01)
+        # Windows 计时精度约 15ms：sleep(0.01) 可能被舍入成 0，
+        # 这里留足余量，只验证"确实记录到了耗时"。
+        time.sleep(0.05)
         dag.complete("tts", cache_hit=True)
         assert dag.nodes["tts"].status == NodeStatus.DONE
         assert dag.nodes["tts"].cache_hit is True
         assert dag.nodes["tts"].duration is not None
-        assert dag.nodes["tts"].duration > 0
+        assert dag.nodes["tts"].duration > 0.02
 
     def test_complete_with_outputs(self, dag):
         dag.add_node("tts", "TTSPass")

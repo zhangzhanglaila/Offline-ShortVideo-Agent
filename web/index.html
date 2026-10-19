@@ -1634,6 +1634,7 @@
             <a class="nav-item" data-page="thinking" onclick="showPage('thinking')">🧠 智能导演</a>
             <a class="nav-item" data-page="templates" onclick="showPage('templates')">🧩 模板</a>
             <a class="nav-item" data-page="aiimage" onclick="showPage('aiimage')">🎨 AI 素材</a>
+            <a class="nav-item" data-page="htmlmotion" onclick="showPage('htmlmotion')">✨ AI 动效</a>
         </nav>
     </header>
 
@@ -2637,6 +2638,54 @@
             </div>
         </div>
 
+        <!-- ========== AI 动效 ========== -->
+        <div id="page-htmlmotion" class="page">
+            <div class="bili-card">
+                <div class="card-header">
+                    <span class="card-title">✨ AI 动效（HTML / CSS / SVG）</span>
+                    <div style="display: flex; gap: 8px; align-items: center;">
+                        <span style="font-size: 11px; color: #909090;">一次文本补全 + 本地渲染，0 元图像成本</span>
+                        <button class="bili-btn bili-btn-secondary" onclick="hmLoadDemo()">🎁 内置示例（不调用 API）</button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div style="display: flex; align-items: flex-start; gap: 12px; margin-bottom: 12px;">
+                        <label style="line-height: 36px; white-space: nowrap;">主题：</label>
+                        <textarea id="hm-topic" class="bili-input" rows="2" style="flex: 1; min-height: 64px; resize: vertical; box-sizing: border-box;"
+                            placeholder="例如：为什么 sleep 能提高效率"></textarea>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px;">
+                        <label>风格：</label>
+                        <select id="hm-style" class="bili-input" style="width: 260px;"></select>
+                        <label style="margin-left: 8px;">时长：</label>
+                        <input type="number" id="hm-duration" class="bili-input" value="5" min="2" max="10" style="width: 80px;">
+                        <label style="margin-left: 8px;">帧率：</label>
+                        <select id="hm-fps" class="bili-input" style="width: 100px;">
+                            <option value="24" selected>24</option>
+                            <option value="30">30</option>
+                            <option value="12">12</option>
+                        </select>
+                        <button class="bili-btn bili-btn-primary" id="hm-gen-btn" onclick="hmGenerate()">✨ 生成动效视频</button>
+                        <button class="bili-btn bili-btn-secondary" id="hm-render-btn" onclick="hmRenderHtml()">🎬 渲染当前 HTML</button>
+                        <span id="hm-status" style="font-size: 12px; color: #909090;"></span>
+                    </div>
+                    <div id="hm-progress-wrap" style="display: none; margin-bottom: 10px;">
+                        <div style="height: 6px; background: #F0F1F3; border-radius: 3px; overflow: hidden;">
+                            <div id="hm-progress-fill" style="height: 100%; width: 0%; background: #FB7299; transition: width .3s;"></div>
+                        </div>
+                        <div id="hm-log" style="font-size: 11px; color: #909090; margin-top: 6px; max-height: 80px; overflow: auto;"></div>
+                    </div>
+                    <div id="hm-video-card" style="display: none; text-align: center;">
+                        <video id="hm-video" controls style="display: block; width: auto; max-width: 420px; max-height: 70vh; margin: 0 auto; border-radius: 4px; background: #000;"></video>
+                        <div id="hm-video-meta" style="font-size: 12px; color: #909090; margin-top: 8px;"></div>
+                    </div>
+                    <details style="margin-top: 14px;">
+                        <summary style="cursor: pointer; font-size: 13px; color: #606773;">查看 / 编辑 HTML（改完可重新渲染，不再调用 LLM）</summary>
+                        <textarea id="hm-html" class="bili-input" style="width: 100%; height: 320px; margin-top: 10px; font-family: Consolas, monospace; font-size: 12px; box-sizing: border-box;"></textarea>
+                    </details>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- 图片预览 -->
@@ -2906,6 +2955,7 @@
                     loadVideoSkills();
                 }
             }
+            else if (page === 'htmlmotion') hmInit();
 
             // 页面切换动画完成后才解锁
             setTimeout(function() { isTransitioning = false; }, 300);
@@ -6253,6 +6303,150 @@
             });
         }
 
+        // ==================== AI 动效（HTML / CSS / SVG） ====================
+        var hmPresetsLoaded = false;
+        var hmDemoHtml = '';
+
+        function hmInit() {
+            if (hmPresetsLoaded) return;
+            fetch(API + '/html-motion/presets').then(function(r) { return r.json(); }).then(function(d) {
+                var sel = document.getElementById('hm-style');
+                sel.innerHTML = '';
+                (d.styles || []).forEach(function(s) {
+                    var o = document.createElement('option');
+                    o.value = s.id;
+                    o.textContent = s.name + ' · ' + s.hint;
+                    sel.appendChild(o);
+                });
+                hmDemoHtml = d.demo_html || '';
+                if (d.defaults && d.defaults.duration) {
+                    document.getElementById('hm-duration').value = d.defaults.duration;
+                }
+                hmPresetsLoaded = true;
+            }).catch(function(e) {
+                document.getElementById('hm-status').textContent = '读取风格失败：' + e;
+            });
+        }
+
+        function hmLoadDemo() {
+            var apply = function(html) {
+                document.getElementById('hm-html').value = html;
+                document.getElementById('hm-topic').value = '内置示例：零图像 API 动效';
+                hmRenderHtml();
+            };
+            if (hmDemoHtml) { apply(hmDemoHtml); return; }
+            fetch(API + '/html-motion/presets').then(function(r) { return r.json(); }).then(function(d) {
+                hmDemoHtml = d.demo_html || '';
+                apply(hmDemoHtml);
+            });
+        }
+
+        function hmPayload() {
+            var duration = parseFloat(document.getElementById('hm-duration').value || '5');
+            var fps = parseInt(document.getElementById('hm-fps').value || '24', 10);
+            return {
+                duration: Math.max(2, Math.min(10, isNaN(duration) ? 5 : duration)),
+                fps: isNaN(fps) ? 24 : fps
+            };
+        }
+
+        function hmGenerate() {
+            var topic = document.getElementById('hm-topic').value.trim();
+            var status = document.getElementById('hm-status');
+            if (!topic) { status.textContent = '请先填写主题'; return; }
+            var base = hmPayload();
+            hmStream('/html-motion/generate', {
+                topic: topic,
+                style: document.getElementById('hm-style').value || 'minimal',
+                duration: base.duration,
+                fps: base.fps
+            });
+        }
+
+        function hmRenderHtml() {
+            var html = document.getElementById('hm-html').value;
+            var status = document.getElementById('hm-status');
+            if (!html || html.trim().length < 20) {
+                status.textContent = '请先生成或粘贴 HTML';
+                return;
+            }
+            var base = hmPayload();
+            hmStream('/html-motion/render', { html: html, duration: base.duration, fps: base.fps });
+        }
+
+        function hmStream(path, payload) {
+            var status = document.getElementById('hm-status');
+            var genBtn = document.getElementById('hm-gen-btn');
+            var renderBtn = document.getElementById('hm-render-btn');
+            var log = document.getElementById('hm-log');
+
+            status.textContent = '开始中...';
+            log.innerHTML = '';
+            document.getElementById('hm-progress-wrap').style.display = 'block';
+            document.getElementById('hm-progress-fill').style.width = '0%';
+            genBtn.disabled = true;
+            renderBtn.disabled = true;
+
+            fetch(API + path, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            }).then(function(res) {
+                if (!res.ok) {
+                    return res.json().then(function(d) { throw new Error(d.detail || '请求失败'); });
+                }
+                var reader = res.body.getReader();
+                var decoder = new TextDecoder();
+                var buffer = '';
+
+                function pump() {
+                    return reader.read().then(function(result) {
+                        if (result.done) {
+                            genBtn.disabled = false;
+                            renderBtn.disabled = false;
+                            return;
+                        }
+                        buffer += decoder.decode(result.value, { stream: true });
+                        var lines = buffer.split('\n');
+                        buffer = lines.pop();
+                        lines.forEach(function(line) {
+                            if (line.indexOf('data: ') !== 0) { return; }
+                            var data;
+                            try { data = JSON.parse(line.slice(6)); } catch (err) { return; }
+
+                            if (data.type === 'progress') {
+                                document.getElementById('hm-progress-fill').style.width =
+                                    Math.round((data.progress || 0) * 100) + '%';
+                                status.textContent = data.msg || '处理中...';
+                                log.innerHTML += '<div>' + tplEsc(data.msg || '') + '</div>';
+                                log.scrollTop = log.scrollHeight;
+                            } else if (data.type === 'done') {
+                                document.getElementById('hm-progress-fill').style.width = '100%';
+                                status.textContent = '完成';
+                                if (data.html) { document.getElementById('hm-html').value = data.html; }
+                                document.getElementById('hm-video-card').style.display = 'block';
+                                document.getElementById('hm-video').src = data.video_url + '?t=' + Date.now();
+                                document.getElementById('hm-video-meta').textContent =
+                                    (data.frames || 0) + ' 帧 · ' + (data.animations || 0) +
+                                    ' 个动画 · 耗时 ' + (data.elapsed || 0) + 's';
+                                genBtn.disabled = false;
+                                renderBtn.disabled = false;
+                            } else if (data.type === 'error') {
+                                status.textContent = '失败：' + (data.error || '未知错误');
+                                genBtn.disabled = false;
+                                renderBtn.disabled = false;
+                            }
+                        });
+                        return pump();
+                    });
+                }
+                return pump();
+            }).catch(function(e) {
+                status.textContent = '失败：' + e.message;
+                genBtn.disabled = false;
+                renderBtn.disabled = false;
+            });
+        }
     </script>
 </body>
 </html>
