@@ -64,91 +64,13 @@ def _generate_topic(topic_keyword: str = "", category: str = "", platform: str =
 
 
 # ==================== Step 1: 生成脚本 ====================
-
-@router.post("/api/topic/generate")
-async def api_topic_generate(data: dict):
-    """
-    Step 1: 从题材关键词生成脚本 + 结构化分镜。
-    入参: {topic_keyword, category, platform, duration, orientation, visual_style, voice}
-    返回: {success, video_id, script}
-    """
-    import sqlite3
-
-    topic_keyword = (data.get("topic_keyword") or "").strip()
-    category = (data.get("category") or "").strip()
-    platform = data.get("platform", "抖音")
-    duration = data.get("duration", 30)
-    orientation = data.get("orientation", "portrait")
-    visual_style = data.get("visual_style", "manga")
-    voice = data.get("voice", "zh-CN-XiaoxiaoNeural")
-
-    if not topic_keyword and not category:
-        return JSONResponse({"error": "请输入题材关键词或选择赛道"}, status_code=400)
-
-    video_width, video_height = config.get_output_dimensions(orientation)
-
-    # 选题
-    topic = _generate_topic(topic_keyword, category, platform)
-
-    # 脚本生成
-    try:
-        from core.script_module import generate_script
-        script_result = generate_script(topic, platform, duration)
-    except Exception as e:
-        return JSONResponse({"error": f"脚本生成失败: {str(e)}"}, status_code=500)
-
-    if "error" in script_result:
-        return JSONResponse({"error": f"LLM 生成失败: {script_result['error']}"}, status_code=500)
-
-    script_result = normalize_script_result(script_result)
-
-    if not script_result.get("full_script"):
-        return JSONResponse({"error": "LLM 返回空内容，请检查 API Key 是否有效或稍后重试"}, status_code=500)
-
-    normalized_storyboard = normalize_storyboard(script_result, int(duration))
-
-    conn = sqlite3.connect(get_db_path())
-    try:
-        cursor = conn.cursor()
-        cursor.execute("BEGIN")
-        chart_data = script_result.get("chart_data", [])
-        diagram_layout = script_result.get("diagram_layout", "")
-        cursor.execute("""
-            INSERT INTO topic_videos (topic_keyword, category, platform, style, script_content, storyboard,
-            status, pipeline_step, prompt_snapshot, llm_model, duration, animation_style, orientation,
-            video_width, video_height, visual_style, voice, chart_data, diagram_layout)
-            VALUES (?, ?, ?, ?, ?, ?, 'script_ready', 'script_ready', ?, ?, ?, 'manga_frame', ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            topic_keyword, category, platform, "manga",
-            script_result.get("full_script", ""),
-            json.dumps(normalized_storyboard, ensure_ascii=False),
-            json.dumps({"topic": topic, "platform": platform}, ensure_ascii=False),
-            config.OPENAI_MODEL,
-            duration,
-            orientation,
-            video_width,
-            video_height,
-            visual_style if visual_style in config.VISUAL_STYLES else "manga",
-            voice,
-            json.dumps(chart_data, ensure_ascii=False) if chart_data else "[]",
-            diagram_layout or "",
-        ))
-        video_id = cursor.lastrowid
-        normalized_storyboard = ensure_storyboard_placeholders(video_id, normalized_storyboard, script_result.get("full_script", ""), table_name="topic_videos")
-        cursor.execute("UPDATE topic_videos SET storyboard=? WHERE id=?", (json.dumps(normalized_storyboard, ensure_ascii=False), video_id))
-        conn.commit()
-    except Exception as e:
-        conn.rollback()
-        return JSONResponse({"error": f"数据库写入失败: {str(e)}"}, status_code=500)
-    finally:
-        conn.close()
-
-    return JSONResponse({
-        "success": True,
-        "video_id": video_id,
-        "script": {**script_result, "storyboard": normalized_storyboard, "chart_data": chart_data, "diagram_layout": diagram_layout},
-        "topic": topic,
-    })
+#
+# 同步入口 POST /api/topic/generate 由 api/topic_video_api.py 统一提供
+# （U1 统一化：写 ecom_videos，product_id 为 NULL）。
+# 本模块保留前端步进式流水线所需的两类端点：
+#   1) SSE 流式生成  POST /api/topic/generate/stream
+#   2) 步进式操作     /api/topic/videos/{id}/{script,tts,materials,render,status}
+# 两条链路共用同一批辅助函数，但落库表不同（topic_videos / ecom_videos）。
 
 
 # ==================== Step 1b: 流式生成脚本 (SSE) ====================

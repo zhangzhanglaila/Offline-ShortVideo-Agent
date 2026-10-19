@@ -43,7 +43,7 @@ async def api_generate(data: dict):
     from core.db_init import get_db_path
     import sqlite3
 
-    topic = (data.get('topic') or '').strip()
+    topic = (data.get('topic') or data.get('topic_keyword') or '').strip()
     if not topic:
         return JSONResponse({'error': '请输入视频主题'}, status_code=400)
 

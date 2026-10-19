@@ -17,7 +17,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 import config
@@ -93,9 +93,10 @@ def create_app() -> FastAPI:
 
         @app.get("/{path:path}", include_in_schema=False)
         async def web_fallback(path: str):
-            # /api/* /static/* 已被精确路由匹配，这里只处理前端路由
+            # /api/* /static/* 已被精确路由匹配；未匹配的必须显式 404，
+            # 否则会返回 200 + {"detail":"Not Found"}，前端无法识别失败。
             if path.startswith("api/") or path.startswith("static/"):
-                return {"detail": "Not Found"}
+                return JSONResponse({"detail": "Not Found"}, status_code=404)
             return FileResponse(str(web_dir / "index.html"))
 
     return app
