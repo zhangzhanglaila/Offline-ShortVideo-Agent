@@ -180,6 +180,18 @@ UNSPLASH_ACCESS_KEY=your-unsplash-key
 
 > 无 LLM 时自动降级为规则生成；无素材 API 时用渐变背景占位。
 
+**Q: 配了 `DEEPSEEK_API_KEY`，AI 功能还是报「密钥无效」？**
+
+A: Agent 与「✨ AI 动效」走的是 `OPENAI_*` 这组变量（`CloudClient` 只读它们）。用 DeepSeek 时请同时写入：
+
+```bash
+OPENAI_API_KEY=sk-xxx
+OPENAI_API_BASE=https://api.deepseek.com/v1
+OPENAI_API_MODEL=deepseek-chat
+DEEPSEEK_API_KEY=sk-xxx   # 其他模块也会读
+DEEPSEEK_MODEL=deepseek-chat
+```
+
 **生成视频**
 
 ```bash
@@ -504,6 +516,18 @@ UNSPLASH_ACCESS_KEY=your-unsplash-key
 ```
 
 > Without an LLM it falls back to rule-based generation; without material APIs it uses gradient placeholders.
+
+**Q: `DEEPSEEK_API_KEY` is set but AI features still report an invalid key?**
+
+A: The agent and `✨ AI 动效` read the `OPENAI_*` variables (`CloudClient` only looks at those). With DeepSeek, set both groups:
+
+```bash
+OPENAI_API_KEY=sk-xxx
+OPENAI_API_BASE=https://api.deepseek.com/v1
+OPENAI_API_MODEL=deepseek-chat
+DEEPSEEK_API_KEY=sk-xxx
+DEEPSEEK_MODEL=deepseek-chat
+```
 
 **Generate a video**
 
