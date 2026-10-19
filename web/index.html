@@ -1634,7 +1634,6 @@
             <a class="nav-item" data-page="thinking" onclick="showPage('thinking')">🧠 智能导演</a>
             <a class="nav-item" data-page="templates" onclick="showPage('templates')">🧩 模板</a>
             <a class="nav-item" data-page="aiimage" onclick="showPage('aiimage')">🎨 AI 素材</a>
-            <a class="nav-item" data-page="timeline" onclick="showPage('timeline')">🎞️ 时间轴</a>
         </nav>
     </header>
 
@@ -2629,26 +2628,6 @@
             </div>
         </div>
 
-        <!-- ========== 时间轴 ========== -->
-        <div id="page-timeline" class="page">
-            <div class="bili-card">
-                <div class="card-header">
-                    <span class="card-title">🎞️ 时间轴</span>
-                    <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
-                        <select id="tl-session" class="bili-input" style="width: 280px;" onchange="loadTimeline()"></select>
-                        <button class="bili-btn bili-btn-secondary" onclick="refreshTimelineSessions()">🔄 会话</button>
-                        <button class="bili-btn bili-btn-secondary" onclick="saveTimeline()">💾 保存</button>
-                        <button class="bili-btn bili-btn-secondary" onclick="loadTimelineFromDisk()">📂 读取</button>
-                    </div>
-                </div>
-                <div class="card-body">
-                    <div id="tl-hint" style="font-size: 12px; color: #909090; margin-bottom: 12px;">加载中...</div>
-                    <div id="tl-ruler" style="position: relative; height: 18px; margin-bottom: 6px; border-bottom: 1px solid #E3E5E7;"></div>
-                    <div id="tl-tracks"></div>
-                    <div id="tl-dag" style="margin-top: 18px;"></div>
-                </div>
-            </div>
-        </div>
     </div>
 
     <!-- 图片预览 -->
@@ -2915,7 +2894,6 @@
                 loadAIModels();
                 if (aiMode === 'video') loadVideoModels();
             }
-            else if (page === 'timeline') refreshTimelineSessions();
 
             // 页面切换动画完成后才解锁
             setTimeout(function() { isTransitioning = false; }, 300);
@@ -6096,213 +6074,6 @@
             });
         }
 
-        // ==================== 时间轴 ====================
-        var tlSessionId = null;
-        var tlData = null;
-
-        function jsStr(s) {
-            return String(s == null ? '' : s).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-        }
-
-        function refreshTimelineSessions() {
-            var sel = document.getElementById('tl-session');
-            var hint = document.getElementById('tl-hint');
-            if (!sel) return;
-            hint.textContent = '读取会话...';
-            fetch(API + '/thinking/sessions').then(function(r) { return r.json(); }).then(function(d) {
-                var sessions = d.sessions || [];
-                sel.innerHTML = '';
-                sessions.forEach(function(s) {
-                    var o = document.createElement('option');
-                    o.value = s.session_id;
-                    o.textContent = (s.topic || '(无主题)') + ' · ' + (s.modules || 0) + ' 模块';
-                    sel.appendChild(o);
-                });
-                if (!sessions.length) {
-                    hint.textContent = '还没有会话：请先到「🧠 智能导演」创建并执行一次，再回来编辑时间轴。';
-                    document.getElementById('tl-tracks').innerHTML = '';
-                    document.getElementById('tl-ruler').innerHTML = '';
-                    document.getElementById('tl-dag').innerHTML = '';
-                    return;
-                }
-                loadTimeline();
-            }).catch(function(e) {
-                hint.textContent = '读取会话失败：' + e;
-            });
-        }
-
-        function loadTimeline() {
-            var sel = document.getElementById('tl-session');
-            if (!sel || !sel.value) return;
-            tlSessionId = sel.value;
-            fetch(API + '/timeline/' + tlSessionId).then(function(r) {
-                return r.json().then(function(d) { return { ok: r.ok, data: d }; });
-            }).then(function(res) {
-                if (!res.ok) {
-                    document.getElementById('tl-hint').textContent = '读取时间轴失败：' + (res.data.detail || '');
-                    return;
-                }
-                tlData = res.data;
-                renderTimeline(res.data);
-                loadTimelineDag();
-            }).catch(function(e) {
-                document.getElementById('tl-hint').textContent = '读取时间轴失败：' + e;
-            });
-        }
-
-        function renderTimeline(data) {
-            var tracks = data.tracks || [];
-            var fps = data.fps || 30;
-            var total = data.duration_frames || 0;
-            if (!total && tracks.length) {
-                total = Math.max.apply(null, tracks.map(function(t) { return t.end_frame || 0; }));
-            }
-            total = Math.max(total, 1);
-            var secs = Math.max(total / fps, 0.1);
-
-            document.getElementById('tl-hint').textContent =
-                '共 ' + tracks.length + ' 条轨道 · ' + secs.toFixed(1) + 's · ' +
-                (data.width || 0) + '×' + (data.height || 0) +
-                (tlSessionId ? ' · session ' + tlSessionId : '');
-
-            var ruler = document.getElementById('tl-ruler');
-            var ticks = '';
-            for (var s = 0; s <= secs; s += 5) {
-                ticks += '<span style="position:absolute;left:' + (s / secs * 100) +
-                    '%;font-size:10px;color:#909090;transform:translateX(-50%);">' + s + 's</span>';
-            }
-            ruler.innerHTML = ticks;
-
-            if (!tracks.length) {
-                document.getElementById('tl-tracks').innerHTML =
-                    '<div style="font-size:12px;color:#909090;">该会话还没有内容（模块为空）。先在「🧠 智能导演」生成文案后再来。</div>';
-                return;
-            }
-
-            var colors = { visual: '#FB7299', subtitle: '#23ADE5', audio: '#8B5CF6' };
-            var labels = { visual: '画面', subtitle: '字幕', audio: '配音' };
-            var seen = {};
-            var html = tracks.map(function(t) {
-                var left = t.start_frame / total * 100;
-                var width = Math.max(((t.end_frame - t.start_frame) / total) * 100, 0.5);
-                var color = colors[t.track_type] || '#909090';
-                var title = (t.content && (t.content.title || t.content.text)) || t.scene_id;
-                var controls = '';
-                if (!seen[t.scene_id]) {
-                    seen[t.scene_id] = true;
-                    var sid = jsStr(t.scene_id);
-                    controls = '<div style="display:flex;gap:6px;margin-top:4px;flex-wrap:wrap;">' +
-                        '<button class="bili-btn bili-btn-secondary" style="font-size:11px;padding:2px 8px;" onclick="timelineMove(\'' + sid + '\', -15)">← 0.5s</button>' +
-                        '<button class="bili-btn bili-btn-secondary" style="font-size:11px;padding:2px 8px;" onclick="timelineMove(\'' + sid + '\', 15)">0.5s →</button>' +
-                        '<button class="bili-btn bili-btn-secondary" style="font-size:11px;padding:2px 8px;" onclick="timelineResize(\'' + sid + '\', ' + t.end_frame + ', -15)">缩短</button>' +
-                        '<button class="bili-btn bili-btn-secondary" style="font-size:11px;padding:2px 8px;" onclick="timelineResize(\'' + sid + '\', ' + t.end_frame + ', 30)">延长</button>' +
-                        '<button class="bili-btn bili-btn-secondary" style="font-size:11px;padding:2px 8px;" onclick="timelineEditText(\'' + sid + '\')">改文案</button>' +
-                        '</div>';
-                }
-                return '<div style="margin-bottom:10px;">' +
-                    '<div style="display:flex;justify-content:space-between;font-size:11px;color:#606773;margin-bottom:3px;">' +
-                    '<span>' + (labels[t.track_type] || t.track_type) + ' · ' + tplEsc(title) + '</span>' +
-                    '<span>' + (t.start_frame / fps).toFixed(1) + 's – ' + (t.end_frame / fps).toFixed(1) + 's</span>' +
-                    '</div>' +
-                    '<div style="position:relative;height:26px;background:#F0F1F3;border-radius:4px;overflow:hidden;">' +
-                    '<div style="position:absolute;left:' + left + '%;width:' + width +
-                    '%;top:0;bottom:0;background:' + color + ';opacity:.85;"></div>' +
-                    '</div>' + controls +
-                    '</div>';
-            }).join('');
-            document.getElementById('tl-tracks').innerHTML = html;
-        }
-
-        function timelineEdit(op, sceneId, extra) {
-            if (!tlSessionId) return;
-            var body = { operation: op, scene_id: sceneId };
-            if (extra) { for (var k in extra) { body[k] = extra[k]; } }
-            fetch(API + '/timeline/' + tlSessionId + '/edit', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(body)
-            }).then(function(r) { return r.json(); }).then(function(d) {
-                if (!d.success) {
-                    document.getElementById('tl-hint').textContent = '编辑失败：' + (d.error || '');
-                    return;
-                }
-                loadTimeline();
-            }).catch(function(e) {
-                document.getElementById('tl-hint').textContent = '编辑失败：' + e;
-            });
-        }
-
-        function timelineMove(sceneId, deltaFrames) {
-            timelineEdit('moveScene', sceneId, { delta_frames: deltaFrames });
-        }
-
-        function timelineResize(sceneId, currentEnd, deltaFrames) {
-            timelineEdit('resizeScene', sceneId, { new_end_frame: Math.max(1, currentEnd + deltaFrames) });
-        }
-
-        function timelineEditText(sceneId) {
-            var tracks = (tlData && tlData.tracks) || [];
-            var track = null;
-            for (var i = 0; i < tracks.length; i++) {
-                if (tracks[i].scene_id === sceneId && tracks[i].track_type === 'subtitle') { track = tracks[i]; break; }
-            }
-            var current = track && track.content ? (track.content.text || '') : '';
-            var value = prompt('编辑该场景文案：', current);
-            if (value === null) return;
-            timelineEdit('updateContent', sceneId, { field: 'text', value: value });
-        }
-
-        function saveTimeline() {
-            if (!tlSessionId || !tlData) return;
-            fetch(API + '/timeline/' + tlSessionId + '/save', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    tracks: tlData.tracks || [],
-                    undo_stack: [],
-                    redo_stack: [],
-                    meta: { topic: tlData.topic || '' }
-                })
-            }).then(function(r) { return r.json(); }).then(function(d) {
-                document.getElementById('tl-hint').textContent = d.success
-                    ? ('已保存（版本 ' + (d.version || 0) + '）')
-                    : ('保存失败：' + (d.error || ''));
-            }).catch(function(e) {
-                document.getElementById('tl-hint').textContent = '保存失败：' + e;
-            });
-        }
-
-        function loadTimelineFromDisk() {
-            if (!tlSessionId) return;
-            fetch(API + '/timeline/' + tlSessionId + '/load').then(function(r) { return r.json(); }).then(function(d) {
-                if (!d.success) {
-                    document.getElementById('tl-hint').textContent = '读取失败：' + (d.error || '');
-                    return;
-                }
-                tlData = tlData || {};
-                tlData.tracks = d.tracks || [];
-                renderTimeline(tlData);
-                document.getElementById('tl-hint').textContent = '已读取磁盘存档（版本 ' + (d.version || 0) + '）';
-            }).catch(function(e) {
-                document.getElementById('tl-hint').textContent = '读取失败：' + e;
-            });
-        }
-
-        function loadTimelineDag() {
-            if (!tlSessionId) return;
-            fetch(API + '/timeline/' + tlSessionId + '/dag').then(function(r) { return r.json(); }).then(function(d) {
-                var nodes = d.nodes || {};
-                var ids = Object.keys(nodes);
-                var box = document.getElementById('tl-dag');
-                if (!ids.length) { box.innerHTML = ''; return; }
-                box.innerHTML = '<div style="font-size:13px;font-weight:600;color:#232529;margin-bottom:8px;">流水线 DAG</div>' +
-                    '<div style="display:flex;gap:8px;flex-wrap:wrap;">' + ids.map(function(id) {
-                        var n = nodes[id] || {};
-                        return '<span style="font-size:11px;padding:4px 10px;border-radius:12px;background:#F0F1F3;color:#606773;">' +
-                            tplEsc(id) + ' · ' + tplEsc(n.status || '') + '</span>';
-                    }).join('') + '</div>';
-            }).catch(function() {});
-        }
     </script>
 </body>
 </html>
