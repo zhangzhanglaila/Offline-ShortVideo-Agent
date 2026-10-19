@@ -5,8 +5,8 @@ from pathlib import Path
 from services.template.renderer import TemplateRenderer
 
 
-async def test_render_image_default_template():
-    """测试用真实的 image_default 模板渲染"""
+async def _render_image_default_template():
+    """测试用真实的 image_default 模板渲染（内部协程，由 test_render_e2e 驱动）。"""
     r = TemplateRenderer()
 
     # 输出路径
@@ -32,4 +32,10 @@ async def test_render_image_default_template():
 
 
 def test_render_e2e():
-    asyncio.run(test_render_image_default_template())
+    """端到端渲染（真实浏览器）。
+
+    原文件里还有一个同名 async 测试，但它没有 pytest-asyncio 标记、
+    又被这里用 asyncio.run 驱动，导致重复收集 + "async def not natively supported"。
+    统一收敛为单个同步用例，协程改名 _render_image_default_template。
+    """
+    asyncio.run(_render_image_default_template())

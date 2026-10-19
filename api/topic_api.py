@@ -6,6 +6,7 @@ import sys
 import os
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -82,13 +83,21 @@ async def api_recommend(category: str = '', count: int = 5):
         return JSONResponse({'error': str(e)}, status_code=500)
 
 
-@router.post("/api/library/expand")
-async def api_library_expand(request: Request):
-    """扩充选题库"""
-    try:
-        data = await request.json()
-        target_count = data.get('target', 1000)
+class ExpandLibraryRequest(BaseModel):
+    """扩充选题库请求"""
+    target: int = 1500
 
+
+@router.post("/api/library/expand")
+def api_library_expand(req: ExpandLibraryRequest = None):
+    """扩充选题库（联网爬取 + 规则扩充）。
+
+    注意：这里必须是同步 def —— 内部 expand_library() 使用 asyncio.run()，
+    在 async 端点里调用会抛 "asyncio.run() cannot be called from a running event loop"。
+    FastAPI 会把同步端点放进线程池，不会阻塞事件循环。
+    """
+    try:
+        target_count = max(1, int((req.target if req else 1500)))
         topics = get_topics_module()
         result = topics.expand_library(target_count)
 

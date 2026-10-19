@@ -98,8 +98,9 @@ Multi-agent, fully offline short-video compiler: turns one keyword into a script
 | 素材智能剪辑 (Mode B) | Web 首页 | 上传素材 → 拼接 / 转场 / 字幕 / BGM |
 | 智能导演（人在回路） | Web `🧠 智能导演` | 边生成边确认：改句 / 删句 / 加句 / 分支 / 合并 / 增量重渲 |
 | 选题库 + RAG | Web / API | 1,200 条爆款选题、搜索增强、热度推荐 |
-| AI 生图 / 生视频 | 管线 | ComfyUI（本地免费）/ 百炼 WanX / DashScope / OpenAI |
-| HTML 模板系统 | API | 31 个竖 / 横 / 方形模板，Playwright 截图渲染 |
+| AI 生图 / 生视频 | Web `🎨 AI 生图` / 管线 | ComfyUI（本地免费）/ 百炼 WanX / DashScope / OpenAI |
+| HTML 模板系统 | Web `🧩 模板` / API | 31 个竖 / 横 / 方形模板，Playwright 实时预览 |
+| 选题库扩充 | Web `选题中心` | 联网爬取 + RAG 扩充，一键补库 |
 | 动态化 D1–D6 | 管线 | Ken Burns、文字动效、分层编排、转场、视频背景、BGM |
 | 多平台发布包 | CLI | 抖音 / 小红书 / B站：标题 + 简介 + 标签 + 时长裁剪 |
 | MCP Server | 独立进程 | STDIO / HTTP，把全部能力暴露给外部 Agent |
@@ -443,8 +444,9 @@ Output: video + multi-platform packages + report
 | Smart material editing (Mode B) | Web home | upload clips → concat / transitions / subtitles / BGM |
 | Director (human-in-the-loop) | Web `🧠 智能导演` | approve or rewrite sentence by sentence, branch / merge, incremental re-render |
 | Topic library + RAG | Web / API | 1,200 built-in topics, search augmentation, trend ranking |
-| AI image / video | Pipeline | ComfyUI (local, free) / Bailian WanX / DashScope / OpenAI |
-| HTML templates | API | 31 portrait / landscape / square templates rendered via Playwright |
+| AI image / video | Web `🎨 AI 生图` / pipeline | ComfyUI (local, free) / Bailian WanX / DashScope / OpenAI |
+| HTML templates | Web `🧩 模板` / API | 31 portrait / landscape / square templates with live preview via Playwright |
+| Topic library expansion | Web `选题中心` | crawl + RAG expansion, one click |
 | Motion D1–D6 | Pipeline | Ken Burns, text entrances, layered composition, transitions, video backgrounds, BGM |
 | Multi-platform packages | CLI | Douyin / RedNote / Bilibili titles, descriptions, tags, duration trimming |
 | MCP server | Standalone | STDIO / HTTP; exposes every capability to external agents |

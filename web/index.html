@@ -1632,6 +1632,8 @@
             <a class="nav-item" data-page="stats" onclick="showPage('stats')">数据中心</a>
             <a class="nav-item" data-page="agent" onclick="showPage('agent')">🤖 AI助手</a>
             <a class="nav-item" data-page="thinking" onclick="showPage('thinking')">🧠 智能导演</a>
+            <a class="nav-item" data-page="templates" onclick="showPage('templates')">🧩 模板</a>
+            <a class="nav-item" data-page="aiimage" onclick="showPage('aiimage')">🎨 AI 生图</a>
         </nav>
     </header>
 
@@ -2042,6 +2044,8 @@
                     <div style="display: flex; gap: 8px; align-items: center;">
                         <input type="text" id="topic-search" class="bili-input" placeholder="搜索选题..." style="width: 180px;" onkeyup="if(event.key==='Enter')searchTopics()">
                         <button class="bili-btn bili-btn-secondary" onclick="searchTopics()">🔍 搜索</button>
+                        <button class="bili-btn bili-btn-secondary" id="topic-expand-btn" onclick="expandTopicLibrary()">🪄 AI 扩充选题库</button>
+                        <span id="topic-expand-status" style="font-size:12px;color:#909090;"></span>
                     </div>
                 </div>
                 <div class="card-body">
@@ -2470,6 +2474,93 @@
                 </div>
             </div>
         </div>
+
+        <!-- ========== 模板库 ========== -->
+        <div id="page-templates" class="page">
+            <div class="bili-card">
+                <div class="card-header">
+                    <span class="card-title">🧩 视频模板</span>
+                    <div style="display: flex; gap: 8px; align-items: center;">
+                        <select id="tpl-aspect" class="bili-input" style="width: 130px;" onchange="loadTemplates()">
+                            <option value="">全部画幅</option>
+                        </select>
+                        <select id="tpl-type" class="bili-input" style="width: 130px;" onchange="loadTemplates()">
+                            <option value="">全部类型</option>
+                        </select>
+                        <input type="text" id="tpl-search" class="bili-input" placeholder="搜索模板名" style="width: 160px;" onkeyup="if(event.key==='Enter')loadTemplates()">
+                        <button class="bili-btn bili-btn-secondary" onclick="loadTemplates()">🔄 刷新</button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div id="tpl-hint" style="font-size: 12px; color: #909090; margin-bottom: 12px;">加载中...</div>
+                    <div id="tpl-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px;"></div>
+                </div>
+            </div>
+
+            <div class="bili-card" id="tpl-preview-card" style="display: none;">
+                <div class="card-header">
+                    <span class="card-title" id="tpl-preview-title">模板预览</span>
+                    <div style="display: flex; gap: 8px; align-items: center;">
+                        <span id="tpl-preview-status" style="font-size: 12px; color: #909090;"></span>
+                        <button class="bili-btn bili-btn-secondary" onclick="closeTemplatePreview()">关闭</button>
+                    </div>
+                </div>
+                <div class="card-body" style="text-align: center;">
+                    <img id="tpl-preview-img" alt="模板预览" style="max-width: 100%; max-height: 70vh; border-radius: 4px; display: none;">
+                </div>
+            </div>
+        </div>
+
+        <!-- ========== AI 生图 ========== -->
+        <div id="page-aiimage" class="page">
+            <div class="bili-card">
+                <div class="card-header">
+                    <span class="card-title">🎨 AI 生图</span>
+                    <button class="bili-btn bili-btn-secondary" onclick="loadAIModels(true)">🔄 刷新供应商</button>
+                </div>
+                <div class="card-body">
+                    <div style="display: flex; align-items: flex-start; gap: 12px; margin-bottom: 12px;">
+                        <label style="line-height: 36px; white-space: nowrap;">提示词：</label>
+                        <textarea id="aig-prompt" class="bili-input" rows="3" style="flex: 1; min-height: 84px; resize: vertical; box-sizing: border-box;"
+                            placeholder="例如：赛博朋克风格的城市夜景，霓虹灯，电影感，高细节"></textarea>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px; flex-wrap: wrap;">
+                        <label>供应商：</label>
+                        <select id="aig-provider" class="bili-input" style="width: 150px;" onchange="onAIProviderChange()"></select>
+                        <label style="margin-left: 8px;">模型：</label>
+                        <select id="aig-model" class="bili-input" style="width: 180px;"></select>
+                        <label style="margin-left: 8px;">尺寸：</label>
+                        <select id="aig-size" class="bili-input" style="width: 160px;">
+                            <option value="1024x1024">1024×1024 方形</option>
+                            <option value="1080x1920">1080×1920 竖屏</option>
+                            <option value="1920x1080">1920×1080 横屏</option>
+                            <option value="1080x1080">1080×1080 方形</option>
+                            <option value="1792x1024">1792×1024 横版</option>
+                            <option value="1024x1792">1024×1792 竖版</option>
+                            <option value="512x512">512×512 小图</option>
+                        </select>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 8px; margin-top: 14px; flex-wrap: wrap;">
+                        <button class="bili-btn bili-btn-secondary" onclick="estimateAICost()">💰 估算成本</button>
+                        <button class="bili-btn bili-btn-primary" id="aig-gen-btn" onclick="generateAIImage()">✨ 生成图片</button>
+                        <span id="aig-status" style="font-size: 12px; color: #909090;"></span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bili-card" id="aig-result-card" style="display: none;">
+                <div class="card-header">
+                    <span class="card-title">生成结果</span>
+                    <button class="bili-btn bili-btn-secondary" onclick="closeAIImageResult()">关闭</button>
+                </div>
+                <div class="card-body">
+                    <div style="text-align: center; margin-bottom: 12px;">
+                        <img id="aig-image" alt="AI 生成图片" style="max-width: 100%; max-height: 70vh; border-radius: 4px;">
+                    </div>
+                    <div id="aig-meta" style="font-size: 12px; color: #909090; text-align: center;"></div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- 图片预览 -->
@@ -2731,6 +2822,8 @@
             else if (page === 'works') loadWorksPage();
             else if (page === 'materials') loadMaterialsPage();
             else if (page === 'topics') loadTopicsPage();
+            else if (page === 'templates') loadTemplates();
+            else if (page === 'aiimage') loadAIModels();
 
             // 页面切换动画完成后才解锁
             setTimeout(function() { isTransitioning = false; }, 300);
@@ -5475,5 +5568,279 @@
             </p>
         </div>
     </div>
+    <script>
+        // ==================== 模板库 ====================
+        var tplFiltersReady = false;
+
+        function tplEsc(s) {
+            return String(s == null ? '' : s)
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+
+        function fillTemplateFilters(filters) {
+            var aspectSel = document.getElementById('tpl-aspect');
+            var typeSel = document.getElementById('tpl-type');
+            (filters.aspect_ratios || []).forEach(function(v) {
+                var o = document.createElement('option');
+                o.value = v; o.textContent = v;
+                aspectSel.appendChild(o);
+            });
+            var typeNames = { image: '图片背景', video: '视频背景', static: '纯文字', asset: '素材占位' };
+            (filters.template_types || []).forEach(function(v) {
+                var o = document.createElement('option');
+                o.value = v; o.textContent = typeNames[v] || v;
+                typeSel.appendChild(o);
+            });
+        }
+
+        function loadTemplates() {
+            var grid = document.getElementById('tpl-grid');
+            var hint = document.getElementById('tpl-hint');
+            if (!grid) return;
+
+            var params = [];
+            var aspect = document.getElementById('tpl-aspect').value;
+            var type = document.getElementById('tpl-type').value;
+            var search = document.getElementById('tpl-search').value.trim();
+            if (aspect) params.push('aspect_ratio=' + encodeURIComponent(aspect));
+            if (type) params.push('template_type=' + encodeURIComponent(type));
+            if (search) params.push('search=' + encodeURIComponent(search));
+
+            var url = API + '/templates';
+            if (params.length) url += '?' + params.join('&');
+
+            hint.textContent = '加载中...';
+            fetch(url).then(function(r) { return r.json(); }).then(function(data) {
+                if (!tplFiltersReady) {
+                    fillTemplateFilters(data.filters || {});
+                    tplFiltersReady = true;
+                }
+                var list = data.templates || [];
+                hint.textContent = '共 ' + (data.total || 0) + ' 个模板' +
+                    (list.length ? ' · 点击卡片生成预览（需已安装 Playwright 浏览器）' : '');
+                if (!list.length) {
+                    grid.innerHTML = '';
+                    hint.textContent = '没有匹配的模板';
+                    return;
+                }
+                grid.innerHTML = list.map(function(t) {
+                    var icon = t.template_type === 'video' ? '🎬'
+                        : (t.template_type === 'static' ? '🔤' : '🖼️');
+                    return '<div class="tpl-card" data-name="' + tplEsc(t.name) + '" ' +
+                        'style="border:1px solid #E3E5E7;border-radius:6px;overflow:hidden;cursor:pointer;background:#fff;transition:box-shadow .2s;">' +
+                        '<div style="height:110px;display:flex;align-items:center;justify-content:center;font-size:34px;background:linear-gradient(135deg,#F7F8FA,#EDEFF3);">' + icon + '</div>' +
+                        '<div style="padding:8px 10px;">' +
+                        '<div style="font-size:13px;font-weight:600;color:#232529;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + tplEsc(t.name) + '</div>' +
+                        '<div style="font-size:11px;color:#909090;">' + tplEsc(t.aspect_ratio) + ' · ' + tplEsc(t.template_type) + ' · ' + tplEsc(t.style || '') + '</div>' +
+                        '</div></div>';
+                }).join('');
+                var cards = grid.querySelectorAll('.tpl-card');
+                for (var i = 0; i < cards.length; i++) {
+                    (function(card) {
+                        card.onmouseover = function() { card.style.boxShadow = '0 2px 12px rgba(0,0,0,.12)'; };
+                        card.onmouseout = function() { card.style.boxShadow = 'none'; };
+                        card.onclick = function() { previewTemplate(card.getAttribute('data-name')); };
+                    })(cards[i]);
+                }
+            }).catch(function(e) {
+                hint.textContent = '加载失败：' + e;
+            });
+        }
+
+        function previewTemplate(name) {
+            var card = document.getElementById('tpl-preview-card');
+            var img = document.getElementById('tpl-preview-img');
+            var status = document.getElementById('tpl-preview-status');
+            document.getElementById('tpl-preview-title').textContent = '模板预览 · ' + name;
+            card.style.display = 'block';
+            card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            img.style.display = 'none';
+            img.removeAttribute('src');
+            status.textContent = '渲染中（首次启动浏览器约 2–5 秒）...';
+
+            fetch(API + '/templates/preview', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ template_name: name, context: {} })
+            }).then(function(r) {
+                return r.json().then(function(d) { return { ok: r.ok, data: d }; });
+            }).then(function(res) {
+                if (!res.ok) {
+                    status.textContent = '预览失败：' + (res.data.detail || '未知错误');
+                    return;
+                }
+                img.onload = function() {
+                    img.style.display = 'inline-block';
+                    status.textContent = '';
+                };
+                img.onerror = function() {
+                    status.textContent = '图片加载失败：' + res.data.preview_url;
+                };
+                img.src = res.data.preview_url + '?t=' + Date.now();
+            }).catch(function(e) {
+                status.textContent = '预览失败：' + e;
+            });
+        }
+
+        function closeTemplatePreview() {
+            document.getElementById('tpl-preview-card').style.display = 'none';
+        }
+
+        // ==================== AI 生图 ====================
+        var aiModelsCache = { providers: [], models: {} };
+
+        function loadAIModels(force) {
+            var status = document.getElementById('aig-status');
+            var providerSel = document.getElementById('aig-provider');
+            if (!providerSel) return;
+            if (aiModelsCache.providers.length && !force) {
+                return;
+            }
+            status.textContent = '读取供应商...';
+            fetch(API + '/ai/models').then(function(r) { return r.json(); }).then(function(data) {
+                aiModelsCache = data || { providers: [], models: {} };
+                providerSel.innerHTML = '';
+                (aiModelsCache.providers || []).forEach(function(p) {
+                    var o = document.createElement('option');
+                    o.value = p; o.textContent = p;
+                    providerSel.appendChild(o);
+                });
+                if (!aiModelsCache.providers || !aiModelsCache.providers.length) {
+                    status.textContent = '未配置 AI 生图供应商：请在 .env 设置 DASHSCOPE_API_KEY 或 OPENAI_API_KEY';
+                } else {
+                    status.textContent = '';
+                }
+                onAIProviderChange();
+            }).catch(function(e) {
+                status.textContent = '读取供应商失败：' + e;
+            });
+        }
+
+        function onAIProviderChange() {
+            var provider = document.getElementById('aig-provider').value;
+            var modelSel = document.getElementById('aig-model');
+            modelSel.innerHTML = '';
+            var models = (aiModelsCache.models || {})[provider] || [];
+            if (!models.length) {
+                var o = document.createElement('option');
+                o.value = ''; o.textContent = '默认';
+                modelSel.appendChild(o);
+                return;
+            }
+            models.forEach(function(m) {
+                var o = document.createElement('option');
+                o.value = m; o.textContent = m;
+                modelSel.appendChild(o);
+            });
+        }
+
+        function aiRequestPayload() {
+            return {
+                prompt: document.getElementById('aig-prompt').value.trim(),
+                provider: document.getElementById('aig-provider').value,
+                model: document.getElementById('aig-model').value || null,
+                size: document.getElementById('aig-size').value
+            };
+        }
+
+        function estimateAICost() {
+            var status = document.getElementById('aig-status');
+            var payload = aiRequestPayload();
+            if (!payload.prompt) { status.textContent = '请先填写提示词'; return; }
+            if (!payload.provider) { status.textContent = '没有可用的供应商'; return; }
+            status.textContent = '估算中...';
+            fetch(API + '/ai/estimate-cost', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            }).then(function(r) {
+                return r.json().then(function(d) { return { ok: r.ok, data: d }; });
+            }).then(function(res) {
+                if (!res.ok) { status.textContent = '估算失败：' + (res.data.detail || ''); return; }
+                status.textContent = '预估成本：' + res.data.estimated_cost + ' ' + (res.data.currency || 'CNY') +
+                    (res.data.notes ? '（' + res.data.notes + '）' : '');
+            }).catch(function(e) { status.textContent = '估算失败：' + e; });
+        }
+
+        function aiLocalUrl(d) {
+            if (d.image_path) {
+                var p = String(d.image_path).replace(/\\/g, '/');
+                var idx = p.indexOf('output/');
+                if (idx >= 0) return '/static/output/' + p.slice(idx + 'output/'.length);
+            }
+            return d.image_url || '';
+        }
+
+        function generateAIImage() {
+            var status = document.getElementById('aig-status');
+            var btn = document.getElementById('aig-gen-btn');
+            var payload = aiRequestPayload();
+            if (!payload.prompt) { status.textContent = '请先填写提示词'; return; }
+            if (!payload.provider) { status.textContent = '没有可用的供应商'; return; }
+
+            payload.n = 1;
+            btn.disabled = true;
+            status.textContent = '生成中，请稍候...';
+
+            fetch(API + '/ai/generate-image', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            }).then(function(r) {
+                return r.json().then(function(d) { return { ok: r.ok, data: d }; });
+            }).then(function(res) {
+                btn.disabled = false;
+                if (!res.ok || !res.data.success) {
+                    status.textContent = '生成失败：' + (res.data.error || res.data.detail || '未知错误');
+                    return;
+                }
+                var url = aiLocalUrl(res.data);
+                var card = document.getElementById('aig-result-card');
+                var img = document.getElementById('aig-image');
+                card.style.display = 'block';
+                img.src = url;
+                document.getElementById('aig-meta').textContent =
+                    (res.data.provider || '') + ' · ' + (res.data.model || '') +
+                    ' · 耗时 ' + (res.data.generation_time || 0).toFixed(1) + 's' +
+                    ' · 成本 ' + (res.data.cost || 0) + ' CNY';
+                status.textContent = '完成';
+            }).catch(function(e) {
+                btn.disabled = false;
+                status.textContent = '生成失败：' + e;
+            });
+        }
+
+        function closeAIImageResult() {
+            document.getElementById('aig-result-card').style.display = 'none';
+        }
+
+        // ==================== 选题库扩充 ====================
+        function expandTopicLibrary() {
+            if (!confirm('将从网络抓取并扩充选题库，可能需要 1–3 分钟，是否继续？')) return;
+            var btn = document.getElementById('topic-expand-btn');
+            var status = document.getElementById('topic-expand-status');
+            btn.disabled = true;
+            status.textContent = '正在扩充，请稍候...';
+            fetch(API + '/library/expand', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ target: 1500 })
+            }).then(function(r) {
+                return r.json().then(function(d) { return { ok: r.ok, data: d }; });
+            }).then(function(res) {
+                btn.disabled = false;
+                if (!res.ok) {
+                    status.textContent = '扩充失败：' + (res.data.error || '未知错误');
+                    return;
+                }
+                status.textContent = '完成：' + res.data.before + ' → ' + res.data.after +
+                    ' 条（新增 ' + res.data.generated + '）';
+            }).catch(function(e) {
+                btn.disabled = false;
+                status.textContent = '扩充失败：' + e;
+            });
+        }
+    </script>
 </body>
 </html>

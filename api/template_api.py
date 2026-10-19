@@ -14,6 +14,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from services.template.registry import TemplateRegistry
 from services.template.renderer import TemplateRenderer
 
+import config
+
 router = APIRouter()
 
 # 全局模板注册表实例（懒加载）
@@ -173,21 +175,21 @@ async def preview_template(request: TemplatePreviewRequest):
         }
         context = {**default_context, **request.context}
 
-        # 生成预览图
-        output_path = f"output/previews/{request.template_name}_preview.png"
-        from pathlib import Path
-        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+        # 生成预览图（写入 output/previews，由 /static/output 挂载对外提供）
+        preview_dir = Path(config.OUTPUT_DIR) / "previews"
+        preview_dir.mkdir(parents=True, exist_ok=True)
+        output_path = preview_dir / f"{request.template_name}_preview.png"
 
         await renderer.render(
             request.template_name,
             context,
-            Path(output_path),
+            output_path,
         )
 
         return {
             "success": True,
-            "preview_url": f"/previews/{request.template_name}_preview.png",
-            "output_path": output_path,
+            "preview_url": f"/static/output/previews/{request.template_name}_preview.png",
+            "output_path": str(output_path),
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Preview generation failed: {str(e)}")
