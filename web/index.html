@@ -1633,7 +1633,8 @@
             <a class="nav-item" data-page="agent" onclick="showPage('agent')">🤖 AI助手</a>
             <a class="nav-item" data-page="thinking" onclick="showPage('thinking')">🧠 智能导演</a>
             <a class="nav-item" data-page="templates" onclick="showPage('templates')">🧩 模板</a>
-            <a class="nav-item" data-page="aiimage" onclick="showPage('aiimage')">🎨 AI 生图</a>
+            <a class="nav-item" data-page="aiimage" onclick="showPage('aiimage')">🎨 AI 素材</a>
+            <a class="nav-item" data-page="timeline" onclick="showPage('timeline')">🎞️ 时间轴</a>
         </nav>
     </header>
 
@@ -2511,53 +2512,140 @@
             </div>
         </div>
 
-        <!-- ========== AI 生图 ========== -->
+        <!-- ========== AI 素材（生图 / 生视频） ========== -->
         <div id="page-aiimage" class="page">
-            <div class="bili-card">
-                <div class="card-header">
-                    <span class="card-title">🎨 AI 生图</span>
-                    <button class="bili-btn bili-btn-secondary" onclick="loadAIModels(true)">🔄 刷新供应商</button>
+            <div class="bili-card" style="padding: 12px 20px;">
+                <div style="display: flex; gap: 8px; align-items: center;">
+                    <span style="font-size: 13px; color: #909090;">模式：</span>
+                    <button class="bili-btn bili-btn-primary" id="ai-tab-image" onclick="switchAIMode('image')">🖼️ 生图</button>
+                    <button class="bili-btn bili-btn-secondary" id="ai-tab-video" onclick="switchAIMode('video')">🎬 生视频</button>
                 </div>
-                <div class="card-body">
-                    <div style="display: flex; align-items: flex-start; gap: 12px; margin-bottom: 12px;">
-                        <label style="line-height: 36px; white-space: nowrap;">提示词：</label>
-                        <textarea id="aig-prompt" class="bili-input" rows="3" style="flex: 1; min-height: 84px; resize: vertical; box-sizing: border-box;"
-                            placeholder="例如：赛博朋克风格的城市夜景，霓虹灯，电影感，高细节"></textarea>
+            </div>
+
+            <div id="ai-panel-image">
+                <div class="bili-card">
+                    <div class="card-header">
+                        <span class="card-title">🖼️ AI 生图</span>
+                        <button class="bili-btn bili-btn-secondary" onclick="loadAIModels(true)">🔄 刷新供应商</button>
                     </div>
-                    <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px; flex-wrap: wrap;">
-                        <label>供应商：</label>
-                        <select id="aig-provider" class="bili-input" style="width: 150px;" onchange="onAIProviderChange()"></select>
-                        <label style="margin-left: 8px;">模型：</label>
-                        <select id="aig-model" class="bili-input" style="width: 180px;"></select>
-                        <label style="margin-left: 8px;">尺寸：</label>
-                        <select id="aig-size" class="bili-input" style="width: 160px;">
-                            <option value="1024x1024">1024×1024 方形</option>
-                            <option value="1080x1920">1080×1920 竖屏</option>
-                            <option value="1920x1080">1920×1080 横屏</option>
-                            <option value="1080x1080">1080×1080 方形</option>
-                            <option value="1792x1024">1792×1024 横版</option>
-                            <option value="1024x1792">1024×1792 竖版</option>
-                            <option value="512x512">512×512 小图</option>
-                        </select>
+                    <div class="card-body">
+                        <div style="display: flex; align-items: flex-start; gap: 12px; margin-bottom: 12px;">
+                            <label style="line-height: 36px; white-space: nowrap;">提示词：</label>
+                            <textarea id="aig-prompt" class="bili-input" rows="3" style="flex: 1; min-height: 84px; resize: vertical; box-sizing: border-box;"
+                                placeholder="例如：赛博朋克风格的城市夜景，霓虹灯，电影感，高细节"></textarea>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px; flex-wrap: wrap;">
+                            <label>供应商：</label>
+                            <select id="aig-provider" class="bili-input" style="width: 150px;" onchange="onAIProviderChange()"></select>
+                            <label style="margin-left: 8px;">模型：</label>
+                            <select id="aig-model" class="bili-input" style="width: 180px;"></select>
+                            <label style="margin-left: 8px;">尺寸：</label>
+                            <select id="aig-size" class="bili-input" style="width: 160px;">
+                                <option value="1024x1024">1024×1024 方形</option>
+                                <option value="1080x1920">1080×1920 竖屏</option>
+                                <option value="1920x1080">1920×1080 横屏</option>
+                                <option value="1080x1080">1080×1080 方形</option>
+                                <option value="1792x1024">1792×1024 横版</option>
+                                <option value="1024x1792">1024×1792 竖版</option>
+                                <option value="512x512">512×512 小图</option>
+                            </select>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 8px; margin-top: 14px; flex-wrap: wrap;">
+                            <button class="bili-btn bili-btn-secondary" onclick="estimateAICost()">💰 估算成本</button>
+                            <button class="bili-btn bili-btn-primary" id="aig-gen-btn" onclick="generateAIImage()">✨ 生成图片</button>
+                            <span id="aig-status" style="font-size: 12px; color: #909090;"></span>
+                        </div>
                     </div>
-                    <div style="display: flex; align-items: center; gap: 8px; margin-top: 14px; flex-wrap: wrap;">
-                        <button class="bili-btn bili-btn-secondary" onclick="estimateAICost()">💰 估算成本</button>
-                        <button class="bili-btn bili-btn-primary" id="aig-gen-btn" onclick="generateAIImage()">✨ 生成图片</button>
-                        <span id="aig-status" style="font-size: 12px; color: #909090;"></span>
+                </div>
+
+                <div class="bili-card" id="aig-result-card" style="display: none;">
+                    <div class="card-header">
+                        <span class="card-title">生成结果</span>
+                        <button class="bili-btn bili-btn-secondary" onclick="closeAIImageResult()">关闭</button>
+                    </div>
+                    <div class="card-body">
+                        <div style="text-align: center; margin-bottom: 12px;">
+                            <img id="aig-image" alt="AI 生成图片" style="max-width: 100%; max-height: 70vh; border-radius: 4px;">
+                        </div>
+                        <div id="aig-meta" style="font-size: 12px; color: #909090; text-align: center;"></div>
                     </div>
                 </div>
             </div>
 
-            <div class="bili-card" id="aig-result-card" style="display: none;">
+            <div id="ai-panel-video" style="display: none;">
+                <div class="bili-card">
+                    <div class="card-header">
+                        <span class="card-title">🎬 AI 生视频</span>
+                        <button class="bili-btn bili-btn-secondary" onclick="loadVideoModels(true)">🔄 刷新供应商</button>
+                    </div>
+                    <div class="card-body">
+                        <div style="display: flex; align-items: flex-start; gap: 12px; margin-bottom: 12px;">
+                            <label style="line-height: 36px; white-space: nowrap;">提示词：</label>
+                            <textarea id="avg-prompt" class="bili-input" rows="3" style="flex: 1; min-height: 84px; resize: vertical; box-sizing: border-box;"
+                                placeholder="例如：镜头缓慢推进，霓虹灯下的雨夜街道，赛博朋克风格，电影质感"></textarea>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px; flex-wrap: wrap;">
+                            <label>供应商：</label>
+                            <select id="avg-provider" class="bili-input" style="width: 150px;" onchange="onVideoProviderChange()"></select>
+                            <label style="margin-left: 8px;">模型：</label>
+                            <select id="avg-model" class="bili-input" style="width: 190px;"></select>
+                            <label style="margin-left: 8px;">画幅：</label>
+                            <select id="avg-size" class="bili-input" style="width: 120px;">
+                                <option value="9:16">9:16 竖屏</option>
+                                <option value="16:9">16:9 横屏</option>
+                                <option value="1:1">1:1 方形</option>
+                            </select>
+                            <label style="margin-left: 8px;">分辨率：</label>
+                            <select id="avg-res" class="bili-input" style="width: 110px;">
+                                <option value="1080P">1080P</option>
+                                <option value="720P">720P</option>
+                            </select>
+                            <label style="margin-left: 8px;">时长：</label>
+                            <input type="number" id="avg-duration" class="bili-input" value="5" min="2" max="15" style="width: 80px;">
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 8px; margin-top: 14px; flex-wrap: wrap;">
+                            <button class="bili-btn bili-btn-secondary" onclick="estimateVideoCost()">💰 估算成本</button>
+                            <button class="bili-btn bili-btn-primary" id="avg-gen-btn" onclick="generateAIVideo()">🎬 生成视频</button>
+                            <span id="avg-status" style="font-size: 12px; color: #909090;"></span>
+                        </div>
+                        <div id="avg-progress-wrap" style="display: none; margin-top: 10px;">
+                            <div style="height: 6px; background: #F0F1F3; border-radius: 3px; overflow: hidden;">
+                                <div id="avg-progress-fill" style="height: 100%; width: 0%; background: #FB7299; transition: width .3s;"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bili-card" id="avg-result-card" style="display: none;">
+                    <div class="card-header">
+                        <span class="card-title">生成结果</span>
+                        <button class="bili-btn bili-btn-secondary" onclick="document.getElementById('avg-result-card').style.display='none'">关闭</button>
+                    </div>
+                    <div class="card-body" style="text-align: center;">
+                        <video id="avg-video" controls style="max-width: 100%; max-height: 70vh; border-radius: 4px;"></video>
+                        <div id="avg-meta" style="font-size: 12px; color: #909090; margin-top: 10px;"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ========== 时间轴 ========== -->
+        <div id="page-timeline" class="page">
+            <div class="bili-card">
                 <div class="card-header">
-                    <span class="card-title">生成结果</span>
-                    <button class="bili-btn bili-btn-secondary" onclick="closeAIImageResult()">关闭</button>
+                    <span class="card-title">🎞️ 时间轴</span>
+                    <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                        <select id="tl-session" class="bili-input" style="width: 280px;" onchange="loadTimeline()"></select>
+                        <button class="bili-btn bili-btn-secondary" onclick="refreshTimelineSessions()">🔄 会话</button>
+                        <button class="bili-btn bili-btn-secondary" onclick="saveTimeline()">💾 保存</button>
+                        <button class="bili-btn bili-btn-secondary" onclick="loadTimelineFromDisk()">📂 读取</button>
+                    </div>
                 </div>
                 <div class="card-body">
-                    <div style="text-align: center; margin-bottom: 12px;">
-                        <img id="aig-image" alt="AI 生成图片" style="max-width: 100%; max-height: 70vh; border-radius: 4px;">
-                    </div>
-                    <div id="aig-meta" style="font-size: 12px; color: #909090; text-align: center;"></div>
+                    <div id="tl-hint" style="font-size: 12px; color: #909090; margin-bottom: 12px;">加载中...</div>
+                    <div id="tl-ruler" style="position: relative; height: 18px; margin-bottom: 6px; border-bottom: 1px solid #E3E5E7;"></div>
+                    <div id="tl-tracks"></div>
+                    <div id="tl-dag" style="margin-top: 18px;"></div>
                 </div>
             </div>
         </div>
@@ -2823,7 +2911,11 @@
             else if (page === 'materials') loadMaterialsPage();
             else if (page === 'topics') loadTopicsPage();
             else if (page === 'templates') loadTemplates();
-            else if (page === 'aiimage') loadAIModels();
+            else if (page === 'aiimage') {
+                loadAIModels();
+                if (aiMode === 'video') loadVideoModels();
+            }
+            else if (page === 'timeline') refreshTimelineSessions();
 
             // 页面切换动画完成后才解锁
             setTimeout(function() { isTransitioning = false; }, 300);
@@ -5840,6 +5932,376 @@
                 btn.disabled = false;
                 status.textContent = '扩充失败：' + e;
             });
+        }
+        // ==================== AI 素材：模式切换 ====================
+        var aiMode = 'image';
+
+        function switchAIMode(mode) {
+            aiMode = mode;
+            document.getElementById('ai-panel-image').style.display = mode === 'image' ? 'block' : 'none';
+            document.getElementById('ai-panel-video').style.display = mode === 'video' ? 'block' : 'none';
+            document.getElementById('ai-tab-image').className = 'bili-btn ' + (mode === 'image' ? 'bili-btn-primary' : 'bili-btn-secondary');
+            document.getElementById('ai-tab-video').className = 'bili-btn ' + (mode === 'video' ? 'bili-btn-primary' : 'bili-btn-secondary');
+            if (mode === 'video' && !videoModelsCache.providers.length) loadVideoModels();
+        }
+
+        // ==================== AI 生视频 ====================
+        var videoModelsCache = { providers: [], models: {} };
+
+        function loadVideoModels(force) {
+            var status = document.getElementById('avg-status');
+            var sel = document.getElementById('avg-provider');
+            if (!sel) return;
+            if (videoModelsCache.providers.length && !force) { return; }
+            status.textContent = '读取供应商...';
+            fetch(API + '/ai/video/models').then(function(r) { return r.json(); }).then(function(data) {
+                videoModelsCache = data || { providers: [], models: {} };
+                sel.innerHTML = '';
+                (data.providers || []).forEach(function(p) {
+                    var o = document.createElement('option');
+                    o.value = p; o.textContent = p;
+                    sel.appendChild(o);
+                });
+                if (!data.providers || !data.providers.length) {
+                    status.textContent = '没有可用的生视频供应商：配置 DASHSCOPE_API_KEY，或启动本地 ComfyUI';
+                } else {
+                    status.textContent = '';
+                }
+                onVideoProviderChange();
+            }).catch(function(e) {
+                status.textContent = '读取供应商失败：' + e;
+            });
+        }
+
+        function onVideoProviderChange() {
+            var provider = document.getElementById('avg-provider').value;
+            var modelSel = document.getElementById('avg-model');
+            modelSel.innerHTML = '';
+            var models = (videoModelsCache.models || {})[provider] || [];
+            if (!models.length) {
+                var o = document.createElement('option');
+                o.value = ''; o.textContent = '默认';
+                modelSel.appendChild(o);
+                return;
+            }
+            models.forEach(function(m) {
+                var o = document.createElement('option');
+                o.value = m; o.textContent = m;
+                modelSel.appendChild(o);
+            });
+        }
+
+        function videoPayload() {
+            var duration = parseInt(document.getElementById('avg-duration').value || '5', 10);
+            return {
+                prompt: document.getElementById('avg-prompt').value.trim(),
+                provider: document.getElementById('avg-provider').value,
+                model: document.getElementById('avg-model').value || null,
+                size: document.getElementById('avg-size').value,
+                resolution: document.getElementById('avg-res').value,
+                duration: Math.max(2, Math.min(15, isNaN(duration) ? 5 : duration))
+            };
+        }
+
+        function setVideoProgress(pct) {
+            var fill = document.getElementById('avg-progress-fill');
+            if (fill) fill.style.width = Math.max(0, Math.min(100, pct)) + '%';
+        }
+
+        function estimateVideoCost() {
+            var status = document.getElementById('avg-status');
+            var payload = videoPayload();
+            if (!payload.prompt) { status.textContent = '请先填写提示词'; return; }
+            if (!payload.provider) { status.textContent = '没有可用的供应商'; return; }
+            status.textContent = '估算中...';
+            fetch(API + '/ai/video/estimate-cost', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            }).then(function(r) {
+                return r.json().then(function(d) { return { ok: r.ok, data: d }; });
+            }).then(function(res) {
+                if (!res.ok) { status.textContent = '估算失败：' + (res.data.detail || ''); return; }
+                status.textContent = '预估成本：' + res.data.estimated_cost + ' ' + (res.data.currency || 'CNY');
+            }).catch(function(e) {
+                status.textContent = '估算失败：' + e;
+            });
+        }
+
+        function showVideoResult(data) {
+            var url = data.video_url || data.remote_url || '';
+            if (!url) { return; }
+            var card = document.getElementById('avg-result-card');
+            var video = document.getElementById('avg-video');
+            card.style.display = 'block';
+            video.src = url;
+            document.getElementById('avg-meta').textContent = data.video_path || data.remote_url || url;
+        }
+
+        function generateAIVideo() {
+            var status = document.getElementById('avg-status');
+            var btn = document.getElementById('avg-gen-btn');
+            var payload = videoPayload();
+            if (!payload.prompt) { status.textContent = '请先填写提示词'; return; }
+            if (!payload.provider) { status.textContent = '没有可用的供应商'; return; }
+
+            btn.disabled = true;
+            status.textContent = '提交中...';
+            document.getElementById('avg-progress-wrap').style.display = 'block';
+            setVideoProgress(0);
+
+            fetch(API + '/ai/generate-video', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            }).then(function(res) {
+                if (!res.ok) {
+                    return res.json().then(function(d) { throw new Error(d.detail || '请求失败'); });
+                }
+                var reader = res.body.getReader();
+                var decoder = new TextDecoder();
+                var buffer = '';
+
+                function pump() {
+                    return reader.read().then(function(result) {
+                        if (result.done) { btn.disabled = false; return; }
+                        buffer += decoder.decode(result.value, { stream: true });
+                        var lines = buffer.split('\n');
+                        buffer = lines.pop();
+                        lines.forEach(function(line) {
+                            if (line.indexOf('data: ') !== 0) { return; }
+                            var data;
+                            try { data = JSON.parse(line.slice(6)); } catch (err) { return; }
+                            if (data.type === 'progress') {
+                                var pct = Math.round((data.progress || 0) * 100);
+                                setVideoProgress(pct);
+                                status.textContent = (data.status || '生成中') + ' · ' + pct + '%';
+                            } else if (data.type === 'done') {
+                                setVideoProgress(100);
+                                status.textContent = '完成';
+                                showVideoResult(data);
+                                btn.disabled = false;
+                            } else if (data.type === 'error') {
+                                status.textContent = '失败：' + (data.error || '未知错误');
+                                btn.disabled = false;
+                            }
+                        });
+                        return pump();
+                    });
+                }
+                return pump();
+            }).catch(function(e) {
+                btn.disabled = false;
+                status.textContent = '失败：' + e.message;
+            });
+        }
+
+        // ==================== 时间轴 ====================
+        var tlSessionId = null;
+        var tlData = null;
+
+        function jsStr(s) {
+            return String(s == null ? '' : s).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        }
+
+        function refreshTimelineSessions() {
+            var sel = document.getElementById('tl-session');
+            var hint = document.getElementById('tl-hint');
+            if (!sel) return;
+            hint.textContent = '读取会话...';
+            fetch(API + '/thinking/sessions').then(function(r) { return r.json(); }).then(function(d) {
+                var sessions = d.sessions || [];
+                sel.innerHTML = '';
+                sessions.forEach(function(s) {
+                    var o = document.createElement('option');
+                    o.value = s.session_id;
+                    o.textContent = (s.topic || '(无主题)') + ' · ' + (s.modules || 0) + ' 模块';
+                    sel.appendChild(o);
+                });
+                if (!sessions.length) {
+                    hint.textContent = '还没有会话：请先到「🧠 智能导演」创建并执行一次，再回来编辑时间轴。';
+                    document.getElementById('tl-tracks').innerHTML = '';
+                    document.getElementById('tl-ruler').innerHTML = '';
+                    document.getElementById('tl-dag').innerHTML = '';
+                    return;
+                }
+                loadTimeline();
+            }).catch(function(e) {
+                hint.textContent = '读取会话失败：' + e;
+            });
+        }
+
+        function loadTimeline() {
+            var sel = document.getElementById('tl-session');
+            if (!sel || !sel.value) return;
+            tlSessionId = sel.value;
+            fetch(API + '/timeline/' + tlSessionId).then(function(r) {
+                return r.json().then(function(d) { return { ok: r.ok, data: d }; });
+            }).then(function(res) {
+                if (!res.ok) {
+                    document.getElementById('tl-hint').textContent = '读取时间轴失败：' + (res.data.detail || '');
+                    return;
+                }
+                tlData = res.data;
+                renderTimeline(res.data);
+                loadTimelineDag();
+            }).catch(function(e) {
+                document.getElementById('tl-hint').textContent = '读取时间轴失败：' + e;
+            });
+        }
+
+        function renderTimeline(data) {
+            var tracks = data.tracks || [];
+            var fps = data.fps || 30;
+            var total = data.duration_frames || 0;
+            if (!total && tracks.length) {
+                total = Math.max.apply(null, tracks.map(function(t) { return t.end_frame || 0; }));
+            }
+            total = Math.max(total, 1);
+            var secs = Math.max(total / fps, 0.1);
+
+            document.getElementById('tl-hint').textContent =
+                '共 ' + tracks.length + ' 条轨道 · ' + secs.toFixed(1) + 's · ' +
+                (data.width || 0) + '×' + (data.height || 0) +
+                (tlSessionId ? ' · session ' + tlSessionId : '');
+
+            var ruler = document.getElementById('tl-ruler');
+            var ticks = '';
+            for (var s = 0; s <= secs; s += 5) {
+                ticks += '<span style="position:absolute;left:' + (s / secs * 100) +
+                    '%;font-size:10px;color:#909090;transform:translateX(-50%);">' + s + 's</span>';
+            }
+            ruler.innerHTML = ticks;
+
+            if (!tracks.length) {
+                document.getElementById('tl-tracks').innerHTML =
+                    '<div style="font-size:12px;color:#909090;">该会话还没有内容（模块为空）。先在「🧠 智能导演」生成文案后再来。</div>';
+                return;
+            }
+
+            var colors = { visual: '#FB7299', subtitle: '#23ADE5', audio: '#8B5CF6' };
+            var labels = { visual: '画面', subtitle: '字幕', audio: '配音' };
+            var seen = {};
+            var html = tracks.map(function(t) {
+                var left = t.start_frame / total * 100;
+                var width = Math.max(((t.end_frame - t.start_frame) / total) * 100, 0.5);
+                var color = colors[t.track_type] || '#909090';
+                var title = (t.content && (t.content.title || t.content.text)) || t.scene_id;
+                var controls = '';
+                if (!seen[t.scene_id]) {
+                    seen[t.scene_id] = true;
+                    var sid = jsStr(t.scene_id);
+                    controls = '<div style="display:flex;gap:6px;margin-top:4px;flex-wrap:wrap;">' +
+                        '<button class="bili-btn bili-btn-secondary" style="font-size:11px;padding:2px 8px;" onclick="timelineMove(\'' + sid + '\', -15)">← 0.5s</button>' +
+                        '<button class="bili-btn bili-btn-secondary" style="font-size:11px;padding:2px 8px;" onclick="timelineMove(\'' + sid + '\', 15)">0.5s →</button>' +
+                        '<button class="bili-btn bili-btn-secondary" style="font-size:11px;padding:2px 8px;" onclick="timelineResize(\'' + sid + '\', ' + t.end_frame + ', -15)">缩短</button>' +
+                        '<button class="bili-btn bili-btn-secondary" style="font-size:11px;padding:2px 8px;" onclick="timelineResize(\'' + sid + '\', ' + t.end_frame + ', 30)">延长</button>' +
+                        '<button class="bili-btn bili-btn-secondary" style="font-size:11px;padding:2px 8px;" onclick="timelineEditText(\'' + sid + '\')">改文案</button>' +
+                        '</div>';
+                }
+                return '<div style="margin-bottom:10px;">' +
+                    '<div style="display:flex;justify-content:space-between;font-size:11px;color:#606773;margin-bottom:3px;">' +
+                    '<span>' + (labels[t.track_type] || t.track_type) + ' · ' + tplEsc(title) + '</span>' +
+                    '<span>' + (t.start_frame / fps).toFixed(1) + 's – ' + (t.end_frame / fps).toFixed(1) + 's</span>' +
+                    '</div>' +
+                    '<div style="position:relative;height:26px;background:#F0F1F3;border-radius:4px;overflow:hidden;">' +
+                    '<div style="position:absolute;left:' + left + '%;width:' + width +
+                    '%;top:0;bottom:0;background:' + color + ';opacity:.85;"></div>' +
+                    '</div>' + controls +
+                    '</div>';
+            }).join('');
+            document.getElementById('tl-tracks').innerHTML = html;
+        }
+
+        function timelineEdit(op, sceneId, extra) {
+            if (!tlSessionId) return;
+            var body = { operation: op, scene_id: sceneId };
+            if (extra) { for (var k in extra) { body[k] = extra[k]; } }
+            fetch(API + '/timeline/' + tlSessionId + '/edit', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            }).then(function(r) { return r.json(); }).then(function(d) {
+                if (!d.success) {
+                    document.getElementById('tl-hint').textContent = '编辑失败：' + (d.error || '');
+                    return;
+                }
+                loadTimeline();
+            }).catch(function(e) {
+                document.getElementById('tl-hint').textContent = '编辑失败：' + e;
+            });
+        }
+
+        function timelineMove(sceneId, deltaFrames) {
+            timelineEdit('moveScene', sceneId, { delta_frames: deltaFrames });
+        }
+
+        function timelineResize(sceneId, currentEnd, deltaFrames) {
+            timelineEdit('resizeScene', sceneId, { new_end_frame: Math.max(1, currentEnd + deltaFrames) });
+        }
+
+        function timelineEditText(sceneId) {
+            var tracks = (tlData && tlData.tracks) || [];
+            var track = null;
+            for (var i = 0; i < tracks.length; i++) {
+                if (tracks[i].scene_id === sceneId && tracks[i].track_type === 'subtitle') { track = tracks[i]; break; }
+            }
+            var current = track && track.content ? (track.content.text || '') : '';
+            var value = prompt('编辑该场景文案：', current);
+            if (value === null) return;
+            timelineEdit('updateContent', sceneId, { field: 'text', value: value });
+        }
+
+        function saveTimeline() {
+            if (!tlSessionId || !tlData) return;
+            fetch(API + '/timeline/' + tlSessionId + '/save', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    tracks: tlData.tracks || [],
+                    undo_stack: [],
+                    redo_stack: [],
+                    meta: { topic: tlData.topic || '' }
+                })
+            }).then(function(r) { return r.json(); }).then(function(d) {
+                document.getElementById('tl-hint').textContent = d.success
+                    ? ('已保存（版本 ' + (d.version || 0) + '）')
+                    : ('保存失败：' + (d.error || ''));
+            }).catch(function(e) {
+                document.getElementById('tl-hint').textContent = '保存失败：' + e;
+            });
+        }
+
+        function loadTimelineFromDisk() {
+            if (!tlSessionId) return;
+            fetch(API + '/timeline/' + tlSessionId + '/load').then(function(r) { return r.json(); }).then(function(d) {
+                if (!d.success) {
+                    document.getElementById('tl-hint').textContent = '读取失败：' + (d.error || '');
+                    return;
+                }
+                tlData = tlData || {};
+                tlData.tracks = d.tracks || [];
+                renderTimeline(tlData);
+                document.getElementById('tl-hint').textContent = '已读取磁盘存档（版本 ' + (d.version || 0) + '）';
+            }).catch(function(e) {
+                document.getElementById('tl-hint').textContent = '读取失败：' + e;
+            });
+        }
+
+        function loadTimelineDag() {
+            if (!tlSessionId) return;
+            fetch(API + '/timeline/' + tlSessionId + '/dag').then(function(r) { return r.json(); }).then(function(d) {
+                var nodes = d.nodes || {};
+                var ids = Object.keys(nodes);
+                var box = document.getElementById('tl-dag');
+                if (!ids.length) { box.innerHTML = ''; return; }
+                box.innerHTML = '<div style="font-size:13px;font-weight:600;color:#232529;margin-bottom:8px;">流水线 DAG</div>' +
+                    '<div style="display:flex;gap:8px;flex-wrap:wrap;">' + ids.map(function(id) {
+                        var n = nodes[id] || {};
+                        return '<span style="font-size:11px;padding:4px 10px;border-radius:12px;background:#F0F1F3;color:#606773;">' +
+                            tplEsc(id) + ' · ' + tplEsc(n.status || '') + '</span>';
+                    }).join('') + '</div>';
+            }).catch(function() {});
         }
     </script>
 </body>

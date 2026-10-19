@@ -15,6 +15,7 @@ from . import timeline_api
 from . import ecom_api
 from . import template_api
 from . import ai_image_api
+from . import ai_video_api
 from . import topic_video_api
 from . import topic_pipeline_api
 
@@ -32,6 +33,7 @@ __all__ = [
     'ecom_api',
     'template_api',
     'ai_image_api',
+    'ai_video_api',
     'topic_video_api',
     'topic_pipeline_api',
 ]

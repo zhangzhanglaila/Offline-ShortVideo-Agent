@@ -97,8 +97,9 @@ Multi-agent, fully offline short-video compiler: turns one keyword into a script
 | 步进式流水线 | Web 首页 | 脚本可编辑 → 配音 → 素材 → 渲染 → 状态轮询 |
 | 素材智能剪辑 (Mode B) | Web 首页 | 上传素材 → 拼接 / 转场 / 字幕 / BGM |
 | 智能导演（人在回路） | Web `🧠 智能导演` | 边生成边确认：改句 / 删句 / 加句 / 分支 / 合并 / 增量重渲 |
+| 时间轴编辑器 | Web `🎞️ 时间轴` | 轨道可视化、场景移动 / 伸缩 / 改文案、存档读取、DAG 视图 |
 | 选题库 + RAG | Web / API | 1,200 条爆款选题、搜索增强、热度推荐 |
-| AI 生图 / 生视频 | Web `🎨 AI 生图` / 管线 | ComfyUI（本地免费）/ 百炼 WanX / DashScope / OpenAI |
+| AI 生图 / 生视频 | Web `🎨 AI 素材` / 管线 | ComfyUI（本地免费）/ 百炼 WanX / DashScope / OpenAI；生视频支持 SSE 进度流 |
 | HTML 模板系统 | Web `🧩 模板` / API | 31 个竖 / 横 / 方形模板，Playwright 实时预览 |
 | 选题库扩充 | Web `选题中心` | 联网爬取 + RAG 扩充，一键补库 |
 | 动态化 D1–D6 | 管线 | Ken Burns、文字动效、分层编排、转场、视频背景、BGM |
@@ -443,8 +444,9 @@ Output: video + multi-platform packages + report
 | Stepwise pipeline | Web home | editable script → TTS → assets → render → status polling |
 | Smart material editing (Mode B) | Web home | upload clips → concat / transitions / subtitles / BGM |
 | Director (human-in-the-loop) | Web `🧠 智能导演` | approve or rewrite sentence by sentence, branch / merge, incremental re-render |
+| Timeline editor | Web `🎞️ 时间轴` | track visualization, move / resize scenes, edit copy, save & reload, DAG view |
 | Topic library + RAG | Web / API | 1,200 built-in topics, search augmentation, trend ranking |
-| AI image / video | Web `🎨 AI 生图` / pipeline | ComfyUI (local, free) / Bailian WanX / DashScope / OpenAI |
+| AI image / video | Web `🎨 AI 素材` / pipeline | ComfyUI (local, free) / Bailian WanX / DashScope / OpenAI; video generation streams SSE progress |
 | HTML templates | Web `🧩 模板` / API | 31 portrait / landscape / square templates with live preview via Playwright |
 | Topic library expansion | Web `选题中心` | crawl + RAG expansion, one click |
 | Motion D1–D6 | Pipeline | Ken Burns, text entrances, layered composition, transitions, video backgrounds, BGM |

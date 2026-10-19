@@ -60,12 +60,21 @@ class TimelineResponse(BaseModel):
 
 
 def _get_session(session_id: str):
-    """Get a ThinkingSession by ID."""
+    """Get a ThinkingSession by ID, ensuring it has a timeline artifact."""
     try:
         from api.thinking_api import _get_session as _get
-        return _get(session_id)
+        session = _get(session_id)
     except Exception:
         raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
+
+    # ThinkingSession 不持有 artifact graph，这里按需把会话状态投影成时间轴
+    try:
+        from thinking.timeline_builder import ensure_timeline_graph
+        ensure_timeline_graph(session)
+    except Exception:
+        pass  # 构建失败时仍返回空轨道，不影响其它端点
+
+    return session
 
 
 def _extract_timeline_data(session) -> dict:
@@ -295,10 +304,20 @@ async def load_session(session_id: str) -> LoadResponse:
                 session_id=session_id,
                 error=f"Session {session_id} not found",
             )
+
+        tracks = state.get("tracks", [])
+        # 读回磁盘轨道后同步到会话的时间轴产物，否则界面上看不到变化
+        try:
+            session = _get_session(session_id)
+            from thinking.timeline_builder import apply_tracks
+            apply_tracks(session, tracks)
+        except Exception:
+            pass
+
         return LoadResponse(
             success=True,
             session_id=session_id,
-            tracks=state.get("tracks", []),
+            tracks=tracks,
             undo_stack=state.get("undo_stack", []),
             redo_stack=state.get("redo_stack", []),
             meta=state.get("meta", {}),

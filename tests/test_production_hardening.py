@@ -279,14 +279,14 @@ class TestRenderLogger:
     def test_step_timing(self):
         rl = RenderLogger("test")
         with rl.step("tts", scene_id="s1"):
-            time.sleep(0.01)
+            time.sleep(0.05)
 
         assert len(rl.steps) == 1
         assert rl.steps[0].name == "tts"
         assert rl.steps[0].scene_id == "s1"
-        # Windows 定时器精度约 15ms，sleep(0.01) 可能只睡 9.9ms，
-        # 这里校验"确实记录到了耗时"，不依赖精确的 10ms 下限。
-        assert rl.steps[0].duration > 0
+        # Windows 定时器精度约 15ms：sleep(0.05) 最少也有 34ms，
+        # 断言放到 20ms 以内既验证了计时确实生效，又不会被时钟粒度打成偶发失败。
+        assert rl.steps[0].duration >= 0.02
 
     def test_cache_hit_tracking(self):
         rl = RenderLogger("test")
