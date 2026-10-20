@@ -31,7 +31,7 @@
 └─────────────────────────────────────────────────────┘
 ```
 
-> **2026-10 更新**：原 React/Vite 前端已在 commit `c818e35` 删除，`web/index.html`
+> **2026-10 更新**：原 React/Vite 前端已在 commit `c818e35` 删除，`api/web/index.html`
 > 是当前唯一前端；下文提到的 "React Frontend" 均以此为准，进度推送用 SSE 而非 WebSocket。
 
 ---

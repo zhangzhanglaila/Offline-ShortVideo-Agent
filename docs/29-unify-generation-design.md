@@ -81,7 +81,7 @@
 
 **问题**: U1 的 `/api/topic/generate` 与前端实际调用的步进式流水线端点并不一致。
 `api/topic_pipeline_api.py` 从未登记进 `api/__all__`,而 `main_fastapi` 只按该列表挂载,
-于是 `web/index.html` 调用的 `/api/topic/generate/stream` 和 `/api/topic/videos/{id}/*`
+于是 `api/web/index.html` 调用的 `/api/topic/generate/stream` 和 `/api/topic/videos/{id}/*`
 全部未注册,首页"题材全自动生成"与管道页落空。
 
 **处理**:
@@ -91,7 +91,7 @@
 2. `api/__init__.py` 登记 `topic_pipeline_api`,由 `main_fastapi` 自动挂载;
 3. `topic_video_api` 的 `topic` 入参兼容旧字段 `topic_keyword`;
 4. 未注册的 `/api/*` 改为显式返回 404(此前是 200 + `{"detail":"Not Found"}`,前端无法识别失败);
-5. 新增 `tests/test_frontend_api_contract.py`:扫描 `web/index.html` 里所有 `API + '...'`
+5. 新增 `tests/test_frontend_api_contract.py`:扫描 `api/web/index.html` 里所有 `API + '...'`
    调用,逐个断言已在 app 中注册 —— 防止同类问题再次出现。
 
 **现存两条落库路径**(有意保留,不做数据迁移):
@@ -99,7 +99,7 @@
 | 入口 | 表 | 使用者 |
 |---|---|---|
 | `POST /api/topic/generate` | `ecom_videos` (product_id=NULL) | 编程接口 / 测试 |
-| `POST /api/topic/generate/stream` + `/api/topic/videos/*` | `topic_videos` | `web/index.html` 步进式流水线 |
+| `POST /api/topic/generate/stream` + `/api/topic/videos/*` | `topic_videos` | `api/web/index.html` 步进式流水线 |
 
 两条链路共用 `core/pipeline_helpers.py`,差异仅在落库表与产物目录。
 

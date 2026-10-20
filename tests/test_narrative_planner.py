@@ -21,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from ir.intent_ir import IntentIR, Tone, Platform
 from ir.narrative_ir import NarrativeIR, BeatType
-from ai.narrative_planner import (
+from core.ai.narrative_planner import (
     NarrativePlanner, LLMBackend, LLMConfig,
     TemplateBackend, _extract_json, _parse_narrative_json,
 )

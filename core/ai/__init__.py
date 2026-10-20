@@ -17,12 +17,12 @@ Components:
   - LLMBackend: pluggable LLM interface (OpenAI, Qwen, local, etc.)
 """
 
-from ai.narrative_planner import (
+from core.ai.narrative_planner import (
     NarrativePlanner, LLMBackend, LLMConfig,
     TemplateBackend,
 )
-from ai.tts_service import TTSService, WordTiming, SegmentResult
-from ai.asset_retriever import (
+from core.ai.tts_service import TTSService, WordTiming, SegmentResult
+from core.ai.asset_retriever import (
     AssetRetriever, AssetResult, SearchBackend,
     LocalSearchBackend, PexelsSearchBackend,
 )

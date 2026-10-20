@@ -1,6 +1,6 @@
 """前端 ↔ API 契约测试。
 
-`web/index.html` 是当前唯一前端，它用 `API + '/path'` 拼接调用后端。
+`api/web/index.html` 是当前唯一前端，它用 `API + '/path'` 拼接调用后端。
 历史上曾出现「前端调用的端点没有挂载」的问题（topic_pipeline_api 未登记到
 api.__all__，导致首页一键生成与步进式流水线全部落空）。本测试做回归守护：
 扫描前端源码里出现的所有 /api 路径，逐个断言已在 main_fastapi 中注册。
@@ -11,7 +11,7 @@ import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-INDEX = ROOT / "web" / "index.html"
+INDEX = ROOT / "api" / "web" / "index.html"
 
 _QUOTED = re.compile(r"'([^']*)'")
 _PARAM = re.compile(r"\{[^}]+\}")

@@ -19,7 +19,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-from ai.asset_retriever import AssetRetriever, AssetResult
+from core.ai.asset_retriever import AssetRetriever, AssetResult
 from ir.narrative_ir import NarrativeIR, BeatType
 from thinking.canonicalize import content_hash
 

@@ -31,7 +31,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-from ai.tts_service import TTSService
+from core.ai.tts_service import TTSService
 from compiler.base import CompilerPass
 
 

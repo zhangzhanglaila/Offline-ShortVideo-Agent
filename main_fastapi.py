@@ -95,8 +95,8 @@ def create_app() -> FastAPI:
     async def health():
         return {"status": "ok", "routers": included}
 
-    # 前端：web/index.html 作为 SPA fallback，所有非 /api/* /static/* 请求返回它
-    web_dir = Path(__file__).parent / "web"
+    # 前端：api/web/index.html 作为 SPA fallback，所有非 /api/* /static/* 请求返回它
+    web_dir = Path(__file__).parent / "api" / "web"
     if web_dir.is_dir():
         @app.get("/", include_in_schema=False)
         async def web_root():

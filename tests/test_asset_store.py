@@ -19,7 +19,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from backend.asset_store import AssetStore
-from ai.asset_retriever import (
+from core.ai.asset_retriever import (
     AssetResult, AssetRetriever, SearchBackend, LocalSearchBackend,
 )
 from compiler.pass_asset import AssetPass, _extract_keywords, _extract_mood

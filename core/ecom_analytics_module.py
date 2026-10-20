@@ -131,7 +131,7 @@ def generate_insights(product_id: int = None) -> str:
         from config import get_cloud_llm_config
         cfg = get_cloud_llm_config()
         if cfg.get('api_key'):
-            from ai.ecom_prompts import build_insight_prompt
+            from core.ai.ecom_prompts import build_insight_prompt
             import requests as req
             prompt = build_insight_prompt(items, product_name)
             resp = req.post(

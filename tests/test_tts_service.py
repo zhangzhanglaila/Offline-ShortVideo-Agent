@@ -21,7 +21,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from ai.tts_service import WordTiming, SegmentResult, TTSService, _TICKS_PER_SECOND
+from core.ai.tts_service import WordTiming, SegmentResult, TTSService, _TICKS_PER_SECOND
 from compiler.pass_tts import TTSPass
 from compiler.pass_scene_to_timeline import SceneToTimelinePass
 from compiler.pass_narrative_to_scene import SceneIR
@@ -134,8 +134,8 @@ class TestTTSService:
     def service(self, tmp_path):
         return TTSService(output_dir=tmp_path, voice="test-voice", rate=0)
 
-    @patch("ai.tts_service.edge_tts.Communicate", MockCommunicate)
-    @patch("ai.tts_service._measure_audio_duration", return_value=0.7)
+    @patch("core.ai.tts_service.edge_tts.Communicate", MockCommunicate)
+    @patch("core.ai.tts_service._measure_audio_duration", return_value=0.7)
     def test_synthesize_basic(self, mock_duration, service):
         result = asyncio.run(service.synthesize("Hello world"))
         assert isinstance(result, SegmentResult)
@@ -144,8 +144,8 @@ class TestTTSService:
         assert result.duration == 0.7
         assert Path(result.audio_path).exists()
 
-    @patch("ai.tts_service.edge_tts.Communicate", MockCommunicate)
-    @patch("ai.tts_service._measure_audio_duration", return_value=0.7)
+    @patch("core.ai.tts_service.edge_tts.Communicate", MockCommunicate)
+    @patch("core.ai.tts_service._measure_audio_duration", return_value=0.7)
     def test_word_timings_extracted(self, mock_duration, service):
         result = asyncio.run(service.synthesize("Hello world"))
         assert len(result.word_timings) == 2
@@ -156,8 +156,8 @@ class TestTTSService:
         assert result.word_timings[1].start == 0.3
         assert result.word_timings[1].end == 0.7
 
-    @patch("ai.tts_service.edge_tts.Communicate", MockCommunicate)
-    @patch("ai.tts_service._measure_audio_duration", return_value=0.7)
+    @patch("core.ai.tts_service.edge_tts.Communicate", MockCommunicate)
+    @patch("core.ai.tts_service._measure_audio_duration", return_value=0.7)
     def test_ticks_to_seconds_conversion(self, mock_duration, service):
         result = asyncio.run(service.synthesize("test"))
         # 0.3 seconds = 3_000_000 ticks, should convert back to 0.3
@@ -165,8 +165,8 @@ class TestTTSService:
         assert abs(wt.start - 0.0) < 0.001
         assert abs(wt.end - 0.3) < 0.001
 
-    @patch("ai.tts_service.edge_tts.Communicate", MockCommunicate)
-    @patch("ai.tts_service._measure_audio_duration", return_value=0.7)
+    @patch("core.ai.tts_service.edge_tts.Communicate", MockCommunicate)
+    @patch("core.ai.tts_service._measure_audio_duration", return_value=0.7)
     def test_content_hash_deterministic(self, mock_duration, service):
         r1 = asyncio.run(service.synthesize("test"))
         # Clear cache to force re-synthesis
@@ -174,23 +174,23 @@ class TestTTSService:
         r2 = asyncio.run(service.synthesize("test"))
         assert r1.content_hash == r2.content_hash
 
-    @patch("ai.tts_service.edge_tts.Communicate", MockCommunicate)
-    @patch("ai.tts_service._measure_audio_duration", return_value=0.7)
+    @patch("core.ai.tts_service.edge_tts.Communicate", MockCommunicate)
+    @patch("core.ai.tts_service._measure_audio_duration", return_value=0.7)
     def test_different_text_different_hash(self, mock_duration, service):
         r1 = asyncio.run(service.synthesize("hello"))
         r2 = asyncio.run(service.synthesize("world"))
         assert r1.content_hash != r2.content_hash
 
-    @patch("ai.tts_service.edge_tts.Communicate", MockCommunicate)
-    @patch("ai.tts_service._measure_audio_duration", return_value=0.7)
+    @patch("core.ai.tts_service.edge_tts.Communicate", MockCommunicate)
+    @patch("core.ai.tts_service._measure_audio_duration", return_value=0.7)
     def test_cache_hit(self, mock_duration, service):
         """Second call with same text should return cached result."""
         r1 = asyncio.run(service.synthesize("cached"))
         r2 = asyncio.run(service.synthesize("cached"))
         assert r1 is r2  # Same object (cache hit)
 
-    @patch("ai.tts_service.edge_tts.Communicate", MockCommunicate)
-    @patch("ai.tts_service._measure_audio_duration", return_value=0.7)
+    @patch("core.ai.tts_service.edge_tts.Communicate", MockCommunicate)
+    @patch("core.ai.tts_service._measure_audio_duration", return_value=0.7)
     def test_clear_cache(self, mock_duration, service):
         r1 = asyncio.run(service.synthesize("test"))
         service.clear_cache()
@@ -198,8 +198,8 @@ class TestTTSService:
         assert r1.content_hash == r2.content_hash
         assert r1 is not r2  # Different objects (cache cleared)
 
-    @patch("ai.tts_service.edge_tts.Communicate", MockCommunicate)
-    @patch("ai.tts_service._measure_audio_duration", return_value=0.7)
+    @patch("core.ai.tts_service.edge_tts.Communicate", MockCommunicate)
+    @patch("core.ai.tts_service._measure_audio_duration", return_value=0.7)
     def test_synthesize_segments(self, mock_duration, service):
         results = asyncio.run(service.synthesize_segments(["a", "b", "c"]))
         assert len(results) == 3

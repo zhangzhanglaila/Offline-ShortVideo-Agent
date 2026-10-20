@@ -48,13 +48,13 @@ Multi-agent, fully offline short-video compiler: turns one keyword into a script
 
 ### 效果展示
 
-![效果预览 1](README.assets/74cf8ac1feac77ab1c6e01e2d8ae0137.png)
+![效果预览 1](docs/assets/74cf8ac1feac77ab1c6e01e2d8ae0137.png)
 
-![效果预览 2](README.assets/image-20260426213946364.png)
+![效果预览 2](docs/assets/image-20260426213946364.png)
 
-![效果预览 3](README.assets/image-20260426205644067.png)
+![效果预览 3](docs/assets/image-20260426205644067.png)
 
-![效果预览 4](README.assets/image-20260426214131303.png)
+![效果预览 4](docs/assets/image-20260426214131303.png)
 
 [⬆ 返回顶部 / Back to top](#offline-shortvideo-agent)
 
@@ -373,7 +373,7 @@ ffmpeg -version
 
 如果这个项目对你有帮助，欢迎赞赏支持 ☕
 
-![微信赞赏码](README.assets/reward_qr.png)
+![微信赞赏码](docs/assets/reward_qr.png)
 
 ---
 
