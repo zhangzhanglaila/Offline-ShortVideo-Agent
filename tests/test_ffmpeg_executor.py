@@ -20,7 +20,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from backend.ffmpeg_executor import (
+from backend.executor import (
     FFmpegExecutor, ExecutionResult, FFmpegProgress,
     _parse_progress, _time_to_seconds,
 )

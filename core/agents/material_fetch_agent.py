@@ -242,7 +242,7 @@ class MaterialFetchAgent(BaseAgent):
             APIManager实例，无任何密钥时返回None
         """
         try:
-            from core.material_api import (
+            from core.material_providers import (
                 APIManager, PexelsAPI, PixabayAPI, UnsplashAPI,
             )
         except Exception as e:

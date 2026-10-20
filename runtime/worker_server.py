@@ -190,7 +190,9 @@ def create_worker_router(
                 detail=f"Worker at capacity ({state.capacity})",
             )
 
-        start = time.monotonic()
+        # perf_counter 分辨率远高于 monotonic（Windows 时钟粒度约 15ms），
+        # 否则毫秒级渲染会记成 0.0s
+        start = time.perf_counter()
         try:
             payload = {
                 "task_id": req.task_id,
@@ -206,7 +208,7 @@ def create_worker_router(
                 timeout=req.timeout,
             )
 
-            duration = time.monotonic() - start
+            duration = time.perf_counter() - start
             state.complete_task(req.task_id)
 
             logger.info(
@@ -231,7 +233,7 @@ def create_worker_router(
                 scene_id=req.scene_id,
                 success=False,
                 error=f"Timeout after {req.timeout}s",
-                duration=time.monotonic() - start,
+                duration=time.perf_counter() - start,
                 worker_id=worker_id,
             )
 
@@ -243,7 +245,7 @@ def create_worker_router(
                 scene_id=req.scene_id,
                 success=False,
                 error=str(e),
-                duration=time.monotonic() - start,
+                duration=time.perf_counter() - start,
                 worker_id=worker_id,
             )
 

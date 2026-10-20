@@ -29,7 +29,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from media.ffmpeg_executor import run_ffmpeg, get_video_duration
+from core.utils.ffmpeg_runner import get_video_duration, run_ffmpeg
 from thinking.canonicalize import derived_hash
 
 
@@ -212,18 +212,19 @@ class ConcatRenderer:
         filter_graph = ";".join(filter_parts + audio_parts)
 
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        result = run_ffmpeg([
-            *inputs,
-            "-filter_complex", filter_graph,
-            "-map", "[vout]", "-map", "[aout]",
-            "-c:v", "libx264", "-preset", "medium", "-crf", "18",
-            "-c:a", "aac", "-b:a", "192k",
-            "-pix_fmt", "yuv420p",
-            str(output_path),
-        ])
-
-        if not result.success:
-            return f"ffmpeg compose failed: {result.stderr[-500:]}"
+        try:
+            run_ffmpeg([
+                "ffmpeg", "-y",
+                *inputs,
+                "-filter_complex", filter_graph,
+                "-map", "[vout]", "-map", "[aout]",
+                "-c:v", "libx264", "-preset", "medium", "-crf", "18",
+                "-c:a", "aac", "-b:a", "192k",
+                "-pix_fmt", "yuv420p",
+                str(output_path),
+            ])
+        except RuntimeError as exc:
+            return f"ffmpeg compose failed: {str(exc)[-500:]}"
         return None
 
     def _lookup(self, composite_hash: str) -> Optional[Path]:

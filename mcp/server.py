@@ -272,7 +272,7 @@ class MCPToolExecutor:
         table_name = args.get("table_name", "topic_videos")
         use_graph = args.get("use_graph", False)
         if use_graph:
-            from core.graph_pipeline import run_graph_pipeline
+            from core.langgraph_pipeline import run_graph_pipeline
             result = run_graph_pipeline(video_id, table_name)
         else:
             from core.pipeline_helpers import run_render_pipeline

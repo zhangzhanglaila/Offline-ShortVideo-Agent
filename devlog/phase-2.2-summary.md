@@ -3,7 +3,7 @@
 ## ✅ 已完成工作
 
 ### 1. 素材API集成
-`core/material_api.py` - 多源API集成框架
+`core/material_providers.py` - 多源API集成框架
 - `BaseMaterialAPI` 抽象基类 - 统一API接口
 - `PexelsAPI` - Pexels图片API客户端
 - `PixabayAPI` - Pixabay图片API客户端
@@ -196,7 +196,7 @@ URL → MD5哈希 → 缓存路径
 
 ### 基础API使用
 ```python
-from core.material_api import PexelsAPI
+from core.material_providers import PexelsAPI
 
 api = PexelsAPI("your_api_key")
 results = api.search("landscape", per_page=10)
@@ -204,7 +204,7 @@ results = api.search("landscape", per_page=10)
 
 ### 使用API管理器
 ```python
-from core.material_api import APIManager, PexelsAPI, PixabayAPI
+from core.material_providers import APIManager, PexelsAPI, PixabayAPI
 
 manager = APIManager()
 manager.register_api("pexels", PexelsAPI("key1"))

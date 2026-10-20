@@ -12,5 +12,5 @@ Backends:
 """
 
 from backend.ffmpeg_lowering import FFmpegLowering, FFmpegCommand
-from backend.ffmpeg_executor import FFmpegExecutor, ExecutionResult, FFmpegProgress
+from backend.executor import FFmpegExecutor, ExecutionResult, FFmpegProgress
 from backend.asset_store import AssetStore

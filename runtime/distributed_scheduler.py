@@ -7,9 +7,9 @@ Coordinates task assignment across worker nodes. Provides:
   - Integration with RenderCache for dedup
 
 Usage:
-    from runtime.scheduler import DistributedScheduler
+    from runtime.distributed_scheduler import DistributedScheduler
     from runtime.worker import WorkerRegistry
-    from runtime.task_queue import RenderTaskQueue
+    from runtime.render_task_queue import RenderTaskQueue
 
     scheduler = DistributedScheduler()
 
@@ -35,7 +35,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed, Future
 from typing import Any, Callable, Optional
 
 from runtime.worker import WorkerRegistry, WorkerInfo
-from runtime.task_queue import RenderTaskQueue, RenderTask, TaskStatus
+from runtime.render_task_queue import RenderTaskQueue, RenderTask, TaskStatus
 
 logger = logging.getLogger(__name__)
 

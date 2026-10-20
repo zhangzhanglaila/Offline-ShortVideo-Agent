@@ -70,3 +70,27 @@ def run_ffmpeg_safe(
         if log_callback:
             log_callback(msg, 'error')
         return False
+
+
+def get_video_duration(path, timeout: int = 10) -> float:
+    """Return video duration in seconds via ffprobe; 0.0 if it cannot be read.
+
+    合并自 media/ffmpeg_executor.py：全项目只保留这一处 ffprobe 封装。
+    """
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe", "-v", "error",
+                "-show_entries", "format=duration",
+                "-of", "default=noprint_wrappers=1:nokey=1",
+                str(path),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+        if result.returncode == 0:
+            return float(result.stdout.strip())
+    except (subprocess.TimeoutExpired, FileNotFoundError, ValueError):
+        pass
+    return 0.0

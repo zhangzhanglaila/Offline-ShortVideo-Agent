@@ -6,8 +6,8 @@ import threading
 import pytest
 
 from runtime.worker import WorkerRegistry, WorkerStatus, WorkerInfo
-from runtime.task_queue import RenderTaskQueue, TaskStatus
-from runtime.scheduler import DistributedScheduler, RenderResult
+from runtime.render_task_queue import RenderTaskQueue, TaskStatus
+from runtime.distributed_scheduler import DistributedScheduler, RenderResult
 
 
 # ── Worker Registry Tests ──

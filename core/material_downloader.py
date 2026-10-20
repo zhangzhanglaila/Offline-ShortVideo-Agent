@@ -188,7 +188,7 @@ class MaterialFetcher:
             api_manager: API管理器
             cache_manager: 缓存管理器
         """
-        from core.material_api import create_api_manager
+        from core.material_providers import create_api_manager
         from core.material_library import MaterialLibrary
 
         self.api_manager = api_manager or create_api_manager()
