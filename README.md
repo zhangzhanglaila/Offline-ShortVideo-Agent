@@ -294,12 +294,18 @@ Offline-ShortVideo-Agent/
 ### 测试
 
 ```bash
-# 离线测试（快速，无需网络）
-python -m pytest test_*.py -k "not Real and not real" -q
+# 全量离线测试（含真实 ffmpeg 渲染，约 3 分钟；默认不会碰真实 API）
+python -m pytest
 
-# 全部测试（含真实 API 冒烟）
-python -m pytest test_*.py -q
+# 快速子集（只跑 Agent / API 层）
+python -m pytest tests/agents tests/api -q
+
+# 真实 API 集成测试（会调用生图 / 生视频，产生费用，默认不跑）
+python -m pytest tests/integration -q
 ```
+
+测试目录按层组织：`tests/agents/`（Agent 流程）、`tests/api/`（HTTP 端点）、
+`tests/motion/`（运镜/动画/转场/BGM）、`tests/template/`、`tests/integration/`（真实 API）。
 
 [⬆ 返回顶部 / Back to top](#offline-shortvideo-agent)
 
@@ -629,12 +635,18 @@ Offline-ShortVideo-Agent/
 ### Testing
 
 ```bash
-# Offline tests (fast, no network)
-python -m pytest test_*.py -k "not Real and not real" -q
+# Full offline suite (real ffmpeg renders included, ~3 min; never calls paid APIs)
+python -m pytest
 
-# Full suite (includes real-API smoke tests)
-python -m pytest test_*.py -q
+# Fast subset (agent / API layers only)
+python -m pytest tests/agents tests/api -q
+
+# Real-API integration tests (calls image/video generation, costs money; skipped by default)
+python -m pytest tests/integration -q
 ```
+
+Tests are grouped by layer: `tests/agents/`, `tests/api/`, `tests/motion/`,
+`tests/template/`, and `tests/integration/` for paid APIs.
 
 [⬆ 返回顶部 / Back to top](#offline-shortvideo-agent)
 

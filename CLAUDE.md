@@ -110,8 +110,7 @@
 | **D6** | 背景音乐 | ✅ |
 
 动态化模块位于 `core/compose/motion/`(ken_burns/text_animations/
-scene_composer/transitions/bgm)。测试见 test_{ken_burns,text_animations,
-scene_composer,transitions,video_material,bgm}.py。
+scene_composer/transitions/bgm)。测试见 `tests/motion/test_*.py`。
 
 **每个阶段必须满足**:
 - ✅ 功能完整可用 + 降级保底
@@ -192,7 +191,9 @@ Offline-ShortVideo-Agent/
 │   ├── 2026-07-21.md               ← 项目主日志
 │   └── phase-X-summary.md          ← 各阶段总结
 │
-├── test_*.py            ← 测试文件
+├── tests/               ← 测试（agents / api / motion / template / integration）
+├── scripts/             ← 一次性脚本（模板渲染 demo 等）
+├── pytest.ini           ← 默认只跑离线测试，integration 需显式指定
 ├── CLAUDE.md            ← 本文件
 ├── README.md
 └── ...
@@ -438,5 +439,5 @@ services/               # 新增服务层
 **主应用**: `main_fastapi.py`(端口 5001)自动挂载 `api/__all__` 中所有路由 + 静态文件
 `/static/output`,启动即初始化数据库。运行 `python main_fastapi.py`。
 
-详见: `docs/28-unify-generation-design.md`
+详见: `docs/29-unify-generation-design.md`
 

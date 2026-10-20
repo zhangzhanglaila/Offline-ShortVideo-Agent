@@ -8,10 +8,10 @@ import os
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 # 加载 .env 文件
-env_path = Path(__file__).parent / ".env"
+env_path = Path(__file__).resolve().parents[2] / ".env"
 if env_path.exists():
     print(f"[加载配置] {env_path}")
     with open(env_path, 'r', encoding='utf-8') as f:
