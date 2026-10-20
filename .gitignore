@@ -18,6 +18,9 @@ build/
 *.swo
 *~
 .claude/
+.superpowers/
+# Claude Code 记忆残留（非项目内容）
+/memory/
 
 # 输出文件
 output/
