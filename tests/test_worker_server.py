@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 from fastapi.testclient import TestClient
 from fastapi import FastAPI
 
-from runtime.worker_server import create_worker_router, WorkerState, RenderRequest
+from compiler.runtime.worker_server import create_worker_router, WorkerState, RenderRequest
 
 
 @pytest.fixture

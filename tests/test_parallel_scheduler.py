@@ -18,10 +18,10 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from thinking.artifacts import ArtifactGraph, ArtifactType
-from thinking.canonicalize import content_hash
-from thinking.parallel_scheduler import ParallelScheduler, ParallelStats
-from thinking.fixpoint_scheduler import ArtifactState
+from compiler.thinking.artifacts import ArtifactGraph, ArtifactType
+from compiler.thinking.canonicalize import content_hash
+from compiler.thinking.parallel_scheduler import ParallelScheduler, ParallelStats
+from compiler.thinking.fixpoint_scheduler import ArtifactState
 
 
 # ── Helpers ──────────────────────────────────────────────────────────

@@ -18,7 +18,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from ir.narrative_ir import (
+from compiler.ir.narrative_ir import (
     NarrativeIR, Beat, BeatType, TransitionType,
     HookBeat, ProblemBeat, RevealBeat, CTABeat,
 )

@@ -22,8 +22,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-from backend.asset_store import AssetStore
-from thinking.canonicalize import content_hash
+from compiler.backend.asset_store import AssetStore
+from compiler.thinking.canonicalize import content_hash
 
 
 # ── Data Structures ──

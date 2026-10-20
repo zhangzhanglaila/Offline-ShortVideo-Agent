@@ -17,7 +17,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from ir.intent_ir import IntentIR, Tone, Platform, AspectRatio
+from compiler.ir.intent_ir import IntentIR, Tone, Platform, AspectRatio
 
 
 # ═══════════════════════════════════════════════════════════════════════

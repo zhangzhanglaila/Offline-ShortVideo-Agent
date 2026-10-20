@@ -2,13 +2,13 @@
 
 import pytest
 from unittest.mock import MagicMock
-from thinking.inspector import (
+from compiler.thinking.inspector import (
     print_dag_tree, print_artifact_table, print_invalidation_trace,
     print_runtime_graph, print_scheduler_metrics, print_event_log,
     print_performance_profile, inspect_all,
 )
-from thinking.event_bus import EventBus, Event
-from thinking.artifacts import ArtifactGraph, ArtifactType, ArtifactStatus, VideoArtifact
+from compiler.thinking.event_bus import EventBus, Event
+from compiler.thinking.artifacts import ArtifactGraph, ArtifactType, ArtifactStatus, VideoArtifact
 
 
 @pytest.fixture
@@ -91,7 +91,7 @@ class TestPrintFunctions:
         assert "Inspector" in output
 
     def test_print_runtime_graph(self, capsys):
-        from thinking.runtime_graph import RuntimeGraph
+        from compiler.thinking.runtime_graph import RuntimeGraph
         rg = RuntimeGraph()
         rg.add_node("n1", depends_on=[])
         rg.add_node("n2", depends_on=["n1"])

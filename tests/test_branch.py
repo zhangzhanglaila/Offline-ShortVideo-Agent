@@ -2,9 +2,9 @@
 
 import copy
 import pytest
-from thinking.branch import ConflictType, ResolutionStrategy, MergeConflict, MergeResult
-from thinking.patch import EditSentencePatch
-from thinking.state import VideoProjectState, ModuleState, ScriptSentence
+from compiler.thinking.branch import ConflictType, ResolutionStrategy, MergeConflict, MergeResult
+from compiler.thinking.patch import EditSentencePatch
+from compiler.thinking.state import VideoProjectState, ModuleState, ScriptSentence
 
 
 def make_state():

@@ -3,7 +3,7 @@
 import time
 
 import pytest
-from runtime.dag import PipelineDAG, NodeStatus
+from compiler.runtime.dag import PipelineDAG, NodeStatus
 
 
 class TestPipelineDAG:

@@ -25,14 +25,14 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
-from ir.timeline_ir import (
+from compiler.ir.timeline_ir import (
     TimelineIR, Track, TrackType, Transition, TransitionEffect,
 )
-from ir.render_ir import (
+from compiler.ir.render_ir import (
     RenderIR, RenderCommand, RenderInput,
     RenderBackend, CommandType,
 )
-from thinking.canonicalize import content_hash
+from compiler.thinking.canonicalize import content_hash
 from compiler.base import CompilerPass
 
 

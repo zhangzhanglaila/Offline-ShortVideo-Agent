@@ -17,11 +17,11 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from thinking.artifacts import ArtifactGraph, ArtifactType
-from thinking.canonicalize import content_hash
-from runtime.edit_operations import EditOperation, EditType, EditResult
-from runtime.invalidation import SemanticDiff, InvalidationDepth, DiffResult
-from runtime.live_session import LiveSession
+from compiler.thinking.artifacts import ArtifactGraph, ArtifactType
+from compiler.thinking.canonicalize import content_hash
+from compiler.runtime.edit_operations import EditOperation, EditType, EditResult
+from compiler.runtime.invalidation import SemanticDiff, InvalidationDepth, DiffResult
+from compiler.runtime.live_session import LiveSession
 
 
 # ═══════════════════════════════════════════════════════════════════════

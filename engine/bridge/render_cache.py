@@ -30,7 +30,7 @@ import time
 from pathlib import Path
 from typing import Any, Optional
 
-from thinking.canonicalize import content_hash as semantic_hash
+from compiler.thinking.canonicalize import content_hash as semantic_hash
 
 
 def _get_project_root() -> Path:

@@ -38,7 +38,7 @@ def _get_session(session_id: str):
         session = _sessions.get(session_id)
     if not session:
         # Try loading from disk
-        from thinking.session import ThinkingSession
+        from compiler.thinking.session import ThinkingSession
         session = ThinkingSession.load(session_id)
         if not session:
             raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
@@ -93,8 +93,8 @@ class RegenerateRequest(BaseModel):
 @router.post("/start")
 async def start_session(req: StartRequest):
     """创建新的 Thinking Session"""
-    from thinking.session import ThinkingSession
-    from thinking.state import VideoProjectState
+    from compiler.thinking.session import ThinkingSession
+    from compiler.thinking.state import VideoProjectState
 
     state = VideoProjectState(
         topic=req.topic,
@@ -120,7 +120,7 @@ async def start_session(req: StartRequest):
 @router.get("/sessions")
 async def list_sessions():
     """列出所有 Session"""
-    from thinking.session import ThinkingSession
+    from compiler.thinking.session import ThinkingSession
     sessions = ThinkingSession.list_sessions()
     return JSONResponse({"sessions": sessions})
 
@@ -137,7 +137,7 @@ async def delete_session(session_id: str):
     """删除 Session"""
     with _sessions_lock:
         _sessions.pop(session_id, None)
-    from thinking.session import ThinkingSession
+    from compiler.thinking.session import ThinkingSession
     deleted = ThinkingSession.delete_session(session_id)
     return JSONResponse({"deleted": deleted, "session_id": session_id})
 
@@ -156,7 +156,7 @@ async def run_pipeline(session_id: str, start_phase: str = ""):
     # Resolve start phase
     phase = None
     if start_phase:
-        from thinking.state import ThinkingPhase
+        from compiler.thinking.state import ThinkingPhase
         try:
             phase = ThinkingPhase(start_phase)
         except ValueError:
@@ -167,7 +167,7 @@ async def run_pipeline(session_id: str, start_phase: str = ""):
     def run_agent():
         """Run the agent in a background thread, pushing events to queue."""
         try:
-            from thinking.agent_loop import ThinkingAgent
+            from compiler.thinking.agent_loop import ThinkingAgent
             agent = ThinkingAgent(session)
             for event in agent.run(start_phase=phase):
                 event_queue.put(event)
@@ -287,7 +287,7 @@ async def regenerate_component(session_id: str, req: RegenerateRequest):
 
     def run_regen():
         try:
-            from thinking.agent_loop import ThinkingAgent
+            from compiler.thinking.agent_loop import ThinkingAgent
             agent = ThinkingAgent(session)
 
             if req.component == "script":
@@ -467,7 +467,7 @@ async def render_video(session_id: str):
 
     def run_render():
         try:
-            from thinking.agent_loop import ThinkingAgent
+            from compiler.thinking.agent_loop import ThinkingAgent
             agent = ThinkingAgent(session)
             for event in agent.render():
                 event_queue.put(event)
@@ -557,7 +557,7 @@ async def event_stream(session_id: str, event_type: str = ""):
 
     Subscribe to all events or filter by event_type.
     """
-    from thinking.event_bus import get_event_bus, Event
+    from compiler.thinking.event_bus import get_event_bus, Event
 
     bus = get_event_bus()
     event_queue = queue.Queue()
@@ -725,7 +725,7 @@ async def list_branches(session_id: str):
     """列出所有分支。"""
     session = _get_session(session_id)
     if not hasattr(session, 'branch_manager'):
-        from thinking.branch import BranchManager
+        from compiler.thinking.branch import BranchManager
         session.branch_manager = BranchManager(session.patch_store)
     branches = session.branch_manager.list_branches()
     return JSONResponse({"branches": branches})
@@ -736,7 +736,7 @@ async def create_branch(session_id: str, req: CreateBranchRequest):
     """创建新分支。"""
     session = _get_session(session_id)
     if not hasattr(session, 'branch_manager'):
-        from thinking.branch import BranchManager
+        from compiler.thinking.branch import BranchManager
         session.branch_manager = BranchManager(session.patch_store)
     branch_dir = session.branch_manager.create_branch(req.name, req.description)
     return JSONResponse({
@@ -751,7 +751,7 @@ async def switch_branch(session_id: str, name: str):
     """切换到指定分支。"""
     session = _get_session(session_id)
     if not hasattr(session, 'branch_manager'):
-        from thinking.branch import BranchManager
+        from compiler.thinking.branch import BranchManager
         session.branch_manager = BranchManager(session.patch_store)
     session.branch_manager.switch_branch(name)
     return JSONResponse({
@@ -765,7 +765,7 @@ async def get_divergence(session_id: str, branch_a: str, branch_b: str):
     """分析两个分支的差异。"""
     session = _get_session(session_id)
     if not hasattr(session, 'branch_manager'):
-        from thinking.branch import BranchManager
+        from compiler.thinking.branch import BranchManager
         session.branch_manager = BranchManager(session.patch_store)
     div = session.branch_manager.get_divergence(branch_a, branch_b)
     return JSONResponse(div)
@@ -776,10 +776,10 @@ async def merge_branches(session_id: str, req: MergeRequest):
     """合并分支。"""
     session = _get_session(session_id)
     if not hasattr(session, 'branch_manager'):
-        from thinking.branch import BranchManager
+        from compiler.thinking.branch import BranchManager
         session.branch_manager = BranchManager(session.patch_store)
 
-    from thinking.branch import MergeEngine, ResolutionStrategy
+    from compiler.thinking.branch import MergeEngine, ResolutionStrategy
     engine = MergeEngine(session.branch_manager)
 
     strategy_map = {
@@ -810,7 +810,7 @@ async def resolve_merge_conflict(session_id: str, req: ResolveConflictRequest):
     if req.conflict_index >= len(result.conflicts):
         raise HTTPException(status_code=400, detail="Invalid conflict index")
 
-    from thinking.branch import ResolutionStrategy
+    from compiler.thinking.branch import ResolutionStrategy
     strategy_map = {
         "ours": ResolutionStrategy.OURS,
         "theirs": ResolutionStrategy.THEIRS,
@@ -819,7 +819,7 @@ async def resolve_merge_conflict(session_id: str, req: ResolveConflictRequest):
     strategy = strategy_map.get(req.strategy, ResolutionStrategy.MANUAL)
 
     conflict = result.conflicts[req.conflict_index]
-    from thinking.branch import MergeEngine
+    from compiler.thinking.branch import MergeEngine
     engine = MergeEngine(session.branch_manager)
     engine.resolve_conflict(conflict, strategy, req.resolved_value, session.state)
 

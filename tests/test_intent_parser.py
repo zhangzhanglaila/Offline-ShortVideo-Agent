@@ -1,8 +1,8 @@
 """Tests for Intent Parser — natural language instruction understanding."""
 
 import pytest
-from thinking.intent_parser import IntentParser, EditIntent
-from thinking.state import VideoProjectState, ModuleState, ScriptSentence
+from compiler.thinking.intent_parser import IntentParser, EditIntent
+from compiler.thinking.state import VideoProjectState, ModuleState, ScriptSentence
 
 
 def make_state():

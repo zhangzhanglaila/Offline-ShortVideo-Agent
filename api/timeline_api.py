@@ -78,7 +78,7 @@ def _extract_timeline_data(session) -> dict:
     height = 1920
 
     if hasattr(session, 'artifact_graph'):
-        from thinking.artifacts import ArtifactType
+        from compiler.thinking.artifacts import ArtifactType
         graph = session.artifact_graph
 
         # Find timeline artifact
@@ -189,7 +189,7 @@ async def edit_timeline(session_id: str, req: EditRequest) -> EditResponse:
 async def list_assets(session_id: str, asset_type: str = ""):
     """List available assets from the AssetStore."""
     try:
-        from backend.asset_store import AssetStore
+        from compiler.backend.asset_store import AssetStore
         store = AssetStore()
         assets = store.list_assets(asset_type)
         return {"assets": assets, "total": len(assets)}
@@ -233,7 +233,7 @@ class LoadResponse(BaseModel):
 async def save_session(session_id: str, req: SaveRequest) -> SaveResponse:
     """Save session state (timeline + undo/redo) to disk."""
     try:
-        from backend.session_store import SessionStore, SaveConflictError
+        from compiler.backend.session_store import SessionStore, SaveConflictError
         store = SessionStore()
 
         if req.expected_version is not None:
@@ -286,7 +286,7 @@ async def save_session(session_id: str, req: SaveRequest) -> SaveResponse:
 async def load_session(session_id: str) -> LoadResponse:
     """Load saved session state from disk."""
     try:
-        from backend.session_store import SessionStore
+        from compiler.backend.session_store import SessionStore
         store = SessionStore()
         state = store.load(session_id)
         if state is None:
@@ -312,7 +312,7 @@ async def load_session(session_id: str) -> LoadResponse:
 async def list_saved_sessions():
     """List all saved sessions."""
     try:
-        from backend.session_store import SessionStore
+        from compiler.backend.session_store import SessionStore
         store = SessionStore()
         sessions = store.list_sessions()
         return {"sessions": sessions, "total": len(sessions)}
@@ -327,7 +327,7 @@ def _move_scene(session, scene_id: str, delta_frames: int):
     """Move all tracks for a scene by delta_frames."""
     if not hasattr(session, 'artifact_graph'):
         return
-    from thinking.artifacts import ArtifactType
+    from compiler.thinking.artifacts import ArtifactType
     graph = session.artifact_graph
 
     timeline_art = graph.find_by_type(ArtifactType.TIMELINE)
@@ -345,7 +345,7 @@ def _resize_scene(session, scene_id: str, new_end_frame: int):
     """Resize a scene's end frame."""
     if not hasattr(session, 'artifact_graph'):
         return
-    from thinking.artifacts import ArtifactType
+    from compiler.thinking.artifacts import ArtifactType
     graph = session.artifact_graph
 
     timeline_art = graph.find_by_type(ArtifactType.TIMELINE)
@@ -362,7 +362,7 @@ def _update_content(session, scene_id: str, field: str, value: str):
     """Update a field in a scene's content."""
     if not hasattr(session, 'artifact_graph'):
         return
-    from thinking.artifacts import ArtifactType
+    from compiler.thinking.artifacts import ArtifactType
     graph = session.artifact_graph
 
     timeline_art = graph.find_by_type(ArtifactType.TIMELINE)
@@ -381,7 +381,7 @@ def _recompute_affected(session, scene_id: str) -> list[str]:
     """Recompute artifacts affected by a scene change."""
     recomputed = []
     if hasattr(session, 'artifact_graph'):
-        from thinking.artifacts import ArtifactType
+        from compiler.thinking.artifacts import ArtifactType
         graph = session.artifact_graph
         # Mark downstream artifacts as needing recomputation
         render_art = graph.find_by_type(ArtifactType.RENDER_PLAN)
@@ -407,12 +407,12 @@ async def get_dag(session_id: str):
     # Build a mock DAG from the session's artifact graph
     try:
         session = _get_session(session_id)
-        from runtime.dag import PipelineDAG
+        from compiler.runtime.dag import PipelineDAG
 
         dag = PipelineDAG(name=f"pipeline_{session_id}")
 
         if hasattr(session, 'artifact_graph'):
-            from thinking.artifacts import ArtifactType
+            from compiler.thinking.artifacts import ArtifactType
             graph = session.artifact_graph
 
             # Map artifact types to DAG nodes

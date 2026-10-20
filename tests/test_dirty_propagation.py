@@ -17,7 +17,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from thinking.artifacts import ArtifactGraph, ArtifactType
+from compiler.thinking.artifacts import ArtifactGraph, ArtifactType
 
 
 # ── Fixture: build a mini pipeline graph ──────────────────────────────

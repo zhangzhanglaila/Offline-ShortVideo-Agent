@@ -20,13 +20,13 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from ir.intent_ir import IntentIR, Tone
-from ir.narrative_ir import (
+from compiler.ir.intent_ir import IntentIR, Tone
+from compiler.ir.narrative_ir import (
     NarrativeIR, Beat, BeatType, TransitionType,
     HookBeat, ProblemBeat, RevealBeat, CTABeat,
 )
-from ir.timeline_ir import TimelineIR, Track, TrackType, Transition, TransitionEffect
-from ir.render_ir import RenderIR, CommandType
+from compiler.ir.timeline_ir import TimelineIR, Track, TrackType, Transition, TransitionEffect
+from compiler.ir.render_ir import RenderIR, CommandType
 from compiler.pass_intent_to_narrative import IntentToNarrativePass
 from compiler.pass_narrative_to_scene import (
     NarrativeToScenePass, SceneIR, _split_text,

@@ -17,10 +17,10 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from media.media_cache import MediaCache
-from media.scene_renderer import SceneRenderer, IncrementalRenderStats
-from media.concat_renderer import ConcatRenderer, _composite_hash
-from thinking.canonicalize import content_hash
+from compiler.media.media_cache import MediaCache
+from compiler.media.scene_renderer import SceneRenderer, IncrementalRenderStats
+from compiler.media.concat_renderer import ConcatRenderer, _composite_hash
+from compiler.thinking.canonicalize import content_hash
 
 
 # ── Helpers ──────────────────────────────────────────────────────────

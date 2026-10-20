@@ -18,12 +18,12 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from backend.asset_store import AssetStore
+from compiler.backend.asset_store import AssetStore
 from core.ai.asset_retriever import (
     AssetResult, AssetRetriever, SearchBackend, LocalSearchBackend,
 )
 from compiler.pass_asset import AssetPass, _extract_keywords, _extract_mood
-from ir.narrative_ir import (
+from compiler.ir.narrative_ir import (
     NarrativeIR, Beat, BeatType, TransitionType,
     HookBeat, ProblemBeat, RevealBeat, CTABeat,
 )

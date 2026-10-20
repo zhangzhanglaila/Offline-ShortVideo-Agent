@@ -19,8 +19,8 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from thinking.artifact_store import ArtifactStore
-from thinking.canonicalize import content_hash
+from compiler.thinking.artifact_store import ArtifactStore
+from compiler.thinking.canonicalize import content_hash
 
 
 @pytest.fixture

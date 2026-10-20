@@ -3,9 +3,9 @@
 import json
 import pytest
 from pathlib import Path
-from thinking.persistence import PatchStore, PersistentPatchHistory
-from thinking.patch import EditSentencePatch, AddSentencePatch, BatchPatch
-from thinking.state import VideoProjectState, ModuleState, ScriptSentence
+from compiler.thinking.persistence import PatchStore, PersistentPatchHistory
+from compiler.thinking.patch import EditSentencePatch, AddSentencePatch, BatchPatch
+from compiler.thinking.state import VideoProjectState, ModuleState, ScriptSentence
 
 
 def make_state():

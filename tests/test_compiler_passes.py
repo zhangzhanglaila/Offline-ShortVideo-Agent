@@ -18,8 +18,8 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from ir.intent_ir import IntentIR, Tone, Platform
-from ir.narrative_ir import NarrativeIR, BeatType, HookBeat, CTABeat
+from compiler.ir.intent_ir import IntentIR, Tone, Platform
+from compiler.ir.narrative_ir import NarrativeIR, BeatType, HookBeat, CTABeat
 from compiler.pass_intent_to_narrative import IntentToNarrativePass
 from compiler.base import PassPipeline
 

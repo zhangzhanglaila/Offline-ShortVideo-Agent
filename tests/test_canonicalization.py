@@ -19,7 +19,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from thinking.artifacts import canonicalize, _content_hash
+from compiler.thinking.artifacts import canonicalize, _content_hash
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -242,7 +242,7 @@ class TestDerivedHash:
 
     def test_derived_hash_includes_factors(self):
         """Same content + different config → different hash."""
-        from thinking.canonicalize import derived_hash
+        from compiler.thinking.canonicalize import derived_hash
         content = {"scene_id": "hook", "text": "hello"}
 
         h1 = derived_hash(content, ffmpeg_version="6.0")
@@ -250,7 +250,7 @@ class TestDerivedHash:
         assert h1 != h2
 
     def test_derived_hash_same_factors_same_hash(self):
-        from thinking.canonicalize import derived_hash
+        from compiler.thinking.canonicalize import derived_hash
         content = {"text": "hello"}
 
         h1 = derived_hash(content, fps=30, font="NotoSans")
@@ -258,7 +258,7 @@ class TestDerivedHash:
         assert h1 == h2
 
     def test_derived_hash_factor_order_invariant(self):
-        from thinking.canonicalize import derived_hash
+        from compiler.thinking.canonicalize import derived_hash
         content = {"v": 1}
 
         h1 = derived_hash(content, fps=30, font="NotoSans")
@@ -267,7 +267,7 @@ class TestDerivedHash:
 
     def test_derived_hash_differs_from_content_hash(self):
         """derived_hash with factors ≠ plain content_hash."""
-        from thinking.canonicalize import content_hash, derived_hash
+        from compiler.thinking.canonicalize import content_hash, derived_hash
         content = {"text": "hello"}
 
         h_plain = content_hash(content)
@@ -276,7 +276,7 @@ class TestDerivedHash:
 
     def test_derived_hash_no_factors_equals_content_hash(self):
         """derived_hash with no factors should equal content_hash."""
-        from thinking.canonicalize import content_hash, derived_hash
+        from compiler.thinking.canonicalize import content_hash, derived_hash
         content = {"text": "hello"}
 
         # With no extra factors, the combined dict is {"_content": content}
@@ -288,7 +288,7 @@ class TestDerivedHash:
 
     def test_font_change_invalidates(self):
         """Changing font must produce different derived hash."""
-        from thinking.canonicalize import derived_hash
+        from compiler.thinking.canonicalize import derived_hash
         content = {"text": "hello"}
 
         h1 = derived_hash(content, font="NotoSans")
@@ -297,7 +297,7 @@ class TestDerivedHash:
 
     def test_transition_change_invalidates(self):
         """Changing transition type must produce different derived hash."""
-        from thinking.canonicalize import derived_hash
+        from compiler.thinking.canonicalize import derived_hash
         content = {"text": "hello"}
 
         h1 = derived_hash(content, transition="fade")

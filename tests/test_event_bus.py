@@ -2,7 +2,7 @@
 
 import threading
 import pytest
-from thinking.event_bus import EventBus, Event, get_event_bus
+from compiler.thinking.event_bus import EventBus, Event, get_event_bus
 
 
 class TestEvent:

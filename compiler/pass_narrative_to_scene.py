@@ -23,9 +23,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
 
-from ir.intent_ir import IntentIR
-from ir.narrative_ir import NarrativeIR, Beat, BeatType, TransitionType
-from thinking.canonicalize import canonicalize, content_hash
+from compiler.ir.intent_ir import IntentIR
+from compiler.ir.narrative_ir import NarrativeIR, Beat, BeatType, TransitionType
+from compiler.thinking.canonicalize import canonicalize, content_hash
 from compiler.base import CompilerPass
 
 

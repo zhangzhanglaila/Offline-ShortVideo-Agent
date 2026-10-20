@@ -10,7 +10,7 @@ Tests the full lifecycle:
 """
 
 import pytest
-from backend.session_store import SessionStore, SaveConflictError
+from compiler.backend.session_store import SessionStore, SaveConflictError
 
 
 @pytest.fixture

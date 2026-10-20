@@ -18,7 +18,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from ir.render_ir import (
+from compiler.ir.render_ir import (
     RenderIR, RenderCommand, RenderInput,
     RenderBackend, CommandType,
 )

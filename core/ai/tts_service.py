@@ -24,7 +24,7 @@ from typing import Any, Optional
 
 import edge_tts
 
-from thinking.canonicalize import content_hash
+from compiler.thinking.canonicalize import content_hash
 
 
 # ── Data Structures ──

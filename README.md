@@ -111,7 +111,7 @@ Multi-agent, fully offline short-video compiler: turns one keyword into a script
 
 > 除上表外，仓库还包含一套「视频编译器」内核：四层 IR（Intent → Narrative → Scene → Timeline → Render）、
 > DAG 依赖失效与增量渲染、媒体内容寻址缓存、分支合并与撤销重做。它服务于智能导演，
-> 也是把一次性管道改造成可编辑工作台的基础。详见 [`thinking/`](thinking/)、[`runtime/`](runtime/)、[`compiler/`](compiler/)。
+> 也是把一次性管道改造成可编辑工作台的基础。详见 [`compiler/thinking/`](compiler/thinking/)、[`compiler/runtime/`](compiler/runtime/)、[`compiler/`](compiler/)。
 
 ### 系统架构
 
@@ -285,6 +285,7 @@ Offline-ShortVideo-Agent/
 │       ├── scene_image_renderer.py   # PIL 渲染
 │       ├── ffmpeg_composer.py        # FFmpeg 合成
 │       └── motion/                   # 动态化（ken_burns / text_animations / ...）
+├── compiler/                     # 视频编译器（ir / passes / thinking / runtime / media / backend）
 ├── docs/                        # 需求 / 架构 / 规范文档
 ├── legacy/                      # 已下线但保留的实现（不接入主流程）
 └── devlog/                      # 开发日志
@@ -489,7 +490,7 @@ Output: video + multi-platform packages + report
 > Under the hood there is also a video *compiler*: four IR layers (Intent → Narrative → Scene → Timeline → Render),
 > DAG based invalidation with incremental rendering, content-addressed media cache, branching and undo/redo.
 > It powers the interactive director and is what turns a one-shot pipeline into an editable workbench.
-> See [`thinking/`](thinking/), [`runtime/`](runtime/), [`compiler/`](compiler/).
+> See [`compiler/thinking/`](compiler/thinking/), [`compiler/runtime/`](compiler/runtime/), [`compiler/`](compiler/).
 
 See [`docs/01-architecture-design.md`](docs/01-architecture-design.md).
 
@@ -627,6 +628,7 @@ Offline-ShortVideo-Agent/
 │       ├── scene_image_renderer.py   # PIL rendering
 │       ├── ffmpeg_composer.py        # FFmpeg compositing
 │       └── motion/                   # Dynamic motion modules
+├── compiler/                     # Video compiler (ir / passes / thinking / runtime / media / backend)
 ├── docs/                        # Requirements / architecture / standards
 ├── legacy/                      # Retired but kept implementations (not wired)
 └── devlog/                      # Development logs

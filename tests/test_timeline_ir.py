@@ -19,7 +19,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from ir.timeline_ir import (
+from compiler.ir.timeline_ir import (
     TimelineIR, Track, TrackType, Transition, TransitionEffect,
 )
 

@@ -24,10 +24,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
 
-from ir.timeline_ir import (
+from compiler.ir.timeline_ir import (
     TimelineIR, Track, TrackType, Transition, TransitionEffect,
 )
-from thinking.canonicalize import canonicalize, content_hash
+from compiler.thinking.canonicalize import canonicalize, content_hash
 from compiler.base import CompilerPass
 
 # Import SceneIR from narrative_to_scene pass

@@ -1,11 +1,11 @@
 """Tests for IR Layer Hierarchy — four intermediate representations."""
 
 import pytest
-from thinking.ir_layers import (
+from compiler.thinking.ir_layers import (
     SemanticIR, TemporalIR, RenderIR, ExecutionIR,
     IRTransformer, DeterminismConfig, DeterminismChecker,
 )
-from thinking.state import VideoProjectState, ModuleState, ScriptSentence
+from compiler.thinking.state import VideoProjectState, ModuleState, ScriptSentence
 
 
 @pytest.fixture

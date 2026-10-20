@@ -24,12 +24,12 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
 
-from ir.intent_ir import IntentIR, Tone, Platform
-from ir.narrative_ir import (
+from compiler.ir.intent_ir import IntentIR, Tone, Platform
+from compiler.ir.narrative_ir import (
     NarrativeIR, Beat, BeatType, TransitionType,
     HookBeat, ProblemBeat, RevealBeat, CTABeat,
 )
-from thinking.canonicalize import content_hash
+from compiler.thinking.canonicalize import content_hash
 
 
 @dataclass

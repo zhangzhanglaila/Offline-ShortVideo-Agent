@@ -20,8 +20,8 @@ import asyncio
 from typing import Any
 
 from core.ai.asset_retriever import AssetRetriever, AssetResult
-from ir.narrative_ir import NarrativeIR, BeatType
-from thinking.canonicalize import content_hash
+from compiler.ir.narrative_ir import NarrativeIR, BeatType
+from compiler.thinking.canonicalize import content_hash
 
 
 # Keyword extraction from beat types

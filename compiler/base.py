@@ -12,7 +12,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Generic, TypeVar
 
-from thinking.canonicalize import content_hash
+from compiler.thinking.canonicalize import content_hash
 
 InputT = TypeVar("InputT")
 OutputT = TypeVar("OutputT")

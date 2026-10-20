@@ -20,11 +20,11 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from backend.executor import (
+from compiler.backend.executor import (
     FFmpegExecutor, ExecutionResult, FFmpegProgress,
     _parse_progress, _time_to_seconds,
 )
-from backend.ffmpeg_lowering import FFmpegCommand
+from compiler.backend.ffmpeg_lowering import FFmpegCommand
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -188,11 +188,11 @@ class TestCommandIntegration:
 
     def test_dry_run_with_full_pipeline(self):
         """Simulate full pipeline: lower → execute (dry run)."""
-        from ir.render_ir import (
+        from compiler.ir.render_ir import (
             RenderIR, RenderCommand, RenderInput,
             RenderBackend, CommandType,
         )
-        from backend.ffmpeg_lowering import FFmpegLowering
+        from compiler.backend.ffmpeg_lowering import FFmpegLowering
 
         rir = RenderIR(
             commands=(

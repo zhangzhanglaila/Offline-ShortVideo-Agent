@@ -17,8 +17,8 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from thinking.artifacts import ArtifactGraph, ArtifactType, _content_hash
-from thinking.fixpoint_scheduler import FixpointScheduler, ArtifactState
+from compiler.thinking.artifacts import ArtifactGraph, ArtifactType, _content_hash
+from compiler.thinking.fixpoint_scheduler import FixpointScheduler, ArtifactState
 
 
 # ── Helpers ──────────────────────────────────────────────────────────

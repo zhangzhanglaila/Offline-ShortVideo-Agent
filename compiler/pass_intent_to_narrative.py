@@ -20,8 +20,8 @@ from __future__ import annotations
 
 from typing import Any, Callable, Optional
 
-from ir.intent_ir import IntentIR, Tone
-from ir.narrative_ir import (
+from compiler.ir.intent_ir import IntentIR, Tone
+from compiler.ir.narrative_ir import (
     NarrativeIR, Beat, BeatType, TransitionType,
     HookBeat, ProblemBeat, RevealBeat, CTABeat,
 )

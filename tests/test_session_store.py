@@ -7,7 +7,7 @@ import threading
 from pathlib import Path
 
 import pytest
-from backend.session_store import SessionStore
+from compiler.backend.session_store import SessionStore
 
 
 @pytest.fixture

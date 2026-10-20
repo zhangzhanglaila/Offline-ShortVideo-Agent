@@ -1,12 +1,12 @@
 """Tests for Patch System — event sourcing for VideoProjectState."""
 
 import pytest
-from thinking.patch import (
+from compiler.thinking.patch import (
     EditSentencePatch, AddSentencePatch, RemoveSentencePatch,
     ApproveModulePatch, EditGraphNodePatch, ConditionalPatch, BatchPatch,
     PatchHistory, _patch_from_dict,
 )
-from thinking.state import VideoProjectState, ModuleState, ScriptSentence
+from compiler.thinking.state import VideoProjectState, ModuleState, ScriptSentence
 
 
 def make_state():

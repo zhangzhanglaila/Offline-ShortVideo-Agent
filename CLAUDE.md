@@ -15,7 +15,7 @@
 
 **已完成 (D系列)**: 动态化增强 —— 运镜、元素动画、分层编排、转场、视频背景、BGM。
 
-**已完成 (智能导演)**: `thinking/` + `runtime/` + `compiler/` + `ir/` 构成人在回路的
+**已完成 (智能导演)**: `compiler/thinking/` + `compiler/runtime/` + `compiler/` + `compiler/ir/` 构成人在回路的
 视频编译器（四层 IR、DAG 增量重算、分支合并、撤销重做），Web 端位于「🧠 智能导演」页。
 
 **已完成 (零成本动效)**: 「✨ AI 动效」页把文本 LLM 产出的 HTML/CSS/SVG 逐帧渲染成 MP4，
@@ -192,6 +192,7 @@ Offline-ShortVideo-Agent/
 │   └── phase-X-summary.md          ← 各阶段总结
 │
 ├── tests/               ← 测试（agents / api / motion / template / integration）
+├── compiler/            ← 视频编译器（ir / passes / thinking / runtime / media / backend，见目录内 README）
 ├── scripts/             ← 一次性脚本（模板渲染 demo 等）
 ├── legacy/              ← 已下线但保留的实现（不接入主流程）
 ├── pytest.ini           ← 默认只跑离线测试，integration 需显式指定

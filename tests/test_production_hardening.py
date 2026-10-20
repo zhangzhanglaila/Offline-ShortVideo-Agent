@@ -6,9 +6,9 @@ from unittest.mock import patch
 
 import pytest
 
-from runtime.retry import retry, RetryPolicy, RetryContext
-from runtime.crash_recovery import CrashRecovery
-from runtime.render_logger import RenderLogger
+from compiler.runtime.retry import retry, RetryPolicy, RetryContext
+from compiler.runtime.crash_recovery import CrashRecovery
+from compiler.runtime.render_logger import RenderLogger
 
 
 # ── Retry Tests ──

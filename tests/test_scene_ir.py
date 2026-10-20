@@ -17,7 +17,7 @@ import pytest
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from thinking.video_runtime_adapter import build_scene_ir
+from compiler.thinking.video_runtime_adapter import build_scene_ir
 
 
 # ── Helpers ──────────────────────────────────────────────────────────

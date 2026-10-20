@@ -19,11 +19,11 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from ir.render_ir import (
+from compiler.ir.render_ir import (
     RenderIR, RenderCommand, RenderInput,
     RenderBackend, CommandType,
 )
-from backend.ffmpeg_lowering import FFmpegLowering, FFmpegCommand
+from compiler.backend.ffmpeg_lowering import FFmpegLowering, FFmpegCommand
 
 
 # ═══════════════════════════════════════════════════════════════════════
