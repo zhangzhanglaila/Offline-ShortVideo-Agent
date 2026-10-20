@@ -301,7 +301,7 @@ python -m pytest
 python -m pytest tests/agents tests/api -q
 
 # 真实 API 集成测试（会调用生图 / 生视频，产生费用，默认不跑）
-python -m pytest tests/integration -q
+python -m pytest -m integration -q
 ```
 
 测试目录按层组织：`tests/agents/`（Agent 流程）、`tests/api/`（HTTP 端点）、
@@ -642,7 +642,7 @@ python -m pytest
 python -m pytest tests/agents tests/api -q
 
 # Real-API integration tests (calls image/video generation, costs money; skipped by default)
-python -m pytest tests/integration -q
+python -m pytest -m integration -q
 ```
 
 Tests are grouped by layer: `tests/agents/`, `tests/api/`, `tests/motion/`,

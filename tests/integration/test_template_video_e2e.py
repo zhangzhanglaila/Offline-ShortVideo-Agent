@@ -52,3 +52,5 @@ async def test_real_video_generation_with_template(tmp_path):
     print(f"\n[PASS] Template-rendered PNG: {bg_path} ({size_kb:.1f}KB)")
     print(f"   Spec duration: {spec.duration}s")
     print(f"   Overlays: {len(spec.overlays)}")
+
+pytestmark = pytest.mark.integration

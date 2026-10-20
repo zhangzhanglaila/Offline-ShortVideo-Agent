@@ -3,6 +3,8 @@
 
 使用 .env 中配置的 DASHSCOPE_API_KEY 进行真实生图测试
 """
+
+import pytest
 import asyncio
 import os
 import sys
@@ -114,3 +116,5 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
+pytestmark = pytest.mark.integration

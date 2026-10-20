@@ -3,6 +3,8 @@
 
 验证 MaterialFetchAgent 能否使用 Bailian WanX 生成图片
 """
+
+import pytest
 import asyncio
 import os
 import sys
@@ -188,3 +190,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+pytestmark = pytest.mark.integration

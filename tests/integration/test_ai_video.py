@@ -3,6 +3,8 @@
 
 验证 DashScope WanX 视频生成器的基本功能
 """
+
+import pytest
 import asyncio
 import os
 import sys
@@ -115,3 +117,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+pytestmark = pytest.mark.integration
