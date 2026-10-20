@@ -16,7 +16,6 @@ import time
 import requests
 import os
 import shutil
-import signal
 from pathlib import Path
 from typing import Optional
 

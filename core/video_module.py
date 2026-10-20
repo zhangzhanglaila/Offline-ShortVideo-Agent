@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import List, Dict, Optional, Tuple
 from config import (
     OUTPUT_WIDTH, OUTPUT_HEIGHT, OUTPUT_FPS, OUTPUT_CRF,
-    OUTPUT_AUDIO_BITRATE, OUTPUT_VIDEO_BITRATE, BGM_DIR, MATERIAL_DIR,
+    OUTPUT_AUDIO_BITRATE, BGM_DIR, MATERIAL_DIR,
     BGM_VOLUME, BG_MUTE_DURATION
 )
 from core.utils.ffmpeg_runner import run_ffmpeg_safe

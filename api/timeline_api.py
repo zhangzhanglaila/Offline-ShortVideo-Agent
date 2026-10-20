@@ -526,7 +526,6 @@ async def dag_websocket(websocket: Any, session_id: str):
     Send JSON messages: {"type": "subscribe"} to start receiving updates.
     Server pushes: {"type": "node_update", "node_id": "...", "status": "..."}
     """
-    from fastapi import WebSocket
     await websocket.accept()
     _ws_connections.setdefault(session_id, []).append(websocket)
 

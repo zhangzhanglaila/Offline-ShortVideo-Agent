@@ -107,11 +107,10 @@ scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920
 |------|---------|------|
 | 缓动函数 | `core/spring_easing.py` | ease/spring曲线 |
 | 文字动效逻辑 | `core/text_animator.py` | 5种动效参考 |
-| 转场 | `core/transition_effects.py` | 13种转场 |
+| 转场 | `legacy/transition_effects.py` | 13种转场（已归档；D4 实际用 FFmpeg xfade） |
 | 节奏 | `core/rhythm_engine.py` | 场景时长/节拍 |
 | 视频素材 | `core/stock_video_module.py` | Pexels/Pixabay视频 |
 | 音频分析 | `core/audio_analyzer.py` | BPM/节拍对齐 |
-| 粒子 | `core/particle_effects.py` | 装饰粒子 |
 
 ---
 

@@ -10,7 +10,7 @@ import random
 import requests
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple
-from urllib.parse import quote_plus, urljoin
+from urllib.parse import quote_plus
 from dataclasses import dataclass
 
 import config

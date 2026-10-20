@@ -8,7 +8,6 @@ import math
 import random
 from pathlib import Path
 from typing import List, Optional, Tuple
-from io import BytesIO
 
 try:
     import numpy as np
@@ -17,7 +16,7 @@ except ImportError:
     HAS_NUMPY = False
 
 try:
-    from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageChops
+    from PIL import Image, ImageDraw, ImageFont
     HAS_PIL = True
 except ImportError:
     HAS_PIL = False

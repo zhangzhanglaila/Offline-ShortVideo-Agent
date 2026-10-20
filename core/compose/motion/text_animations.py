@@ -15,7 +15,7 @@ from typing import Tuple
 from core.compose.motion.animation_spec import (
     AnimationSpec,
     ANIM_NONE, ANIM_FADE_IN, ANIM_SLIDE_UP, ANIM_SLIDE_DOWN,
-    ANIM_SLIDE_LEFT, ANIM_SLIDE_RIGHT, ANIM_ZOOM_IN,
+    ANIM_SLIDE_LEFT, ANIM_SLIDE_RIGHT,
 )
 
 

@@ -59,7 +59,7 @@
 - 元素间有出现顺序（用户要的"交互感"）
 
 ### FR4: 丰富转场
-- 复用已有 transition_effects.py 的13种
+- 参考已有 transition_effects.py 的 13 种（现归档于 `legacy/`，D4 实际用 FFmpeg xfade）
 - 按内容类型/节奏智能选择转场
 
 ### FR5: 视频素材背景

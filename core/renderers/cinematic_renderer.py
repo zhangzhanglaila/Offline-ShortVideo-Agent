@@ -7,7 +7,7 @@ from typing import List, Dict, Optional
 from pathlib import Path
 
 try:
-    from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageEnhance
+    from PIL import Image, ImageDraw, ImageFont, ImageEnhance
     HAS_PIL = True
 except ImportError:
     HAS_PIL = False

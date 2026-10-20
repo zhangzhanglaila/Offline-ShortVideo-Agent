@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 from pathlib import Path
 
-from config import TOPICS_DB, DB_SCRIPTS_TABLE, DB_ANALYTICS_TABLE
+from config import TOPICS_DB
 
 class AnalyticsModule:
     """数据复盘模块"""

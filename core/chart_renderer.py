@@ -97,7 +97,6 @@ def _hex_to_rgba(hex_str: str, alpha: int = 255) -> tuple:
 def _make_gradient(w: int, h: int, top_hex: str, bottom_hex: str, direction: str = "vertical") -> Image.Image:
     """生成线性渐变 Image，vertical/horizontal/diagonal。"""
     from PIL import Image as PILImage
-    import math as _math
     grad = PILImage.new("RGBA", (w, h))
     pixels = grad.load()
     t = _hex_to_rgba(top_hex)

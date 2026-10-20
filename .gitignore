@@ -54,10 +54,6 @@ remotion-renderer/dataset/
 # 外部参考项目（不参与构建）
 remotionOriginal/
 
-# 实验性/未完成的模块（调试产物）
-core/diagram_animation_module.py
-core/diagram_anagram_module.py
-
 # 测试截图输出
 *.jpg
 !assets/thumbnails/*.jpg

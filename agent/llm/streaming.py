@@ -5,7 +5,7 @@
 import json
 import urllib.request
 import urllib.error
-from typing import Iterator, List, Dict, Generator
+from typing import List, Dict, Generator
 import sys
 import os
 

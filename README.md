@@ -286,6 +286,7 @@ Offline-ShortVideo-Agent/
 │       ├── ffmpeg_composer.py        # FFmpeg 合成
 │       └── motion/                   # 动态化（ken_burns / text_animations / ...）
 ├── docs/                        # 需求 / 架构 / 规范文档
+├── legacy/                      # 已下线但保留的实现（不接入主流程）
 └── devlog/                      # 开发日志
 ```
 
@@ -627,6 +628,7 @@ Offline-ShortVideo-Agent/
 │       ├── ffmpeg_composer.py        # FFmpeg compositing
 │       └── motion/                   # Dynamic motion modules
 ├── docs/                        # Requirements / architecture / standards
+├── legacy/                      # Retired but kept implementations (not wired)
 └── devlog/                      # Development logs
 ```
 

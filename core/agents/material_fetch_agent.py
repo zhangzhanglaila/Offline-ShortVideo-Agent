@@ -12,7 +12,7 @@
 - 降级：无结果或下载失败时生成占位符
 
 设计特点：
-- 复用现有 material_api / material_downloader 基础设施
+- 复用现有 material_providers 基础设施
 - 依赖注入：api_manager 和 downloader 可注入，便于离线测试
 - 容错：任何单场景失败都降级为占位符，不影响整体
 """

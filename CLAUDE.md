@@ -193,6 +193,7 @@ Offline-ShortVideo-Agent/
 │
 ├── tests/               ← 测试（agents / api / motion / template / integration）
 ├── scripts/             ← 一次性脚本（模板渲染 demo 等）
+├── legacy/              ← 已下线但保留的实现（不接入主流程）
 ├── pytest.ini           ← 默认只跑离线测试，integration 需显式指定
 ├── CLAUDE.md            ← 本文件
 ├── README.md
@@ -394,7 +395,7 @@ A:
 | **E1** | 模板系统 | 4 周 | ✅ 已完成（31 模板 + `🧩 模板` 页 + 实时预览） |
 | **E2** | AI 生图集成 | 4 周 | ✅ 已完成（`🎨 AI 素材` 页「生图」+ `/api/ai/*`） |
 | **E3** | AI 生视频集成 | 4 周 | ✅ 已完成（`🎨 AI 素材` 页「生视频」+ SSE + 12 个技能配方 `skills/video/`） |
-| **E4** | 历史管理 UI | 2 周 | 🟡 作品库改由文件系统实现（`/api/works`），独立 `services/history` 未启用 |
+| **E4** | 历史管理 UI | 2 周 | 🟡 作品库由文件系统实现（`/api/works`），原 `services/history` 已删除 |
 | **E5** | ComfyUI 可选集成 | 4 周 | ✅ 已完成 |
 
 ### 📂 新增目录结构
@@ -402,10 +403,12 @@ A:
 ```
 templates/              # 视频模板（按分辨率分类）
 workflows/              # AI 工作流配置
-services/               # 新增服务层
-├── template/          # 模板服务
-├── ai_media/          # AI 媒体服务
-└── history/           # 历史服务
+services/               # 服务层
+├── template/          # HTML 模板渲染（Playwright）
+├── ai_image/          # AI 生图（OpenAI / DashScope / ComfyUI / 百炼）
+├── ai_video/          # AI 生视频（DashScope / ComfyUI）
+├── comfyui/           # ComfyUI HTTP 客户端与工作流
+└── html_motion/       # HTML/CSS/SVG 逐帧渲染成视频
 ```
 
 ### 📝 E 系列工作原则

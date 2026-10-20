@@ -663,7 +663,6 @@ class VideoRuntimeAdapter:
         """Director plan → concrete shot params."""
         from engine.bridge.graph_pipeline import (
             build_default_plan, classify_graph,
-            _call_llm_for_animation_plan, _fallback_animation_plan,
             _normalize_audio_tracks, _extract_audio_emphasis,
         )
 
