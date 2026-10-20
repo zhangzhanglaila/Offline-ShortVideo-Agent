@@ -4,7 +4,7 @@
  * Reads parity_python_vectors.json (Python feature vectors for N episodes)
  * and compares them against the TS buildFeatureVector output for the same episodes.
  *
- * Run: npx tsx cross_runtime_compare.ts
+ * Run: npx tsx tests/cross_runtime_compare.ts
  */
 
 import * as fs from "fs";

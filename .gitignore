@@ -43,6 +43,10 @@ remotion-renderer/public/fonts/*.ttf
 remotion-renderer/public/fonts/*.ttc
 remotion-renderer/public/fonts/*.woff
 remotion-renderer/public/fonts/*.woff2
+# 本地队列状态（运行时由 server/queue-sqlite.ts 生成）
+remotion-renderer/queue.db*
+# 临时测试截图
+remotion-renderer/assets/frames/
 
 # v18: RL reward dataset（不提交，生产数据）
 remotion-renderer/dataset/

@@ -3,7 +3,7 @@
  *
  * Compares buildFeatureVector (TS) against a reference that mirrors Python exactly.
  *
- * Run: npx ts-node feature_parity_ts.ts
+ * Run: npx ts-node tests/feature_parity_ts.ts
  */
 
 import * as fs from "fs";

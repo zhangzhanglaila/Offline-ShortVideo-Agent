@@ -4,7 +4,7 @@ test_pareto_frontier.py
 Trajectory-level Pareto Front Analysis.
 Sweeps sim_count and identifies the quality-diversity tradeoff frontier.
 
-Run: python test_pareto_frontier.py
+Run: python tests/test_pareto_frontier.py
 """
 
 import json
