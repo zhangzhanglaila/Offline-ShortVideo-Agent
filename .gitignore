@@ -59,6 +59,14 @@ core/diagram_anagram_module.py
 !assets/thumbnails/*.jpg
 !assets/thumbnails/*.png
 
+# README 展示图片必须入库（覆盖上面的 *.jpg，含子目录）
+!README.assets/
+!README.assets/**/*.png
+!README.assets/**/*.jpg
+!README.assets/**/*.jpeg
+!README.assets/**/*.webp
+!README.assets/**/*.gif
+
 # 数据库文件（本地数据）
 data/*.db
 data/*.sqlite
