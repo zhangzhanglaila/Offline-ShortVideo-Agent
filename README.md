@@ -364,6 +364,10 @@ ffmpeg -version
 
 [⬆ 返回顶部 / Back to top](#offline-shortvideo-agent)
 
+如果这个项目对你有帮助，欢迎赞赏支持 ☕
+
+![微信赞赏码](README.assets/reward_qr.png)
+
 ---
 
 ## English
